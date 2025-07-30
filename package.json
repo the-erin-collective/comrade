@@ -50,6 +50,21 @@
         "command": "comrade.checkPersonalityStatus",
         "title": "Check Personality Status",
         "category": "Comrade"
+      },
+      {
+        "command": "comrade.runContextAnalysis",
+        "title": "Run Context Analysis",
+        "category": "Comrade"
+      },
+      {
+        "command": "comrade.readContext",
+        "title": "Read Workspace Context",
+        "category": "Comrade"
+      },
+      {
+        "command": "comrade.checkContext",
+        "title": "Check Context Freshness",
+        "category": "Comrade"
       }
     ],
     "views": {

@@ -4,6 +4,7 @@ import { registerHelloWorldCommand } from './commands/helloWorld';
 import { ConfigurationManager } from './core/config';
 import { AgentRegistry } from './core/registry';
 import { PersonalityManager } from './core/personality';
+import { registerContextExampleCommands } from './examples/context-runner-usage';
 
 // Global instances
 let configurationManager: ConfigurationManager;
@@ -34,6 +35,7 @@ export async function activate(context: vscode.ExtensionContext) {
         registerHelloWorldCommand(context);
         registerConfigurationCommands(context);
         registerPersonalityCommands(context);
+        registerContextExampleCommands(context);
         
         // Add disposables to context
         context.subscriptions.push(agentRegistry, personalityManager);
