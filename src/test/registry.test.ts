@@ -86,6 +86,8 @@ suite('AgentRegistry Tests', () => {
   });
 
   setup(async () => {
+    // Reset singleton instance for clean test state
+    AgentRegistry.resetInstance();
     mockConfigManager = MockConfigurationManager.getInstance();
     agentRegistry = AgentRegistry.getInstance(mockConfigManager);
   });

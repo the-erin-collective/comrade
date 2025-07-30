@@ -3,7 +3,7 @@
  */
 
 import * as vscode from 'vscode';
-import { IAgent, AgentCapabilities, PhaseType } from './agent';
+import { IAgent, AgentCapabilities, PhaseType, LLMProvider } from './agent';
 import { ConfigurationManager, AgentConfigurationItem } from './config';
 
 export class AgentRegistry {
@@ -22,6 +22,16 @@ export class AgentRegistry {
       AgentRegistry.instance = new AgentRegistry(configManager);
     }
     return AgentRegistry.instance;
+  }
+
+  /**
+   * Reset the singleton instance (for testing purposes)
+   */
+  public static resetInstance(): void {
+    if (AgentRegistry.instance) {
+      AgentRegistry.instance.dispose();
+      AgentRegistry.instance = undefined as any;
+    }
   }
 
   /**
@@ -251,7 +261,10 @@ export class AgentRegistry {
       console.log(`Loaded ${agents.length} agents from configuration`);
     } catch (error) {
       console.error('Failed to load agents from configuration:', error);
-      vscode.window.showErrorMessage('Failed to load agent configurations. Please check your settings.');
+      // Only show error message if we're in a real VS Code environment
+      if (vscode.window.showErrorMessage) {
+        vscode.window.showErrorMessage('Failed to load agent configurations. Please check your settings.');
+      }
     }
   }
 
@@ -266,6 +279,391 @@ export class AgentRegistry {
         await this.loadAgentsFromConfiguration();
       }
     });
+  }
+
+  /**
+   * Create agent factory methods for different provider types with capability detection
+   */
+  public async createAgentFromConfig(config: AgentConfigurationItem): Promise<IAgent> {
+    return await this.configManager.createAgentInstance(config);
+  }
+
+  /**
+   * Factory method to create OpenAI-compatible agent
+   */
+  public async createOpenAIAgent(config: {
+    id: string;
+    name: string;
+    model: string;
+    apiKey: string;
+    endpoint?: string;
+    capabilities?: Partial<AgentCapabilities>;
+  }): Promise<IAgent> {
+    const agentConfig: AgentConfigurationItem = {
+      id: config.id,
+      name: config.name,
+      provider: 'openai',
+      model: config.model,
+      endpoint: config.endpoint,
+      capabilities: this.detectCapabilities(config.model, config.capabilities),
+      isEnabledForAssignment: true
+    };
+
+    // Store the API key securely
+    await this.configManager.storeApiKey(config.id, config.apiKey);
+
+    return await this.createAgentFromConfig(agentConfig);
+  }
+
+  /**
+   * Factory method to create Ollama agent
+   */
+  public async createOllamaAgent(config: {
+    id: string;
+    name: string;
+    model: string;
+    endpoint?: string;
+    capabilities?: Partial<AgentCapabilities>;
+  }): Promise<IAgent> {
+    const agentConfig: AgentConfigurationItem = {
+      id: config.id,
+      name: config.name,
+      provider: 'ollama',
+      model: config.model,
+      endpoint: config.endpoint || 'http://localhost:11434',
+      capabilities: this.detectCapabilities(config.model, config.capabilities),
+      isEnabledForAssignment: true
+    };
+
+    return await this.createAgentFromConfig(agentConfig);
+  }
+
+  /**
+   * Factory method to create custom endpoint agent
+   */
+  public async createCustomAgent(config: {
+    id: string;
+    name: string;
+    provider: LLMProvider;
+    model: string;
+    endpoint: string;
+    apiKey?: string;
+    capabilities?: Partial<AgentCapabilities>;
+  }): Promise<IAgent> {
+    const agentConfig: AgentConfigurationItem = {
+      id: config.id,
+      name: config.name,
+      provider: config.provider,
+      model: config.model,
+      endpoint: config.endpoint,
+      capabilities: this.detectCapabilities(config.model, config.capabilities),
+      isEnabledForAssignment: true
+    };
+
+    // Store the API key securely if provided
+    if (config.apiKey) {
+      await this.configManager.storeApiKey(config.id, config.apiKey);
+    }
+
+    return await this.createAgentFromConfig(agentConfig);
+  }
+
+  /**
+   * Detect agent capabilities based on model name and provider
+   */
+  private detectCapabilities(model: string, overrides?: Partial<AgentCapabilities>): AgentCapabilities {
+    const modelLower = model.toLowerCase();
+    
+    // Default capabilities
+    let capabilities: AgentCapabilities = {
+      hasVision: false,
+      hasToolUse: false,
+      reasoningDepth: 'intermediate',
+      speed: 'medium',
+      costTier: 'medium',
+      maxTokens: 4096,
+      supportedLanguages: ['en'],
+      specializations: ['code']
+    };
+
+    // Vision detection
+    if (modelLower.includes('vision') || 
+        modelLower.includes('gpt-4') || 
+        modelLower.includes('claude-3') ||
+        modelLower.includes('gemini')) {
+      capabilities.hasVision = true;
+    }
+
+    // Tool use detection
+    if (modelLower.includes('gpt-4') || 
+        modelLower.includes('claude-3') ||
+        modelLower.includes('gemini') ||
+        modelLower.includes('llama-3')) {
+      capabilities.hasToolUse = true;
+    }
+
+    // Reasoning depth detection
+    if (modelLower.includes('gpt-4') || 
+        modelLower.includes('claude-3-opus') ||
+        modelLower.includes('gemini-pro')) {
+      capabilities.reasoningDepth = 'advanced';
+    } else if (modelLower.includes('gpt-3.5') || 
+               modelLower.includes('claude-3-haiku')) {
+      capabilities.reasoningDepth = 'basic';
+    }
+
+    // Speed detection
+    if (modelLower.includes('turbo') || 
+        modelLower.includes('haiku') ||
+        modelLower.includes('flash')) {
+      capabilities.speed = 'fast';
+    } else if (modelLower.includes('opus') || 
+               modelLower.includes('gpt-4')) {
+      capabilities.speed = 'slow';
+    }
+
+    // Cost tier detection
+    if (modelLower.includes('gpt-4') || 
+        modelLower.includes('claude-3-opus')) {
+      capabilities.costTier = 'high';
+    } else if (modelLower.includes('gpt-3.5') || 
+               modelLower.includes('claude-3-haiku') ||
+               modelLower.includes('llama')) {
+      capabilities.costTier = 'low';
+    }
+
+    // Token limits
+    if (modelLower.includes('gpt-4-turbo') || 
+        modelLower.includes('claude-3')) {
+      capabilities.maxTokens = 128000;
+    } else if (modelLower.includes('gpt-4')) {
+      capabilities.maxTokens = 8192;
+    } else if (modelLower.includes('gemini-pro')) {
+      capabilities.maxTokens = 32768;
+    }
+
+    // Specializations based on model
+    if (modelLower.includes('code') || 
+        modelLower.includes('codex')) {
+      capabilities.specializations = ['code', 'debugging'];
+    } else if (modelLower.includes('claude')) {
+      capabilities.specializations = ['code', 'analysis', 'writing'];
+    } else if (modelLower.includes('gpt-4')) {
+      capabilities.specializations = ['code', 'analysis', 'reasoning'];
+    }
+
+    // Apply overrides
+    if (overrides) {
+      capabilities = { ...capabilities, ...overrides };
+    }
+
+    return capabilities;
+  }
+
+  /**
+   * Advanced capability-based filtering
+   */
+  public filterAgentsByCapabilities(filters: {
+    hasVision?: boolean;
+    hasToolUse?: boolean;
+    minReasoningDepth?: 'basic' | 'intermediate' | 'advanced';
+    maxCostTier?: 'low' | 'medium' | 'high';
+    minSpeed?: 'slow' | 'medium' | 'fast';
+    specializations?: string[];
+    minTokens?: number;
+    languages?: string[];
+  }): IAgent[] {
+    return this.getAllAgents().filter(agent => {
+      const caps = agent.capabilities;
+
+      // Vision filter
+      if (filters.hasVision !== undefined && caps.hasVision !== filters.hasVision) {
+        return false;
+      }
+
+      // Tool use filter
+      if (filters.hasToolUse !== undefined && caps.hasToolUse !== filters.hasToolUse) {
+        return false;
+      }
+
+      // Reasoning depth filter
+      if (filters.minReasoningDepth) {
+        const depthOrder = { 'basic': 0, 'intermediate': 1, 'advanced': 2 };
+        if (depthOrder[caps.reasoningDepth] < depthOrder[filters.minReasoningDepth]) {
+          return false;
+        }
+      }
+
+      // Cost tier filter
+      if (filters.maxCostTier) {
+        const costOrder = { 'low': 0, 'medium': 1, 'high': 2 };
+        if (costOrder[caps.costTier] > costOrder[filters.maxCostTier]) {
+          return false;
+        }
+      }
+
+      // Speed filter
+      if (filters.minSpeed) {
+        const speedOrder = { 'slow': 0, 'medium': 1, 'fast': 2 };
+        if (speedOrder[caps.speed] < speedOrder[filters.minSpeed]) {
+          return false;
+        }
+      }
+
+      // Specializations filter
+      if (filters.specializations && filters.specializations.length > 0) {
+        const hasRequiredSpec = filters.specializations.some(spec => 
+          caps.specializations.includes(spec)
+        );
+        if (!hasRequiredSpec) {
+          return false;
+        }
+      }
+
+      // Token limit filter
+      if (filters.minTokens && caps.maxTokens < filters.minTokens) {
+        return false;
+      }
+
+      // Language filter
+      if (filters.languages && filters.languages.length > 0) {
+        const hasRequiredLang = filters.languages.some(lang => 
+          caps.supportedLanguages.includes(lang)
+        );
+        if (!hasRequiredLang) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }
+
+  /**
+   * Get agents ranked by suitability for specific requirements
+   */
+  public rankAgentsForRequirements(requirements: {
+    needsVision?: boolean;
+    needsTools?: boolean;
+    complexityLevel?: 'simple' | 'moderate' | 'complex';
+    prioritizeSpeed?: boolean;
+    prioritizeCost?: boolean;
+    specializations?: string[];
+  }): IAgent[] {
+    const agents = this.getAutoAssignmentEnabledAgents();
+    
+    const scored = agents.map(agent => ({
+      agent,
+      score: this.calculateAgentScore(agent, requirements)
+    }));
+
+    return scored
+      .sort((a, b) => b.score - a.score)
+      .map(item => item.agent);
+  }
+
+  private calculateAgentScore(agent: IAgent, requirements: any): number {
+    let score = 0;
+    const caps = agent.capabilities;
+
+    // Required capabilities
+    if (requirements.needsVision && !caps.hasVision) return 0;
+    if (requirements.needsTools && !caps.hasToolUse) return 0;
+
+    // Reasoning depth scoring
+    if (requirements.complexityLevel) {
+      const complexityMap: Record<string, Record<string, number>> = {
+        'simple': { 'basic': 30, 'intermediate': 20, 'advanced': 10 },
+        'moderate': { 'basic': 10, 'intermediate': 30, 'advanced': 20 },
+        'complex': { 'basic': 0, 'intermediate': 20, 'advanced': 30 }
+      };
+      const levelMap = complexityMap[requirements.complexityLevel];
+      if (levelMap) {
+        score += levelMap[caps.reasoningDepth] || 0;
+      }
+    }
+
+    // Speed priority
+    if (requirements.prioritizeSpeed) {
+      const speedScores = { 'fast': 20, 'medium': 10, 'slow': 0 };
+      score += speedScores[caps.speed];
+    }
+
+    // Cost priority
+    if (requirements.prioritizeCost) {
+      const costScores = { 'low': 20, 'medium': 10, 'high': 0 };
+      score += costScores[caps.costTier];
+    }
+
+    // Specialization matching
+    if (requirements.specializations) {
+      const matchingSpecs = requirements.specializations.filter((spec: string) => 
+        caps.specializations.includes(spec)
+      );
+      score += matchingSpecs.length * 10;
+    }
+
+    // Capability bonuses
+    if (caps.hasVision) score += 5;
+    if (caps.hasToolUse) score += 5;
+
+    return score;
+  }
+
+  /**
+   * Validate agent configuration and connectivity
+   */
+  public async validateAgent(agentId: string): Promise<{
+    isValid: boolean;
+    isConnected: boolean;
+    errors: string[];
+    warnings: string[];
+  }> {
+    const agent = this.getAgent(agentId);
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    if (!agent) {
+      return {
+        isValid: false,
+        isConnected: false,
+        errors: [`Agent '${agentId}' not found`],
+        warnings: []
+      };
+    }
+
+    // Check configuration validity
+    if (!agent.config.model) {
+      errors.push('Model not specified');
+    }
+
+    if (agent.provider === 'openai' && !agent.config.apiKey) {
+      errors.push('API key required for OpenAI provider');
+    }
+
+    // Check connectivity
+    let isConnected = false;
+    try {
+      isConnected = await agent.isAvailable();
+    } catch (error) {
+      errors.push(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+
+    // Capability warnings
+    if (!agent.capabilities.hasToolUse && agent.capabilities.specializations.includes('code')) {
+      warnings.push('Agent specializes in code but lacks tool use capability');
+    }
+
+    if (agent.capabilities.reasoningDepth === 'basic' && agent.isEnabledForAssignment) {
+      warnings.push('Agent has basic reasoning but is enabled for auto-assignment');
+    }
+
+    return {
+      isValid: errors.length === 0,
+      isConnected,
+      errors,
+      warnings
+    };
   }
 
   /**
