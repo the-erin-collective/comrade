@@ -72,7 +72,12 @@
               },
               "provider": {
                 "type": "string",
-                "enum": ["openai", "anthropic", "ollama", "custom"],
+                "enum": [
+                  "openai",
+                  "anthropic",
+                  "ollama",
+                  "custom"
+                ],
                 "description": "LLM provider type"
               },
               "model": {
@@ -117,19 +122,31 @@
                   },
                   "reasoningDepth": {
                     "type": "string",
-                    "enum": ["basic", "intermediate", "advanced"],
+                    "enum": [
+                      "basic",
+                      "intermediate",
+                      "advanced"
+                    ],
                     "default": "intermediate",
                     "description": "Reasoning capability level"
                   },
                   "speed": {
                     "type": "string",
-                    "enum": ["fast", "medium", "slow"],
+                    "enum": [
+                      "fast",
+                      "medium",
+                      "slow"
+                    ],
                     "default": "medium",
                     "description": "Response speed tier"
                   },
                   "costTier": {
                     "type": "string",
-                    "enum": ["low", "medium", "high"],
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high"
+                    ],
                     "default": "medium",
                     "description": "Cost tier for usage"
                   },
@@ -138,7 +155,9 @@
                     "items": {
                       "type": "string"
                     },
-                    "default": ["en"],
+                    "default": [
+                      "en"
+                    ],
                     "description": "Supported natural languages"
                   },
                   "specializations": {
@@ -146,11 +165,19 @@
                     "items": {
                       "type": "string"
                     },
-                    "default": ["code"],
+                    "default": [
+                      "code"
+                    ],
                     "description": "Areas of specialization (e.g., code, analysis, debugging)"
                   }
                 },
-                "required": ["hasVision", "hasToolUse", "reasoningDepth", "speed", "costTier"]
+                "required": [
+                  "hasVision",
+                  "hasToolUse",
+                  "reasoningDepth",
+                  "speed",
+                  "costTier"
+                ]
               },
               "isEnabledForAssignment": {
                 "type": "boolean",
@@ -158,12 +185,21 @@
                 "description": "Whether this agent can be automatically assigned to phases"
               }
             },
-            "required": ["id", "name", "provider", "model", "capabilities"]
+            "required": [
+              "id",
+              "name",
+              "provider",
+              "model",
+              "capabilities"
+            ]
           }
         },
         "comrade.assignment.defaultMode": {
           "type": "string",
-          "enum": ["speed", "structure"],
+          "enum": [
+            "speed",
+            "structure"
+          ],
           "default": "speed",
           "description": "Default workflow mode for new sessions"
         },
@@ -205,7 +241,11 @@
                 "description": "Connection timeout in milliseconds"
               }
             },
-            "required": ["id", "name", "command"]
+            "required": [
+              "id",
+              "name",
+              "command"
+            ]
           }
         },
         "comrade.context.maxFiles": {
@@ -234,16 +274,18 @@
     "format": "prettier --write \"src/**/*.ts\""
   },
   "devDependencies": {
-    "@types/vscode": "^1.102.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
-    "eslint": "^9.25.1",
+    "@types/sinon": "^17.0.4",
+    "@types/vscode": "^1.102.0",
     "@typescript-eslint/eslint-plugin": "^8.31.1",
     "@typescript-eslint/parser": "^8.31.1",
-    "mocha": "^11.1.0",
-    "typescript": "^5.8.3",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1",
-    "prettier": "^3.0.0"
+    "eslint": "^9.25.1",
+    "mocha": "^11.1.0",
+    "prettier": "^3.0.0",
+    "sinon": "^21.0.0",
+    "typescript": "^5.8.3"
   }
 }
