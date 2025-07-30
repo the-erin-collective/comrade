@@ -45,4 +45,119 @@ export interface ISession {
   progress: vscode.Progress<ProgressUpdate>;
   startTime: Date;
   metadata: Record<string, any>;
+
+  // Session management methods
+  setState(newState: SessionState, message?: string): void;
+  setPhase(phase: PhaseType): void;
+  reportProgress(message: string, increment?: number): void;
+  cancel(): void;
+  isCancelled(): boolean;
+  complete(): void;
+  error(errorMessage: string): void;
+  dispose(): void;
+}
+
+/**
+ * Concrete implementation of ISession for operation state management and cancellation
+ */
+export class Session implements ISession {
+  public readonly id: string;
+  public readonly workspaceUri: vscode.Uri;
+  public state: SessionState;
+  public currentPhase?: PhaseType;
+  public agentMapping: PhaseAgentMapping;
+  public requirements: SessionRequirements;
+  public mode: WorkflowMode;
+  public cancellationToken: vscode.CancellationToken;
+  public progress: vscode.Progress<ProgressUpdate>;
+  public readonly startTime: Date;
+  public metadata: Record<string, any>;
+
+  private _cancellationTokenSource: vscode.CancellationTokenSource;
+
+  constructor(
+    id: string,
+    workspaceUri: vscode.Uri,
+    agentMapping: PhaseAgentMapping,
+    requirements: SessionRequirements,
+    mode: WorkflowMode = WorkflowMode.SPEED,
+    progress: vscode.Progress<ProgressUpdate>
+  ) {
+    this.id = id;
+    this.workspaceUri = workspaceUri;
+    this.state = SessionState.IDLE;
+    this.agentMapping = agentMapping;
+    this.requirements = requirements;
+    this.mode = mode;
+    this.startTime = new Date();
+    this.metadata = {};
+    this.progress = progress;
+
+    // Create cancellation token source
+    this._cancellationTokenSource = new vscode.CancellationTokenSource();
+    this.cancellationToken = this._cancellationTokenSource.token;
+  }
+
+  /**
+   * Update session state and notify progress
+   */
+  public setState(newState: SessionState, message?: string): void {
+    this.state = newState;
+    if (message) {
+      this.reportProgress(message);
+    }
+  }
+
+  /**
+   * Set current phase and update state
+   */
+  public setPhase(phase: PhaseType): void {
+    this.currentPhase = phase;
+    this.reportProgress(`Starting ${phase} phase`);
+  }
+
+  /**
+   * Report progress update
+   */
+  public reportProgress(message: string, increment?: number): void {
+    this.progress.report({ message, increment });
+  }
+
+  /**
+   * Cancel the session
+   */
+  public cancel(): void {
+    this.setState(SessionState.CANCELLED, 'Session cancelled');
+    this._cancellationTokenSource.cancel();
+  }
+
+  /**
+   * Check if session is cancelled
+   */
+  public isCancelled(): boolean {
+    return this.cancellationToken.isCancellationRequested;
+  }
+
+  /**
+   * Mark session as completed
+   */
+  public complete(): void {
+    this.setState(SessionState.COMPLETED, 'Session completed successfully');
+  }
+
+  /**
+   * Mark session as error
+   */
+  public error(errorMessage: string): void {
+    this.setState(SessionState.ERROR, `Session failed: ${errorMessage}`);
+    this.metadata.error = errorMessage;
+    this.metadata.errorTime = new Date();
+  }
+
+  /**
+   * Dispose resources
+   */
+  public dispose(): void {
+    this._cancellationTokenSource.dispose();
+  }
 }
