@@ -20,6 +20,21 @@
         "command": "comrade.helloWorld",
         "title": "Hello World",
         "category": "Comrade"
+      },
+      {
+        "command": "comrade.openAgentConfig",
+        "title": "Open Agent Configuration",
+        "category": "Comrade"
+      },
+      {
+        "command": "comrade.testAgentConnectivity",
+        "title": "Test Agent Connectivity",
+        "category": "Comrade"
+      },
+      {
+        "command": "comrade.showRegistryStats",
+        "title": "Show Agent Registry Statistics",
+        "category": "Comrade"
       }
     ],
     "views": {
@@ -36,7 +51,177 @@
         "view": "comrade.sidebar",
         "contents": "Welcome to Comrade!\n[Start New Session](command:comrade.newSession)"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Comrade",
+      "properties": {
+        "comrade.agents": {
+          "type": "array",
+          "description": "Available agent configurations with capabilities",
+          "default": [],
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique identifier for the agent"
+              },
+              "name": {
+                "type": "string",
+                "description": "Display name for the agent"
+              },
+              "provider": {
+                "type": "string",
+                "enum": ["openai", "anthropic", "ollama", "custom"],
+                "description": "LLM provider type"
+              },
+              "model": {
+                "type": "string",
+                "description": "Model name/identifier"
+              },
+              "endpoint": {
+                "type": "string",
+                "description": "Custom API endpoint (for custom providers)"
+              },
+              "temperature": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 2,
+                "default": 0.7,
+                "description": "Temperature setting for response randomness"
+              },
+              "maxTokens": {
+                "type": "number",
+                "minimum": 1,
+                "description": "Maximum tokens for responses"
+              },
+              "timeout": {
+                "type": "number",
+                "minimum": 1000,
+                "default": 30000,
+                "description": "Request timeout in milliseconds"
+              },
+              "capabilities": {
+                "type": "object",
+                "description": "Agent capabilities metadata",
+                "properties": {
+                  "hasVision": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether the agent can process images"
+                  },
+                  "hasToolUse": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether the agent can use tools/functions"
+                  },
+                  "reasoningDepth": {
+                    "type": "string",
+                    "enum": ["basic", "intermediate", "advanced"],
+                    "default": "intermediate",
+                    "description": "Reasoning capability level"
+                  },
+                  "speed": {
+                    "type": "string",
+                    "enum": ["fast", "medium", "slow"],
+                    "default": "medium",
+                    "description": "Response speed tier"
+                  },
+                  "costTier": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high"],
+                    "default": "medium",
+                    "description": "Cost tier for usage"
+                  },
+                  "supportedLanguages": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "default": ["en"],
+                    "description": "Supported natural languages"
+                  },
+                  "specializations": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "default": ["code"],
+                    "description": "Areas of specialization (e.g., code, analysis, debugging)"
+                  }
+                },
+                "required": ["hasVision", "hasToolUse", "reasoningDepth", "speed", "costTier"]
+              },
+              "isEnabledForAssignment": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether this agent can be automatically assigned to phases"
+              }
+            },
+            "required": ["id", "name", "provider", "model", "capabilities"]
+          }
+        },
+        "comrade.assignment.defaultMode": {
+          "type": "string",
+          "enum": ["speed", "structure"],
+          "default": "speed",
+          "description": "Default workflow mode for new sessions"
+        },
+        "comrade.mcp.servers": {
+          "type": "array",
+          "description": "MCP server configurations",
+          "default": [],
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique identifier for the MCP server"
+              },
+              "name": {
+                "type": "string",
+                "description": "Display name for the MCP server"
+              },
+              "command": {
+                "type": "string",
+                "description": "Command to start the MCP server"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": [],
+                "description": "Command line arguments for the MCP server"
+              },
+              "env": {
+                "type": "object",
+                "description": "Environment variables for the MCP server"
+              },
+              "timeout": {
+                "type": "number",
+                "minimum": 1000,
+                "default": 10000,
+                "description": "Connection timeout in milliseconds"
+              }
+            },
+            "required": ["id", "name", "command"]
+          }
+        },
+        "comrade.context.maxFiles": {
+          "type": "number",
+          "default": 100,
+          "minimum": 1,
+          "description": "Maximum files to include in context generation"
+        },
+        "comrade.context.maxTokens": {
+          "type": "number",
+          "default": 8000,
+          "minimum": 100,
+          "description": "Maximum tokens for context generation"
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

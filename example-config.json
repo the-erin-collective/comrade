@@ -1,0 +1,65 @@
+{
+  "comrade.agents": [
+    {
+      "id": "gpt-4-vision",
+      "name": "GPT-4 Vision",
+      "provider": "openai",
+      "model": "gpt-4-vision-preview",
+      "temperature": 0.7,
+      "maxTokens": 4000,
+      "timeout": 30000,
+      "capabilities": {
+        "hasVision": true,
+        "hasToolUse": true,
+        "reasoningDepth": "advanced",
+        "speed": "medium",
+        "costTier": "high",
+        "supportedLanguages": ["en"],
+        "specializations": ["code", "analysis", "vision"]
+      },
+      "isEnabledForAssignment": true
+    },
+    {
+      "id": "claude-3-sonnet",
+      "name": "Claude 3 Sonnet",
+      "provider": "anthropic",
+      "model": "claude-3-sonnet-20240229",
+      "temperature": 0.5,
+      "maxTokens": 8000,
+      "timeout": 30000,
+      "capabilities": {
+        "hasVision": false,
+        "hasToolUse": true,
+        "reasoningDepth": "advanced",
+        "speed": "medium",
+        "costTier": "medium",
+        "supportedLanguages": ["en"],
+        "specializations": ["code", "reasoning", "analysis"]
+      },
+      "isEnabledForAssignment": true
+    },
+    {
+      "id": "local-llama",
+      "name": "Local Llama 2",
+      "provider": "ollama",
+      "model": "llama2",
+      "endpoint": "http://localhost:11434",
+      "temperature": 0.8,
+      "maxTokens": 2000,
+      "timeout": 60000,
+      "capabilities": {
+        "hasVision": false,
+        "hasToolUse": false,
+        "reasoningDepth": "intermediate",
+        "speed": "slow",
+        "costTier": "low",
+        "supportedLanguages": ["en"],
+        "specializations": ["code", "general"]
+      },
+      "isEnabledForAssignment": true
+    }
+  ],
+  "comrade.assignment.defaultMode": "speed",
+  "comrade.context.maxFiles": 100,
+  "comrade.context.maxTokens": 8000
+}
