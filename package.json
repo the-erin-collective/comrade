@@ -35,6 +35,21 @@
         "command": "comrade.showRegistryStats",
         "title": "Show Agent Registry Statistics",
         "category": "Comrade"
+      },
+      {
+        "command": "comrade.openPersonalityConfig",
+        "title": "Open Personality Configuration",
+        "category": "Comrade"
+      },
+      {
+        "command": "comrade.createDefaultPersonality",
+        "title": "Create Default Personality File",
+        "category": "Comrade"
+      },
+      {
+        "command": "comrade.checkPersonalityStatus",
+        "title": "Check Personality Status",
+        "category": "Comrade"
       }
     ],
     "views": {

@@ -3,10 +3,12 @@ import * as vscode from 'vscode';
 import { registerHelloWorldCommand } from './commands/helloWorld';
 import { ConfigurationManager } from './core/config';
 import { AgentRegistry } from './core/registry';
+import { PersonalityManager } from './core/personality';
 
 // Global instances
 let configurationManager: ConfigurationManager;
 let agentRegistry: AgentRegistry;
+let personalityManager: PersonalityManager;
 
 // This method is called when your extension is activated
 export async function activate(context: vscode.ExtensionContext) {
@@ -20,12 +22,21 @@ export async function activate(context: vscode.ExtensionContext) {
         agentRegistry = AgentRegistry.getInstance(configurationManager);
         await agentRegistry.initialize();
         
+        // Initialize personality system for each workspace
+        personalityManager = PersonalityManager.getInstance();
+        if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+            for (const workspaceFolder of vscode.workspace.workspaceFolders) {
+                await personalityManager.initialize(workspaceFolder.uri);
+            }
+        }
+        
         // Register commands
         registerHelloWorldCommand(context);
         registerConfigurationCommands(context);
+        registerPersonalityCommands(context);
         
         // Add disposables to context
-        context.subscriptions.push(agentRegistry);
+        context.subscriptions.push(agentRegistry, personalityManager);
         
         console.log('Comrade extension initialized successfully');
     } catch (error) {
@@ -114,6 +125,89 @@ ${Object.entries(stats.byProvider).map(([provider, count]) => `${provider}: ${co
     );
 }
 
+/**
+ * Register personality-related commands
+ */
+function registerPersonalityCommands(context: vscode.ExtensionContext) {
+    // Command to open personality configuration
+    const openPersonalityConfigCommand = vscode.commands.registerCommand('comrade.openPersonalityConfig', async () => {
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!workspaceFolder) {
+            vscode.window.showErrorMessage('No workspace folder open. Please open a workspace to configure personality.');
+            return;
+        }
+        
+        const personalityFile = vscode.Uri.joinPath(workspaceFolder.uri, '.comrade', 'personality.md');
+        
+        try {
+            // Ensure the file exists
+            await personalityManager.initialize(workspaceFolder.uri);
+            
+            // Open the file for editing
+            const document = await vscode.workspace.openTextDocument(personalityFile);
+            await vscode.window.showTextDocument(document);
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to open personality configuration: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    });
+    
+    // Command to create default personality file
+    const createDefaultPersonalityCommand = vscode.commands.registerCommand('comrade.createDefaultPersonality', async () => {
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!workspaceFolder) {
+            vscode.window.showErrorMessage('No workspace folder open. Please open a workspace to create personality configuration.');
+            return;
+        }
+        
+        try {
+            await personalityManager.createDefaultPersonalityFile(workspaceFolder.uri);
+            vscode.window.showInformationMessage('Default personality configuration created successfully.');
+            
+            // Optionally open the file
+            const openFile = await vscode.window.showInformationMessage(
+                'Would you like to open the personality file for editing?',
+                'Yes', 'No'
+            );
+            
+            if (openFile === 'Yes') {
+                vscode.commands.executeCommand('comrade.openPersonalityConfig');
+            }
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to create personality configuration: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    });
+    
+    // Command to check personality status
+    const checkPersonalityStatusCommand = vscode.commands.registerCommand('comrade.checkPersonalityStatus', async () => {
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!workspaceFolder) {
+            vscode.window.showErrorMessage('No workspace folder open.');
+            return;
+        }
+        
+        try {
+            const hasFile = await personalityManager.hasPersonalityFile(workspaceFolder.uri);
+            const personality = await personalityManager.getPersonality(workspaceFolder.uri);
+            
+            const message = `Personality Status:
+File exists: ${hasFile ? 'Yes' : 'No'}
+Source: ${personality.source}
+Last modified: ${personality.lastModified.toLocaleString()}
+Content length: ${personality.content.length} characters`;
+            
+            vscode.window.showInformationMessage(message);
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to check personality status: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    });
+    
+    context.subscriptions.push(
+        openPersonalityConfigCommand,
+        createDefaultPersonalityCommand,
+        checkPersonalityStatusCommand
+    );
+}
+
 // Export for use by other modules
 export function getConfigurationManager(): ConfigurationManager {
     return configurationManager;
@@ -123,9 +217,16 @@ export function getAgentRegistry(): AgentRegistry {
     return agentRegistry;
 }
 
+export function getPersonalityManager(): PersonalityManager {
+    return personalityManager;
+}
+
 // This method is called when your extension is deactivated
 export function deactivate() {
     if (agentRegistry) {
         agentRegistry.dispose();
+    }
+    if (personalityManager) {
+        personalityManager.dispose();
     }
 }

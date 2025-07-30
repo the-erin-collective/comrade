@@ -19,3 +19,6 @@ export * from './mcp';
 
 // Agent assignment exports
 export * from './assignment';
+
+// Personality configuration exports
+export * from './personality';

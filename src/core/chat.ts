@@ -2,7 +2,9 @@
  * Chat communication interfaces and implementation for LLM interactions
  */
 
+import * as vscode from 'vscode';
 import { IAgent, AgentConfig, LLMProvider } from './agent';
+import { getPersonalityForPrompt } from './personality';
 
 // Type definitions for API responses
 interface OpenAIResponse {
@@ -102,14 +104,17 @@ export class ChatBridge implements IChatBridge {
   private readonly httpTimeout: number = 30000; // 30 seconds default
 
   async sendMessage(agent: IAgent, messages: ChatMessage[], options?: ChatOptions): Promise<ChatResponse> {
+    // Inject personality into messages
+    const messagesWithPersonality = await this.injectPersonality(messages);
+    
     try {
       switch (agent.provider) {
         case 'openai':
-          return await this.sendOpenAIMessage(agent, messages, options);
+          return await this.sendOpenAIMessage(agent, messagesWithPersonality, options);
         case 'ollama':
-          return await this.sendOllamaMessage(agent, messages, options);
+          return await this.sendOllamaMessage(agent, messagesWithPersonality, options);
         case 'custom':
-          return await this.sendCustomMessage(agent, messages, options);
+          return await this.sendCustomMessage(agent, messagesWithPersonality, options);
         default:
           throw new ChatBridgeError(
             `Unsupported provider: ${agent.provider}`,
@@ -135,14 +140,17 @@ export class ChatBridge implements IChatBridge {
     callback: StreamCallback,
     options?: ChatOptions
   ): Promise<void> {
+    // Inject personality into messages
+    const messagesWithPersonality = await this.injectPersonality(messages);
+    
     try {
       switch (agent.provider) {
         case 'openai':
-          return await this.streamOpenAIMessage(agent, messages, callback, options);
+          return await this.streamOpenAIMessage(agent, messagesWithPersonality, callback, options);
         case 'ollama':
-          return await this.streamOllamaMessage(agent, messages, callback, options);
+          return await this.streamOllamaMessage(agent, messagesWithPersonality, callback, options);
         case 'custom':
-          return await this.streamCustomMessage(agent, messages, callback, options);
+          return await this.streamCustomMessage(agent, messagesWithPersonality, callback, options);
         default:
           throw new ChatBridgeError(
             `Unsupported provider: ${agent.provider}`,
@@ -177,6 +185,44 @@ export class ChatBridge implements IChatBridge {
     } catch (error) {
       console.error(`Connection validation failed for ${agent.provider}:`, error);
       return false;
+    }
+  }
+
+  /**
+   * Inject personality content into messages
+   */
+  private async injectPersonality(messages: ChatMessage[]): Promise<ChatMessage[]> {
+    try {
+      // Get current workspace
+      const workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri;
+      
+      // Get personality content for prompt injection
+      const personalityContent = await getPersonalityForPrompt(workspaceUri);
+      
+      // Find the first system message or create one
+      const messagesWithPersonality = [...messages];
+      const systemMessageIndex = messagesWithPersonality.findIndex(msg => msg.role === 'system');
+      
+      if (systemMessageIndex >= 0) {
+        // Append personality to existing system message
+        messagesWithPersonality[systemMessageIndex] = {
+          ...messagesWithPersonality[systemMessageIndex],
+          content: messagesWithPersonality[systemMessageIndex].content + personalityContent
+        };
+      } else {
+        // Create new system message with personality
+        messagesWithPersonality.unshift({
+          role: 'system',
+          content: `You are a helpful coding assistant.${personalityContent}`,
+          timestamp: new Date()
+        });
+      }
+      
+      return messagesWithPersonality;
+    } catch (error) {
+      // If personality injection fails, return original messages
+      console.warn('Failed to inject personality:', error);
+      return messages;
     }
   }
 
