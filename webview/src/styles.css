@@ -1,0 +1,32 @@
+/* VS Code theme integration */
+:root {
+  --primary-color: var(--vscode-button-background);
+  --primary-hover-color: var(--vscode-button-hoverBackground);
+  --text-color: var(--vscode-foreground);
+  --background-color: var(--vscode-editor-background);
+  --secondary-background: var(--vscode-sideBar-background);
+  --border-color: var(--vscode-panel-border);
+  --input-background: var(--vscode-input-background);
+  --input-border: var(--vscode-input-border);
+  --focus-border: var(--vscode-focusBorder);
+  --error-color: var(--vscode-errorForeground);
+  --warning-color: var(--vscode-warningForeground);
+  --success-color: var(--vscode-terminal-ansiGreen);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--text-color);
+  background-color: var(--background-color);
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Global styles for Angular components */

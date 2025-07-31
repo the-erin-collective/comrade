@@ -72,7 +72,8 @@
         {
           "id": "comrade.sidebar",
           "name": "Comrade",
-          "when": "true"
+          "when": "true",
+          "type": "webview"
         }
       ]
     },
@@ -295,7 +296,8 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "compile": "npm run build:webview && tsc -p ./",
+    "build:webview": "cd webview && npm run build",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",

@@ -1,0 +1,112 @@
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--background-color);
+  color: var(--text-color);
+}
+
+/* Welcome screen */
+.welcome-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.welcome-content {
+  text-align: center;
+  padding: 32px;
+}
+
+.welcome-content h3 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.welcome-content p {
+  margin: 0 0 24px 0;
+  color: var(--vscode-descriptionForeground);
+}
+
+.primary-btn {
+  padding: 8px 16px;
+  border: none;
+  background: var(--primary-color);
+  color: var(--vscode-button-foreground);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.primary-btn:hover {
+  background: var(--primary-hover-color);
+}
+
+.config-view {
+  padding: 16px;
+}
+
+.config-view h2 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* Input area */
+.input-area {
+  border-top: 1px solid var(--border-color);
+  background-color: var(--secondary-background);
+  padding: 12px;
+}
+
+.input-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.input-text {
+  width: 100%;
+  min-height: 60px;
+  max-height: 200px;
+  padding: 8px 40px 8px 12px;
+  border: 1px solid var(--input-border);
+  background-color: var(--input-background);
+  color: var(--text-color);
+  font-family: inherit;
+  font-size: inherit;
+  resize: vertical;
+  border-radius: 4px;
+}
+
+.input-text:focus {
+  outline: none;
+  border-color: var(--focus-border);
+}
+
+.input-send-btn {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  padding: 6px 12px;
+  border: none;
+  background: var(--primary-color);
+  color: var(--vscode-button-foreground);
+  cursor: pointer;
+  border-radius: 2px;
+  font-size: 12px;
+  transition: background-color 0.2s;
+}
+
+.input-send-btn:hover:not(:disabled) {
+  background: var(--primary-hover-color);
+}
+
+.input-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

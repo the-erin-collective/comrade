@@ -1,0 +1,36 @@
+<div id="app">
+  <app-session-tabs></app-session-tabs>
+  
+  @if (activeSession(); as session) {
+    @if (session.type === 'conversation') {
+      <app-chat-output 
+        [session]="getConversationSession(session)"
+        [isLoading]="isLoading()"
+        [loadingMessage]="loadingMessage()">
+      </app-chat-output>
+    } @else {
+      <div class="config-view">
+        <h2>Configuration: {{ session.title }}</h2>
+        <p>Configuration interface will be implemented here.</p>
+      </div>
+    }
+  } @else {
+    <div class="welcome-screen">
+      <div class="welcome-content">
+        <h3>Welcome to Comrade!</h3>
+        <p>Create a new session to get started with your AI coding assistant.</p>
+        <button class="primary-btn" (click)="createNewSession()">Start New Session</button>
+      </div>
+    </div>
+  }
+  
+  <app-input-area
+    [phaseAlert]="phaseAlert()"
+    [isLoading]="isLoading()"
+    [availableAgents]="availableAgents()"
+    (messageSubmit)="onMessageSubmit($event)"
+    (agentChange)="onAgentChange($event)"
+    (contextAdd)="onContextAdd($event)"
+    (settingsOpen)="onSettingsOpen()">
+  </app-input-area>
+</div>

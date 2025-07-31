@@ -5,6 +5,7 @@ import { ConfigurationManager } from './core/config';
 import { AgentRegistry } from './core/registry';
 import { PersonalityManager } from './core/personality';
 import { registerContextExampleCommands } from './examples/context-runner-usage';
+import { ComradeSidebarProvider } from './providers/sidebarProvider';
 
 // Global instances
 let configurationManager: ConfigurationManager;
@@ -30,6 +31,12 @@ export async function activate(context: vscode.ExtensionContext) {
                 await personalityManager.initialize(workspaceFolder.uri);
             }
         }
+        
+        // Register webview provider
+        const sidebarProvider = new ComradeSidebarProvider(context);
+        context.subscriptions.push(
+            vscode.window.registerWebviewViewProvider(ComradeSidebarProvider.viewType, sidebarProvider)
+        );
         
         // Register commands
         registerHelloWorldCommand(context);
