@@ -4,12 +4,12 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 import { BaseRunner, RunnerResult, RunnerError } from './base';
 import { ActionList, Action, ActionType, ActionStatus, ActionResult } from '../core/workspace';
 import { ChatMessage, IChatBridge, ChatBridge } from '../core/chat';
 import { IAgent } from '../core/agent';
 import { ISession, SessionState } from '../core/session';
+import { WebShellExecutor, WebCompatibility } from '../core/webcompat';
 
 interface ExecutionOptions {
   dryRun?: boolean;
@@ -600,58 +600,16 @@ export class ExecutionRunner extends BaseRunner {
   }
 
   /**
-   * Execute shell command with proper error handling
+   * Execute shell command with web compatibility support
    */
   private async executeShellCommand(command: string, workingDirectory: string): Promise<{
     exitCode: number;
     stdout: string;
     stderr: string;
   }> {
-    return new Promise((resolve, reject) => {
-      const { spawn } = require('child_process');
-      
-      // Determine shell based on platform
-      const isWindows = process.platform === 'win32';
-      const shell = isWindows ? 'cmd' : 'bash';
-      const shellArgs = isWindows ? ['/c'] : ['-c'];
-      
-      const child = spawn(shell, [...shellArgs, command], {
-        cwd: workingDirectory,
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      child.stdout?.on('data', (data: Buffer) => {
-        stdout += data.toString();
-      });
-
-      child.stderr?.on('data', (data: Buffer) => {
-        stderr += data.toString();
-      });
-
-      child.on('close', (code: number) => {
-        resolve({
-          exitCode: code || 0,
-          stdout: stdout.trim(),
-          stderr: stderr.trim()
-        });
-      });
-
-      child.on('error', (error: Error) => {
-        reject(error);
-      });
-
-      // Set timeout for long-running commands
-      const timeout = setTimeout(() => {
-        child.kill();
-        reject(new Error(`Command timed out: ${command}`));
-      }, 300000); // 5 minutes
-
-      child.on('close', () => {
-        clearTimeout(timeout);
-      });
+    return WebShellExecutor.executeCommand(command, workingDirectory, {
+      timeout: 300000, // 5 minutes
+      showWarning: true
     });
   }
 

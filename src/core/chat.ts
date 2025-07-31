@@ -5,6 +5,7 @@
 import * as vscode from 'vscode';
 import { IAgent, AgentConfig, LLMProvider } from './agent';
 import { getPersonalityForPrompt } from './personality';
+import { WebNetworkUtils, WebCompatibility } from './webcompat';
 
 // Type definitions for API responses
 interface OpenAIResponse {
@@ -466,20 +467,24 @@ export class ChatBridge implements IChatBridge {
     body?: string;
     timeout: number;
   }): Promise<Response> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), options.timeout);
-
     try {
-      const response = await fetch(url, {
+      // Check web accessibility before making request
+      if (WebCompatibility.isWeb() && !WebNetworkUtils.isWebAccessible(url)) {
+        throw new ChatBridgeError(
+          `URL ${url} is not accessible in VS Code web environment due to CORS restrictions`,
+          'WEB_CORS_ERROR',
+          'openai' as LLMProvider
+        );
+      }
+
+      const response = await WebNetworkUtils.makeRequest(url, {
         method: options.method,
         headers: options.headers,
         body: options.body,
-        signal: controller.signal
+        timeout: options.timeout
       });
 
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
+      if (response.status < 200 || response.status >= 300) {
         throw new ChatBridgeError(
           `HTTP ${response.status}: ${response.statusText}`,
           'HTTP_ERROR',
@@ -488,9 +493,17 @@ export class ChatBridge implements IChatBridge {
         );
       }
 
-      return response;
+      // Convert our response format to fetch Response format
+      return {
+        ok: response.status >= 200 && response.status < 300,
+        status: response.status,
+        statusText: response.statusText,
+        headers: new Headers(response.headers),
+        json: async () => JSON.parse(response.body),
+        text: async () => response.body,
+        body: null // Streaming not supported in our WebNetworkUtils yet
+      } as Response;
     } catch (error) {
-      clearTimeout(timeoutId);
       if (error instanceof ChatBridgeError) {
         throw error;
       }
@@ -513,6 +526,45 @@ export class ChatBridge implements IChatBridge {
     callback: StreamCallback,
     format: 'openai' | 'ollama'
   ): Promise<void> {
+    // Check web accessibility
+    if (WebCompatibility.isWeb() && !WebNetworkUtils.isWebAccessible(url)) {
+      throw new ChatBridgeError(
+        `Streaming not supported for ${url} in VS Code web environment`,
+        'WEB_STREAMING_ERROR',
+        'openai' as LLMProvider
+      );
+    }
+
+    // For web environment, fall back to non-streaming request
+    if (WebCompatibility.isWeb()) {
+      try {
+        // Make a regular request and simulate streaming by sending the full response
+        const response = await this.makeHttpRequest(url, options);
+        const text = await response.text();
+        
+        // Parse the response and send as a single chunk
+        if (format === 'openai') {
+          const data = JSON.parse(text) as OpenAIResponse;
+          const content = data.choices?.[0]?.message?.content || '';
+          callback(content, false);
+        } else if (format === 'ollama') {
+          const data = JSON.parse(text) as OllamaResponse;
+          const content = data.message?.content || '';
+          callback(content, false);
+        }
+        
+        callback('', true); // Signal completion
+        return;
+      } catch (error) {
+        throw new ChatBridgeError(
+          `Web streaming fallback failed: ${error instanceof Error ? error.message : String(error)}`,
+          'WEB_STREAMING_FALLBACK_ERROR',
+          'openai' as LLMProvider
+        );
+      }
+    }
+
+    // Desktop environment - use actual streaming
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), options.timeout);
 

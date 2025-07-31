@@ -4,8 +4,8 @@
 
 import * as vscode from 'vscode';
 import { ExecutionRunner } from '../runners/execution';
-import { Session } from '../core/session';
-import { IAgent, PhaseType } from '../core/agent';
+import { Session, WorkflowMode } from '../core/session';
+import { IAgent, PhaseType, PhaseAgentMapping, SessionRequirements } from '../core/agent';
 import { ActionList, Action, ActionType, ActionStatus } from '../core/workspace';
 
 async function demonstrateExecutionRunner() {
@@ -77,7 +77,7 @@ async function demonstrateExecutionRunner() {
     workspaceUri,
     mockAgentMapping,
     mockRequirements,
-    'speed',
+    WorkflowMode.SPEED,
     mockProgress as any
   );
 
@@ -127,9 +127,10 @@ async function demonstrateExecutionRunner() {
       }
     ],
     metadata: {
-      generatedBy: 'planning-agent',
       totalActions: 3,
-      estimatedDuration: '2 minutes'
+      estimatedDuration: 120,
+      complexity: 'moderate',
+      riskLevel: 'medium'
     }
   };
 
@@ -237,7 +238,7 @@ async function demonstrateExecutionWithProgress() {
     workspaceUri,
     mockAgentMapping,
     mockRequirements,
-    'speed',
+    WorkflowMode.SPEED,
     mockProgress as any
   );
 
@@ -258,9 +259,10 @@ async function demonstrateExecutionWithProgress() {
       }
     ],
     metadata: {
-      generatedBy: 'planning-agent',
       totalActions: 1,
-      estimatedDuration: '30 seconds'
+      estimatedDuration: 30,
+      complexity: 'simple',
+      riskLevel: 'low'
     }
   };
 
@@ -272,18 +274,8 @@ async function demonstrateExecutionWithProgress() {
   }, async (progress, token) => {
     const executionRunner = new ExecutionRunner(session, mockAgent, 'You are a helpful coding assistant focused on execution.');
     
-    // Set up progress reporting
-    executionRunner.onProgress((progressUpdate) => {
-      progress.report({
-        increment: progressUpdate.increment,
-        message: progressUpdate.message
-      });
-    });
-
-    // Set up cancellation
-    token.onCancellationRequested(() => {
-      executionRunner.cancel();
-    });
+    // Note: Progress reporting and cancellation are handled internally by the Session
+    // The ExecutionRunner uses the session's progress and cancellation token
 
     try {
       const result = await executionRunner.run();

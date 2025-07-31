@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { BaseRunner, RunnerResult } from './base';
 import { WorkspaceContext, FileNode, DependencyInfo, ContextSummary } from '../core/workspace';
+import { WebCompatibility } from '../core/webcompat';
 
 interface FileAnalysis {
   path: string;
@@ -189,30 +190,56 @@ export class ContextRunner extends BaseRunner {
   }
 
   /**
-   * Discover all files in workspace respecting ignore patterns
+   * Discover all files in workspace respecting ignore patterns (web-compatible)
    */
   private async discoverFiles(): Promise<vscode.Uri[]> {
     const files: vscode.Uri[] = [];
     
-    // Use VS Code's file search with exclude patterns
-    const excludePattern = `{${this.ignorePatterns.join(',')}}`;
-    
-    const fileUris = await vscode.workspace.findFiles(
-      '**/*',
-      excludePattern,
-      this.maxFiles * 2 // Get more files initially for better selection
-    );
-    
-    // Filter out directories and very large files
-    for (const uri of fileUris) {
-      try {
-        const stat = await vscode.workspace.fs.stat(uri);
-        if (stat.type === vscode.FileType.File && stat.size < 1024 * 1024) { // Max 1MB per file
-          files.push(uri);
+    try {
+      // Use VS Code's file search with exclude patterns
+      const excludePattern = `{${this.ignorePatterns.join(',')}}`;
+      
+      // In web environment, file search might be limited
+      const maxSearchFiles = WebCompatibility.isWeb() ? this.maxFiles : this.maxFiles * 2;
+      
+      const fileUris = await vscode.workspace.findFiles(
+        '**/*',
+        excludePattern,
+        maxSearchFiles
+      );
+      
+      // Filter out directories and very large files
+      for (const uri of fileUris) {
+        try {
+          const stat = await vscode.workspace.fs.stat(uri);
+          if (stat.type === vscode.FileType.File && stat.size < 1024 * 1024) { // Max 1MB per file
+            files.push(uri);
+          }
+        } catch {
+          // Skip files that can't be accessed
         }
-      } catch {
-        // Skip files that can't be accessed
       }
+      
+      // Show web compatibility warning if file count is limited
+      if (WebCompatibility.isWeb() && files.length >= this.maxFiles) {
+        await WebCompatibility.showWebCompatibilityWarning(
+          'Large workspace file discovery',
+          'File analysis may be limited in VS Code web. Consider using VS Code desktop for complete workspace analysis.'
+        );
+      }
+      
+    } catch (error) {
+      // Fallback for web environment limitations
+      if (WebCompatibility.isWeb()) {
+        await WebCompatibility.showWebCompatibilityWarning(
+          'Workspace file discovery',
+          'File search capabilities are limited in VS Code web environment.'
+        );
+        
+        // Return empty array as fallback
+        return [];
+      }
+      throw error;
     }
     
     return files;

@@ -5,6 +5,7 @@
 import * as vscode from 'vscode';
 import { IAgent } from '../core/agent';
 import { ISession, SessionState } from '../core/session';
+import { WebFileSystem, WebCompatibility } from '../core/webcompat';
 
 export interface RunnerResult {
   success: boolean;
@@ -249,42 +250,35 @@ export abstract class BaseRunner {
   }
 
   /**
-   * Check if a file exists in the workspace
+   * Check if a file exists in the workspace (web-compatible)
    */
   protected async fileExists(relativePath: string): Promise<boolean> {
-    try {
-      const uri = vscode.Uri.joinPath(this.session.workspaceUri, relativePath);
-      await vscode.workspace.fs.stat(uri);
-      return true;
-    } catch {
-      return false;
-    }
+    const uri = vscode.Uri.joinPath(this.session.workspaceUri, relativePath);
+    return WebFileSystem.exists(uri);
   }
 
   /**
-   * Read a file from the workspace
+   * Read a file from the workspace (web-compatible)
    */
   protected async readWorkspaceFile(relativePath: string): Promise<string> {
     const uri = vscode.Uri.joinPath(this.session.workspaceUri, relativePath);
-    const content = await vscode.workspace.fs.readFile(uri);
-    return Buffer.from(content).toString('utf8');
+    return WebFileSystem.readFile(uri);
   }
 
   /**
-   * Write a file to the workspace
+   * Write a file to the workspace (web-compatible)
    */
   protected async writeWorkspaceFile(relativePath: string, content: string): Promise<void> {
     const uri = vscode.Uri.joinPath(this.session.workspaceUri, relativePath);
-    const buffer = Buffer.from(content, 'utf8');
-    await vscode.workspace.fs.writeFile(uri, buffer);
+    await WebFileSystem.writeFile(uri, content);
   }
 
   /**
-   * Create a directory in the workspace
+   * Create a directory in the workspace (web-compatible)
    */
   protected async createWorkspaceDirectory(relativePath: string): Promise<void> {
     const uri = vscode.Uri.joinPath(this.session.workspaceUri, relativePath);
-    await vscode.workspace.fs.createDirectory(uri);
+    await WebFileSystem.createDirectory(uri);
   }
 
   /**
