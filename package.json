@@ -65,6 +65,36 @@
         "command": "comrade.checkContext",
         "title": "Check Context Freshness",
         "category": "Comrade"
+      },
+      {
+        "command": "comrade.cancelOperation",
+        "title": "Cancel Current Operation",
+        "category": "Comrade"
+      },
+      {
+        "command": "comrade.openApiConfig",
+        "title": "Open API Configuration",
+        "category": "Comrade"
+      },
+      {
+        "command": "comrade.openMcpConfig",
+        "title": "Open MCP Configuration",
+        "category": "Comrade"
+      },
+      {
+        "command": "comrade.openSettings",
+        "title": "Open Comrade Settings",
+        "category": "Comrade"
+      },
+      {
+        "command": "comrade.showErrorRecovery",
+        "title": "Show Error Recovery Options",
+        "category": "Comrade"
+      },
+      {
+        "command": "comrade.retryLastOperation",
+        "title": "Retry Last Operation",
+        "category": "Comrade"
       }
     ],
     "views": {

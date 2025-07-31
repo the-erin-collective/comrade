@@ -65,7 +65,32 @@ export interface PhaseAlert {
     text: string;
     action: () => void;
   };
-  type: 'info' | 'warning' | 'success';
+  type: 'info' | 'warning' | 'success' | 'error';
+  dismissible?: boolean;
+  persistent?: boolean;
+}
+
+export interface ProgressState {
+  isActive: boolean;
+  message: string;
+  cancellable: boolean;
+  sessionId: string;
+}
+
+export interface ErrorState {
+  message: string;
+  code: string;
+  recoverable: boolean;
+  suggestedFix?: string;
+  configurationLink?: string;
+  timestamp: Date;
+  sessionId: string;
+}
+
+export interface TimeoutState {
+  message: string;
+  allowExtension: boolean;
+  sessionId: string;
 }
 
 export interface ContextItem {

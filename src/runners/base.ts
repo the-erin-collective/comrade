@@ -17,6 +17,21 @@ export interface RunnerError extends Error {
   code: string;
   recoverable: boolean;
   context?: Record<string, any>;
+  suggestedFix?: string;
+  configurationLink?: string;
+}
+
+export interface ErrorRecoveryOptions {
+  retry: boolean;
+  reconfigure: boolean;
+  skip: boolean;
+  abort: boolean;
+}
+
+export interface OperationTimeout {
+  duration: number;
+  message: string;
+  allowExtension: boolean;
 }
 
 /**
@@ -34,9 +49,9 @@ export abstract class BaseRunner {
   }
 
   /**
-   * Execute the runner operation
+   * Execute the runner operation with timeout and cancellation support
    */
-  public async run(): Promise<RunnerResult> {
+  public async run(timeout?: OperationTimeout): Promise<RunnerResult> {
     try {
       // Check if session is cancelled before starting
       if (this.session.isCancelled()) {
@@ -48,7 +63,12 @@ export abstract class BaseRunner {
 
       // Validate inputs before execution
       if (!this.validateInputs()) {
-        const error = new Error('Input validation failed');
+        const error = this.createRecoverableError(
+          'Input validation failed',
+          'VALIDATION_ERROR',
+          { runner: this.getRunnerName() }
+        );
+        error.suggestedFix = 'Check your configuration and try again';
         await this.handleError(error);
         return {
           success: false,
@@ -59,8 +79,13 @@ export abstract class BaseRunner {
       // Report start of execution
       this.session.reportProgress(`Starting ${this.getRunnerName()}`);
 
-      // Execute the main operation
-      const result = await this.execute();
+      // Execute with timeout if specified
+      let result: RunnerResult;
+      if (timeout) {
+        result = await this.executeWithTimeout(timeout);
+      } else {
+        result = await this.execute();
+      }
 
       // Check for cancellation after execution
       if (this.session.isCancelled()) {
@@ -81,6 +106,53 @@ export abstract class BaseRunner {
         error: error as Error
       };
     }
+  }
+
+  /**
+   * Execute operation with timeout support
+   */
+  private async executeWithTimeout(timeout: OperationTimeout): Promise<RunnerResult> {
+    return new Promise(async (resolve, reject) => {
+      const timeoutId = setTimeout(async () => {
+        if (timeout.allowExtension) {
+          const shouldExtend = await this.handleTimeout(timeout);
+          if (shouldExtend) {
+            // Extend timeout by same duration
+            setTimeout(() => {
+              reject(new Error(`Operation timed out after extended period: ${timeout.message}`));
+            }, timeout.duration);
+            return;
+          }
+        }
+        reject(new Error(`Operation timed out: ${timeout.message}`));
+      }, timeout.duration);
+
+      try {
+        const result = await this.execute();
+        clearTimeout(timeoutId);
+        resolve(result);
+      } catch (error) {
+        clearTimeout(timeoutId);
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Handle operation timeout with user confirmation
+   */
+  private async handleTimeout(timeout: OperationTimeout): Promise<boolean> {
+    if (process.env.NODE_ENV === 'test') {
+      return false;
+    }
+
+    const action = await vscode.window.showWarningMessage(
+      `${this.getRunnerName()} is taking longer than expected. ${timeout.message}`,
+      'Extend Timeout',
+      'Cancel Operation'
+    );
+
+    return action === 'Extend Timeout';
   }
 
   /**
@@ -121,24 +193,40 @@ export abstract class BaseRunner {
   }
 
   /**
-   * Create a recoverable error
+   * Create a recoverable error with suggested fix
    */
-  protected createRecoverableError(message: string, code: string, context?: Record<string, any>): RunnerError {
+  protected createRecoverableError(
+    message: string, 
+    code: string, 
+    context?: Record<string, any>,
+    suggestedFix?: string,
+    configurationLink?: string
+  ): RunnerError {
     const error = new Error(message) as RunnerError;
     error.code = code;
     error.recoverable = true;
     error.context = context;
+    error.suggestedFix = suggestedFix;
+    error.configurationLink = configurationLink;
     return error;
   }
 
   /**
-   * Create a non-recoverable error
+   * Create a non-recoverable error with suggested fix
    */
-  protected createFatalError(message: string, code: string, context?: Record<string, any>): RunnerError {
+  protected createFatalError(
+    message: string, 
+    code: string, 
+    context?: Record<string, any>,
+    suggestedFix?: string,
+    configurationLink?: string
+  ): RunnerError {
     const error = new Error(message) as RunnerError;
     error.code = code;
     error.recoverable = false;
     error.context = context;
+    error.suggestedFix = suggestedFix;
+    error.configurationLink = configurationLink;
     return error;
   }
 
@@ -200,27 +288,114 @@ export abstract class BaseRunner {
   }
 
   /**
-   * Default error handling implementation
+   * Enhanced error handling with recovery options
    */
-  protected async defaultErrorHandler(error: Error): Promise<void> {
+  protected async defaultErrorHandler(error: Error): Promise<ErrorRecoveryOptions> {
     // Log the error
     console.error(`Error in ${this.getRunnerName()}:`, error);
 
     // Update session state
     this.session.error(`${this.getRunnerName()} failed: ${error.message}`);
 
+    const runnerError = error as RunnerError;
+    const recoveryOptions: ErrorRecoveryOptions = {
+      retry: false,
+      reconfigure: false,
+      skip: false,
+      abort: true
+    };
+
     // Only show error notification in non-test environment
     if (!process.env.NODE_ENV || process.env.NODE_ENV !== 'test') {
-      const action = await vscode.window.showErrorMessage(
-        `${this.getRunnerName()} failed: ${error.message}`,
-        'Retry',
-        'Cancel'
-      );
+      const actions: string[] = [];
+      
+      if (runnerError.recoverable) {
+        actions.push('Retry');
+      }
+      
+      if (runnerError.configurationLink) {
+        actions.push('Configure');
+      }
+      
+      if (runnerError.recoverable) {
+        actions.push('Skip');
+      }
+      
+      actions.push('Abort');
 
-      if (action === 'Retry') {
-        // Mark for retry (implementation depends on specific runner)
-        this.session.metadata.retryRequested = true;
+      let message = `${this.getRunnerName()} failed: ${error.message}`;
+      if (runnerError.suggestedFix) {
+        message += `\n\nSuggested fix: ${runnerError.suggestedFix}`;
+      }
+
+      const action = await vscode.window.showErrorMessage(message, ...actions);
+
+      switch (action) {
+        case 'Retry':
+          recoveryOptions.retry = true;
+          recoveryOptions.abort = false;
+          this.session.metadata.retryRequested = true;
+          break;
+        case 'Configure':
+          recoveryOptions.reconfigure = true;
+          recoveryOptions.abort = false;
+          if (runnerError.configurationLink) {
+            vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(runnerError.configurationLink));
+          }
+          break;
+        case 'Skip':
+          recoveryOptions.skip = true;
+          recoveryOptions.abort = false;
+          break;
+        default:
+          recoveryOptions.abort = true;
       }
     }
+
+    return recoveryOptions;
+  }
+
+  /**
+   * Handle network-related errors with specific recovery options
+   */
+  protected async handleNetworkError(error: Error, endpoint?: string): Promise<ErrorRecoveryOptions> {
+    const networkError = this.createRecoverableError(
+      `Network error: ${error.message}`,
+      'NETWORK_ERROR',
+      { endpoint, originalError: error.message },
+      'Check your internet connection and API configuration',
+      'command:comrade.openApiConfig'
+    );
+
+    return this.defaultErrorHandler(networkError);
+  }
+
+  /**
+   * Handle authentication errors with configuration link
+   */
+  protected async handleAuthError(error: Error, provider?: string): Promise<ErrorRecoveryOptions> {
+    const authError = this.createRecoverableError(
+      `Authentication failed: ${error.message}`,
+      'AUTH_ERROR',
+      { provider, originalError: error.message },
+      'Check your API key configuration',
+      'command:comrade.openApiConfig'
+    );
+
+    return this.defaultErrorHandler(authError);
+  }
+
+  /**
+   * Handle rate limit errors with retry suggestion
+   */
+  protected async handleRateLimitError(error: Error, retryAfter?: number): Promise<ErrorRecoveryOptions> {
+    const rateLimitError = this.createRecoverableError(
+      `Rate limit exceeded: ${error.message}`,
+      'RATE_LIMIT_ERROR',
+      { retryAfter, originalError: error.message },
+      retryAfter ? `Wait ${retryAfter} seconds before retrying` : 'Wait before retrying or switch to a different model'
+    );
+
+    return this.defaultErrorHandler(rateLimitError);
   }
 }

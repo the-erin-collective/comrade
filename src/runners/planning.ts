@@ -124,7 +124,25 @@ export class PlanningRunner extends BaseRunner {
   }
 
   protected async handleError(error: Error): Promise<void> {
-    await this.defaultErrorHandler(error);
+    // Handle specific planning runner errors
+    if (error.message.includes('context not found')) {
+      const contextError = this.createRecoverableError(
+        `Context missing: ${error.message}`,
+        'CONTEXT_MISSING_ERROR',
+        { workspaceUri: this.session.workspaceUri.toString() },
+        'Run context generation first before planning',
+        'command:comrade.runContextAnalysis'
+      );
+      await this.defaultErrorHandler(contextError);
+    } else if (error.message.includes('API') || error.message.includes('network')) {
+      await this.handleNetworkError(error, this.agent.config.endpoint);
+    } else if (error.message.includes('authentication') || error.message.includes('unauthorized')) {
+      await this.handleAuthError(error, this.agent.provider);
+    } else if (error.message.includes('rate limit')) {
+      await this.handleRateLimitError(error);
+    } else {
+      await this.defaultErrorHandler(error);
+    }
   }
 
   /**

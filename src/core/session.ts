@@ -31,6 +31,17 @@ export interface ProgressUpdate {
   message: string;
   increment?: number;
   total?: number;
+  cancellable?: boolean;
+  showInStatusBar?: boolean;
+}
+
+export interface SessionError {
+  message: string;
+  code: string;
+  recoverable: boolean;
+  suggestedFix?: string;
+  configurationLink?: string;
+  timestamp: Date;
 }
 
 export interface ISession {
@@ -49,11 +60,13 @@ export interface ISession {
   // Session management methods
   setState(newState: SessionState, message?: string): void;
   setPhase(phase: PhaseType): void;
-  reportProgress(message: string, increment?: number): void;
+  reportProgress(message: string, increment?: number, options?: { cancellable?: boolean; showInStatusBar?: boolean }): void;
   cancel(): void;
   isCancelled(): boolean;
   complete(): void;
-  error(errorMessage: string): void;
+  error(errorMessage: string, errorDetails?: Partial<SessionError>): void;
+  getLastError(): SessionError | null;
+  clearError(): void;
   dispose(): void;
 }
 
@@ -74,6 +87,7 @@ export class Session implements ISession {
   public metadata: Record<string, any>;
 
   private _cancellationTokenSource: vscode.CancellationTokenSource;
+  private _lastError: SessionError | null = null;
 
   constructor(
     id: string,
@@ -117,10 +131,19 @@ export class Session implements ISession {
   }
 
   /**
-   * Report progress update
+   * Report progress update with enhanced options
    */
-  public reportProgress(message: string, increment?: number): void {
-    this.progress.report({ message, increment });
+  public reportProgress(
+    message: string, 
+    increment?: number, 
+    options?: { cancellable?: boolean; showInStatusBar?: boolean }
+  ): void {
+    this.progress.report({ 
+      message, 
+      increment,
+      cancellable: options?.cancellable,
+      showInStatusBar: options?.showInStatusBar
+    });
   }
 
   /**
@@ -146,12 +169,40 @@ export class Session implements ISession {
   }
 
   /**
-   * Mark session as error
+   * Mark session as error with detailed error information
    */
-  public error(errorMessage: string): void {
+  public error(errorMessage: string, errorDetails?: Partial<SessionError>): void {
     this.setState(SessionState.ERROR, `Session failed: ${errorMessage}`);
+    
+    this._lastError = {
+      message: errorMessage,
+      code: errorDetails?.code || 'UNKNOWN_ERROR',
+      recoverable: errorDetails?.recoverable ?? true,
+      suggestedFix: errorDetails?.suggestedFix,
+      configurationLink: errorDetails?.configurationLink,
+      timestamp: new Date()
+    };
+    
     this.metadata.error = errorMessage;
     this.metadata.errorTime = new Date();
+    this.metadata.lastError = this._lastError;
+  }
+
+  /**
+   * Get the last error that occurred in this session
+   */
+  public getLastError(): SessionError | null {
+    return this._lastError;
+  }
+
+  /**
+   * Clear the last error
+   */
+  public clearError(): void {
+    this._lastError = null;
+    delete this.metadata.error;
+    delete this.metadata.errorTime;
+    delete this.metadata.lastError;
   }
 
   /**

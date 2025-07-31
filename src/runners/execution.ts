@@ -134,6 +134,19 @@ export class ExecutionRunner extends BaseRunner {
   }
 
   protected async handleError(error: Error): Promise<void> {
+    // Handle specific execution runner errors
+    if (error.message.includes('action list not found')) {
+      const planError = this.createRecoverableError(
+        `Action list missing: ${error.message}`,
+        'ACTION_LIST_MISSING_ERROR',
+        { workspaceUri: this.session.workspaceUri.toString() },
+        'Run planning first before execution',
+        'command:comrade.runPlanning'
+      );
+      await this.defaultErrorHandler(planError);
+      return;
+    }
+
     // If recovery is enabled and this is a recoverable error, attempt recovery
     if (this.options.enableRecovery && (error as RunnerError).recoverable && this.recoveryAttempts < 2) {
       this.reportProgress('Attempting recovery through re-planning...');
@@ -147,7 +160,26 @@ export class ExecutionRunner extends BaseRunner {
       }
     }
 
-    await this.defaultErrorHandler(error);
+    // Handle common error types
+    if (error.message.includes('permission') || error.message.includes('access')) {
+      const permissionError = this.createRecoverableError(
+        `Permission error: ${error.message}`,
+        'PERMISSION_ERROR',
+        { workspaceUri: this.session.workspaceUri.toString() },
+        'Check file permissions and workspace access'
+      );
+      await this.defaultErrorHandler(permissionError);
+    } else if (error.message.includes('command not found') || error.message.includes('executable')) {
+      const commandError = this.createRecoverableError(
+        `Command error: ${error.message}`,
+        'COMMAND_ERROR',
+        { workspaceUri: this.session.workspaceUri.toString() },
+        'Check that required tools are installed and available in PATH'
+      );
+      await this.defaultErrorHandler(commandError);
+    } else {
+      await this.defaultErrorHandler(error);
+    }
   }
 
   /**

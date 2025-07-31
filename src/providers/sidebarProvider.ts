@@ -2,12 +2,12 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 
 export interface WebviewMessage {
-  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError';
+  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout';
   payload: any;
 }
 
 export interface ExtensionMessage {
-  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent';
+  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration';
   payload: any;
 }
 
@@ -72,6 +72,18 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
         break;
       case 'switchAgent':
         this._handleSwitchAgent(message.payload);
+        break;
+      case 'cancelOperation':
+        this._handleCancelOperation(message.payload);
+        break;
+      case 'retryOperation':
+        this._handleRetryOperation(message.payload);
+        break;
+      case 'extendTimeout':
+        this._handleExtendTimeout(message.payload);
+        break;
+      case 'openConfiguration':
+        this._handleOpenConfiguration(message.payload);
         break;
       default:
         console.warn('Unknown message type:', message.type);
@@ -138,10 +150,97 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
     console.log('Switch agent:', payload);
   }
 
+  private _handleCancelOperation(payload: { sessionId: string; operationType?: string }) {
+    // TODO: Implement operation cancellation logic
+    console.log('Cancel operation:', payload);
+    
+    // Send confirmation back to webview
+    this.postMessage({
+      type: 'hideProgress',
+      payload: { sessionId: payload.sessionId }
+    });
+  }
+
+  private _handleRetryOperation(payload: { sessionId: string; operationType?: string }) {
+    // TODO: Implement operation retry logic
+    console.log('Retry operation:', payload);
+  }
+
+  private _handleExtendTimeout(payload: { sessionId: string; operationType?: string; duration?: number }) {
+    // TODO: Implement timeout extension logic
+    console.log('Extend timeout:', payload);
+  }
+
+  private _handleOpenConfiguration(payload: { type: string; sessionId?: string }) {
+    // TODO: Implement configuration opening logic
+    console.log('Open configuration:', payload);
+    
+    // Open configuration based on type
+    switch (payload.type) {
+      case 'api':
+        vscode.commands.executeCommand('comrade.openApiConfig');
+        break;
+      case 'agents':
+        vscode.commands.executeCommand('comrade.openAgentConfig');
+        break;
+      case 'mcp':
+        vscode.commands.executeCommand('comrade.openMcpConfig');
+        break;
+      default:
+        vscode.commands.executeCommand('comrade.openSettings');
+    }
+  }
+
   public postMessage(message: WebviewMessage) {
     if (this._view) {
       this._view.webview.postMessage(message);
     }
+  }
+
+  /**
+   * Show progress with cancellation support
+   */
+  public showProgress(sessionId: string, message: string, cancellable: boolean = true) {
+    this.postMessage({
+      type: 'showProgress',
+      payload: { sessionId, message, cancellable }
+    });
+  }
+
+  /**
+   * Hide progress indicator
+   */
+  public hideProgress(sessionId: string) {
+    this.postMessage({
+      type: 'hideProgress',
+      payload: { sessionId }
+    });
+  }
+
+  /**
+   * Show error with recovery options
+   */
+  public showError(sessionId: string, error: {
+    message: string;
+    code: string;
+    recoverable: boolean;
+    suggestedFix?: string;
+    configurationLink?: string;
+  }) {
+    this.postMessage({
+      type: 'showError',
+      payload: { sessionId, error }
+    });
+  }
+
+  /**
+   * Show timeout dialog
+   */
+  public showTimeout(sessionId: string, message: string, allowExtension: boolean = true) {
+    this.postMessage({
+      type: 'showTimeout',
+      payload: { sessionId, message, allowExtension }
+    });
   }
 
   private _getHtmlForWebview(webview: vscode.Webview) {

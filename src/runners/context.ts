@@ -138,7 +138,27 @@ export class ContextRunner extends BaseRunner {
   }
 
   protected async handleError(error: Error): Promise<void> {
-    await this.defaultErrorHandler(error);
+    // Handle specific context runner errors
+    if (error.message.includes('workspace')) {
+      const workspaceError = this.createRecoverableError(
+        `Workspace access error: ${error.message}`,
+        'WORKSPACE_ERROR',
+        { workspaceUri: this.session.workspaceUri.toString() },
+        'Check workspace permissions and try again'
+      );
+      await this.defaultErrorHandler(workspaceError);
+    } else if (error.message.includes('token')) {
+      const tokenError = this.createRecoverableError(
+        `Context too large: ${error.message}`,
+        'TOKEN_LIMIT_ERROR',
+        { workspaceUri: this.session.workspaceUri.toString() },
+        'Try reducing the workspace size or adjusting context limits',
+        'command:comrade.openSettings'
+      );
+      await this.defaultErrorHandler(tokenError);
+    } else {
+      await this.defaultErrorHandler(error);
+    }
   }
 
   /**

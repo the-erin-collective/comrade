@@ -275,22 +275,6 @@ suite('ExecutionRunner Tests', () => {
     assert.ok(state.includes('Test error'));
   });
 });
-    [PhaseType.CONTEXT]: 'context-agent',
-    [PhaseType.PLANNING]: 'planning-agent',
-    [PhaseType.REVIEW]: 'review-agent',
-    [PhaseType.EXECUTION]: 'test-execution-agent',
-    [PhaseType.RECOVERY]: 'recovery-agent'
-  },
-  reasoning: 'Test mapping',
-  confidence: 0.9,
-  alternatives: {
-    [PhaseType.CONTEXT]: [],
-    [PhaseType.PLANNING]: [],
-    [PhaseType.REVIEW]: [],
-    [PhaseType.EXECUTION]: [],
-    [PhaseType.RECOVERY]: []
-  }
-};
 
 // Mock progress reporter
 const mockProgress = {

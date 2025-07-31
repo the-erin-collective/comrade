@@ -6,11 +6,13 @@ import { AgentRegistry } from './core/registry';
 import { PersonalityManager } from './core/personality';
 import { registerContextExampleCommands } from './examples/context-runner-usage';
 import { ComradeSidebarProvider } from './providers/sidebarProvider';
+import { createStatusBarManager, StatusBarManager } from './ui/statusBar';
 
 // Global instances
 let configurationManager: ConfigurationManager;
 let agentRegistry: AgentRegistry;
 let personalityManager: PersonalityManager;
+let statusBarManager: StatusBarManager;
 
 // This method is called when your extension is activated
 export async function activate(context: vscode.ExtensionContext) {
@@ -32,6 +34,9 @@ export async function activate(context: vscode.ExtensionContext) {
             }
         }
         
+        // Initialize status bar manager
+        statusBarManager = createStatusBarManager(context);
+        
         // Register webview provider
         const sidebarProvider = new ComradeSidebarProvider(context);
         context.subscriptions.push(
@@ -43,6 +48,7 @@ export async function activate(context: vscode.ExtensionContext) {
         registerConfigurationCommands(context);
         registerPersonalityCommands(context);
         registerContextExampleCommands(context);
+        registerErrorHandlingCommands(context);
         
         // Add disposables to context
         context.subscriptions.push(agentRegistry, personalityManager);
@@ -217,6 +223,80 @@ Content length: ${personality.content.length} characters`;
     );
 }
 
+/**
+ * Register error handling and cancellation commands
+ */
+function registerErrorHandlingCommands(context: vscode.ExtensionContext) {
+    // Command to open API configuration
+    const openApiConfigCommand = vscode.commands.registerCommand('comrade.openApiConfig', () => {
+        vscode.commands.executeCommand('workbench.action.openSettings', 'comrade.agents');
+    });
+    
+    // Command to open MCP configuration
+    const openMcpConfigCommand = vscode.commands.registerCommand('comrade.openMcpConfig', () => {
+        vscode.commands.executeCommand('workbench.action.openSettings', 'comrade.mcp');
+    });
+    
+    // Command to open general settings
+    const openSettingsCommand = vscode.commands.registerCommand('comrade.openSettings', () => {
+        vscode.commands.executeCommand('workbench.action.openSettings', 'comrade');
+    });
+    
+    // Command to show error recovery options
+    const showErrorRecoveryCommand = vscode.commands.registerCommand('comrade.showErrorRecovery', async (error: any) => {
+        const actions = ['Retry', 'Configure', 'Report Issue'];
+        const selectedAction = await vscode.window.showErrorMessage(
+            `Comrade Error: ${error.message}`,
+            ...actions
+        );
+        
+        switch (selectedAction) {
+            case 'Retry':
+                // Trigger retry logic
+                vscode.commands.executeCommand('comrade.retryLastOperation');
+                break;
+            case 'Configure':
+                // Open relevant configuration
+                if (error.code?.includes('AUTH')) {
+                    vscode.commands.executeCommand('comrade.openApiConfig');
+                } else if (error.code?.includes('MCP')) {
+                    vscode.commands.executeCommand('comrade.openMcpConfig');
+                } else {
+                    vscode.commands.executeCommand('comrade.openSettings');
+                }
+                break;
+            case 'Report Issue':
+                // Open issue reporting
+                vscode.env.openExternal(vscode.Uri.parse('https://github.com/your-repo/comrade/issues/new'));
+                break;
+        }
+    });
+    
+    // Command to retry last operation
+    const retryLastOperationCommand = vscode.commands.registerCommand('comrade.retryLastOperation', () => {
+        // This would be implemented to retry the last failed operation
+        vscode.window.showInformationMessage('Retrying last operation...');
+        statusBarManager.showProgress(
+            {} as any, // Mock session for demo
+            'Retrying operation...'
+        );
+        
+        // Simulate operation completion
+        setTimeout(() => {
+            statusBarManager.hideProgress();
+            statusBarManager.hideProgress();
+        }, 3000);
+    });
+    
+    context.subscriptions.push(
+        openApiConfigCommand,
+        openMcpConfigCommand,
+        openSettingsCommand,
+        showErrorRecoveryCommand,
+        retryLastOperationCommand
+    );
+}
+
 // Export for use by other modules
 export function getConfigurationManager(): ConfigurationManager {
     return configurationManager;
@@ -228,6 +308,10 @@ export function getAgentRegistry(): AgentRegistry {
 
 export function getPersonalityManager(): PersonalityManager {
     return personalityManager;
+}
+
+export function getStatusBarManager(): StatusBarManager {
+    return statusBarManager;
 }
 
 // This method is called when your extension is deactivated

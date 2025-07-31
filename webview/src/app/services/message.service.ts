@@ -1,12 +1,12 @@
 import { Injectable, signal } from '@angular/core';
 
 export interface WebviewMessage {
-  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError';
+  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout';
   payload: any;
 }
 
 export interface ExtensionMessage {
-  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent';
+  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration';
   payload: any;
 }
 
@@ -86,6 +86,34 @@ export class MessageService {
     this.sendMessage({
       type: 'switchAgent',
       payload: { sessionId, agentId, phase }
+    });
+  }
+
+  public cancelOperation(sessionId: string, operationType?: string) {
+    this.sendMessage({
+      type: 'cancelOperation',
+      payload: { sessionId, operationType }
+    });
+  }
+
+  public retryOperation(sessionId: string, operationType?: string) {
+    this.sendMessage({
+      type: 'retryOperation',
+      payload: { sessionId, operationType }
+    });
+  }
+
+  public extendTimeout(sessionId: string, operationType?: string, duration?: number) {
+    this.sendMessage({
+      type: 'extendTimeout',
+      payload: { sessionId, operationType, duration }
+    });
+  }
+
+  public openConfiguration(type: string, sessionId?: string) {
+    this.sendMessage({
+      type: 'openConfiguration',
+      payload: { type, sessionId }
     });
   }
 }

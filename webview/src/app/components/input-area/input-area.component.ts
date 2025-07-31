@@ -148,6 +148,12 @@ import { ContextItem, PhaseAlert } from '../../models/session.model';
       color: var(--background-color);
     }
 
+    .phase-alert.error {
+      background-color: var(--vscode-editorError-background);
+      color: var(--vscode-editorError-foreground);
+      border: 1px solid var(--vscode-editorError-border);
+    }
+
     .phase-alert-actions {
       display: flex;
       gap: 8px;
