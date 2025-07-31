@@ -51,6 +51,13 @@ export class ConfigurationManager {
   }
 
   /**
+   * Reset the singleton instance (for testing purposes)
+   */
+  public static resetInstance(): void {
+    ConfigurationManager.instance = undefined as any;
+  }
+
+  /**
    * Get the current configuration from VS Code settings
    */
   public getConfiguration(): ComradeConfiguration {
