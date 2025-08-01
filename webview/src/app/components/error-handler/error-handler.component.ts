@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, signal } from '@angular/core';
+import { Component, EventEmitter, signal, ChangeDetectionStrategy, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ErrorState, TimeoutState } from '../../models/session.model';
 import { MessageService } from '../../services/message.service';
@@ -7,67 +7,59 @@ import { MessageService } from '../../services/message.service';
   selector: 'app-error-handler',
   standalone: true,
   imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    @if (errorState) {
-      <div class="error-container" [class.recoverable]="errorState!.recoverable">
+    @if (errorState()) {
+      <div class="error-container" [class.recoverable]="errorState()?.recoverable">
         <div class="error-header">
           <span class="error-icon">⚠️</span>
           <span class="error-title">Operation Failed</span>
           <button class="error-close" (click)="dismissError()" aria-label="Dismiss error">×</button>
         </div>
-        
         <div class="error-content">
-          <p class="error-message">{{ errorState!.message }}</p>
-          
-          @if (errorState!.suggestedFix) {
+          <p class="error-message">{{ errorState()?.message }}</p>
+          @if (errorState()?.suggestedFix) {
             <div class="error-suggestion">
               <span class="suggestion-icon">💡</span>
-              <span class="suggestion-text">{{ errorState!.suggestedFix }}</span>
+              <span class="suggestion-text">{{ errorState()?.suggestedFix }}</span>
             </div>
           }
         </div>
-        
         <div class="error-actions">
-          @if (errorState!.recoverable) {
+          @if (errorState()?.recoverable) {
             <button class="error-btn retry-btn" (click)="retryOperation()">
               <span class="btn-icon">🔄</span>
               Retry
             </button>
           }
-          
-          @if (errorState!.configurationLink) {
+          @if (errorState()?.configurationLink) {
             <button class="error-btn config-btn" (click)="openConfiguration()">
               <span class="btn-icon">⚙️</span>
               Configure
             </button>
           }
-          
           <button class="error-btn dismiss-btn" (click)="dismissError()">
             Dismiss
           </button>
         </div>
       </div>
     }
-
-    @if (timeoutState) {
+    @if (timeoutState()) {
       <div class="timeout-container">
         <div class="timeout-header">
           <span class="timeout-icon">⏱️</span>
           <span class="timeout-title">Operation Taking Longer Than Expected</span>
         </div>
-        
         <div class="timeout-content">
-          <p class="timeout-message">{{ timeoutState!.message }}</p>
+          <p class="timeout-message">{{ timeoutState()?.message }}</p>
         </div>
-        
         <div class="timeout-actions">
-          @if (timeoutState!.allowExtension) {
+          @if (timeoutState()?.allowExtension) {
             <button class="timeout-btn extend-btn" (click)="extendTimeout()">
               <span class="btn-icon">⏰</span>
               Extend Timeout
             </button>
           }
-          
           <button class="timeout-btn cancel-btn" (click)="cancelOperation()">
             <span class="btn-icon">✖️</span>
             Cancel Operation
@@ -264,33 +256,33 @@ import { MessageService } from '../../services/message.service';
   `]
 })
 export class ErrorHandlerComponent {
-  @Input() errorState: ErrorState | null = null;
-  @Input() timeoutState: TimeoutState | null = null;
-  
-  @Output() errorDismissed = new EventEmitter<void>();
-  @Output() operationRetried = new EventEmitter<void>();
-  @Output() configurationOpened = new EventEmitter<string>();
-  @Output() timeoutExtended = new EventEmitter<void>();
-  @Output() operationCancelled = new EventEmitter<void>();
+  errorState = input<ErrorState | null>(null);
+  timeoutState = input<TimeoutState | null>(null);
+
+  errorDismissed = output<void>();
+  operationRetried = output<void>();
+  configurationOpened = output<string>();
+  timeoutExtended = output<void>();
+  operationCancelled = output<void>();
 
   constructor(private messageService: MessageService) {}
 
   public dismissError() {
-    this.errorState = null;
+    // No direct mutation of input signal, just emit
     this.errorDismissed.emit();
   }
 
   public retryOperation() {
-    const error = this.errorState;
+    const error = this.errorState();
     if (error) {
       this.messageService.retryOperation(error.sessionId);
-      this.dismissError();
+      this.errorDismissed.emit();
       this.operationRetried.emit();
     }
   }
 
   public openConfiguration() {
-    const error = this.errorState;
+    const error = this.errorState();
     if (error?.configurationLink) {
       // Extract configuration type from link
       const configType = this.extractConfigType(error.configurationLink);
@@ -300,31 +292,28 @@ export class ErrorHandlerComponent {
   }
 
   public extendTimeout() {
-    const timeout = this.timeoutState;
+    const timeout = this.timeoutState();
     if (timeout) {
       this.messageService.extendTimeout(timeout.sessionId);
-      this.timeoutState = null;
       this.timeoutExtended.emit();
     }
   }
 
   public cancelOperation() {
-    const timeout = this.timeoutState;
-    const error = this.errorState;
+    const timeout = this.timeoutState();
+    const error = this.errorState();
     const sessionId = timeout?.sessionId || error?.sessionId;
-    
+
     if (sessionId) {
       this.messageService.cancelOperation(sessionId);
-      this.timeoutState = null;
-      this.errorState = null;
       this.operationCancelled.emit();
     }
   }
 
   private extractConfigType(configurationLink: string): string {
-    if (configurationLink.includes('api')) return 'api';
-    if (configurationLink.includes('agent')) return 'agents';
-    if (configurationLink.includes('mcp')) return 'mcp';
+    if (configurationLink.includes('api')) { return 'api'; }
+    if (configurationLink.includes('agent')) { return 'agents'; }
+    if (configurationLink.includes('mcp')) { return 'mcp'; }
     return 'general';
   }
 }

@@ -1,102 +1,69 @@
 # Comrade Extension Test Suite
 
-This directory contains a comprehensive test suite for the Comrade VS Code extension, covering unit tests, integration tests, and error scenario testing.
+This directory contains a comprehensive test suite for the Comrade VS Code extension, covering all aspects of the system from unit tests to integration tests.
 
 ## Test Structure
 
-```
-src/test/
-├── mocks/                    # Mock data and utilities
-│   ├── agents.ts            # Mock agent configurations and instances
-│   ├── llm-responses.ts     # Mock LLM responses for consistent testing
-│   ├── workspace-data.ts    # Mock workspace contexts and action lists
-│   └── session-data.ts      # Mock session configurations and scenarios
-├── unit/                    # Unit tests
-│   ├── enhanced-registry.test.ts    # Comprehensive AgentRegistry tests
-│   ├── enhanced-chat.test.ts        # Comprehensive ChatBridge tests
-│   └── error-scenarios.test.ts      # Error handling and recovery tests
-├── integration/             # Integration tests
-│   ├── workflow.test.ts     # Complete workflow testing
-│   └── extension.test.ts    # VS Code extension integration tests
-├── suite/                   # Test runner configuration
-│   └── index.ts            # Test suite loader
-└── runTests.ts             # Test runner entry point
-```
+### Unit Tests (`unit/`)
+- **enhanced-chat.test.ts**: Comprehensive ChatBridge tests with error scenarios and recovery mechanisms
+- **enhanced-config.test.ts**: Configuration system tests with validation and persistence
+- **enhanced-registry.test.ts**: AgentRegistry tests with capability filtering and error handling
+- **error-scenarios.test.ts**: Comprehensive error handling and recovery mechanism tests
+
+### Integration Tests (`integration/`)
+- **workflow.test.ts**: Complete workflow tests (context → planning → execution)
+- **extension.test.ts**: VS Code extension integration tests
+
+### Mock Data (`mocks/`)
+- **agents.ts**: Mock agent configurations and instances
+- **llm-responses.ts**: Mock LLM responses for consistent testing
+- **workspace-data.ts**: Mock workspace contexts and action lists
+- **session-data.ts**: Mock session data and configurations
+
+### Core Tests (Root Level)
+- **registry.test.ts**: Basic AgentRegistry functionality
+- **config.test.ts**: Basic configuration management
+- **chat.test.ts**: Basic ChatBridge functionality
+- **personality.test.ts**: Personality system tests
+- **runner.test.ts**: Base runner functionality
+- **context-runner.test.ts**: Context generation tests
+- **planning-runner.test.ts**: Planning runner tests
+- **execution-runner.test.ts**: Execution runner tests
+- **error-handling.test.ts**: Error handling tests
+- **webcompat.test.ts**: Web compatibility tests
 
 ## Test Categories
 
 ### 1. Unit Tests
-
-#### AgentRegistry Tests (`enhanced-registry.test.ts`)
-- Agent loading and configuration validation
-- Agent filtering by capabilities and phases
-- Availability checking and health monitoring
-- Error handling for configuration failures
-- Performance testing with large agent sets
-- Registry statistics and monitoring
-
-#### ChatBridge Tests (`enhanced-chat.test.ts`)
-- Provider-specific error handling (OpenAI, Anthropic, Ollama, Custom)
-- Retry and recovery mechanisms with exponential backoff
-- Request/response validation
-- Streaming support and cancellation
-- Performance and resource management
-- Provider-specific features (function calling, system messages)
-
-#### Error Scenarios Tests (`error-scenarios.test.ts`)
-- Network and connectivity errors (timeouts, DNS, SSL, proxy)
-- Authentication and authorization errors (expired keys, permissions, quotas)
-- Resource and capacity errors (overload, context length, memory pressure)
-- Data corruption and validation errors
-- Concurrency and race condition handling
-- Recovery mechanisms (retry, circuit breaker, graceful degradation)
+Focus on individual components in isolation:
+- Agent registry functionality
+- Configuration validation and persistence
+- Chat bridge communication
+- Error handling mechanisms
+- Recovery strategies
 
 ### 2. Integration Tests
+Test complete workflows and component interactions:
+- Full context → planning → execution workflows
+- VS Code extension lifecycle
+- Multi-agent coordination
+- Error recovery across phases
+- MCP tool integration
 
-#### Workflow Tests (`workflow.test.ts`)
-- Complete workflow: context → planning → execution
-- Context generation failure handling
-- Planning iteration and refinement
-- Execution with dependency resolution
-- Session cancellation during workflow
-- Agent assignment and switching
-- Error recovery during execution
-- Workspace context integration
+### 3. Error Scenario Tests
+Comprehensive error handling coverage:
+- Network failures and timeouts
+- API errors (rate limits, authentication, quotas)
+- File system permission errors
+- Session cancellation and timeout
+- Recovery mechanisms and fallback strategies
 
-#### Extension Tests (`extension.test.ts`)
-- Extension activation and deactivation
-- Command registration and execution
-- Agent configuration commands
-- Connectivity testing commands
-- Personality configuration
-- Context analysis commands
-- Error recovery commands
-- Workspace configuration changes
-- Sidebar webview provider registration
-
-## Mock Data System
-
-The test suite uses a comprehensive mock data system to ensure consistent and reliable testing:
-
-### Mock Agents (`mocks/agents.ts`)
-- Predefined agent configurations with various capabilities
-- Mock agent instances with controllable availability
-- Specialized agents for different test scenarios
-
-### Mock LLM Responses (`mocks/llm-responses.ts`)
-- Realistic LLM responses for different scenarios
-- Error responses for testing failure cases
-- Provider-specific response formats
-
-### Mock Workspace Data (`mocks/workspace-data.ts`)
-- Sample project structures (React, Node.js, Python)
-- Mock dependencies and context summaries
-- Action lists for different scenarios
-
-### Mock Session Data (`mocks/session-data.ts`)
-- Session requirements for different complexity levels
-- Agent mappings for various scenarios
-- Session state transition scenarios
+### 4. Mock Data and Utilities
+Consistent test data and utilities:
+- Mock agent configurations with various capabilities
+- Predefined LLM responses for different scenarios
+- Sample workspace structures and action lists
+- Session state management utilities
 
 ## Running Tests
 
@@ -105,129 +72,188 @@ The test suite uses a comprehensive mock data system to ensure consistent and re
 npm run test:all
 ```
 
-### Unit Tests Only
+### Comprehensive Test Suite
 ```bash
+npm run test:comprehensive
+```
+
+### Individual Test Categories
+```bash
+# Unit tests only
 npm run test:unit
-```
 
-### Integration Tests Only
-```bash
+# Integration tests only
 npm run test:integration
+
+# Specific test files
+npm run test:config
+npm run test:chat
+npm run test:registry
+npm run test:workflow
+npm run test:extension
+npm run test:error-scenarios
 ```
 
-### VS Code Test Runner
+### Development Testing
 ```bash
-npm test
+# Watch mode for continuous testing
+npm run test:watch
+
+# Coverage reporting
+npm run test:coverage
 ```
 
 ## Test Configuration
 
-### Mocha Configuration
-- UI: TDD (Test-Driven Development)
-- Timeout: 20 seconds for integration tests, 10 seconds for unit tests
-- Color output enabled
+### Timeouts
+- Unit tests: 15 seconds
+- Integration tests: 30 seconds
+- Error scenario tests: 20 seconds
 
-### VS Code Test Configuration (`.vscode-test.mjs`)
-- Test files: `out/test/**/*.test.js`
-- Workspace folder: `./test-workspace`
-- Mocha UI: TDD
-- Timeout: 20 seconds
+### Reporters
+- Default: `spec` reporter for detailed output
+- Coverage: `nyc` for code coverage analysis
 
-## Writing New Tests
+### Environment Variables
+- `TEST_GREP`: Filter tests by pattern
+- `TEST_RETRIES`: Number of retries for flaky tests
 
-### Unit Test Example
+## Test Requirements Coverage
+
+The test suite covers all requirements specified in task 14:
+
+### ✅ Unit Tests for Core Components
+- **AgentRegistry**: Capability filtering, availability checking, error handling
+- **ChatBridge**: Provider communication, error scenarios, retry mechanisms
+- **Configuration System**: Validation, persistence, API key management
+
+### ✅ Integration Tests for Complete Workflows
+- **Context → Planning → Execution**: Full workflow with real component interaction
+- **Multi-agent Coordination**: Different agents for different phases
+- **Error Recovery**: Cross-phase error handling and recovery
+
+### ✅ Mock LLM Responses and Test Data
+- **Consistent Responses**: Predefined responses for different scenarios
+- **Error Scenarios**: Mock failures for testing error handling
+- **Test Data**: Comprehensive mock data for all components
+
+### ✅ VS Code Extension Integration Tests
+- **Extension Lifecycle**: Activation, deactivation, command registration
+- **Webview Communication**: Message passing and UI integration
+- **File System Integration**: Workspace operations and permissions
+- **Configuration Integration**: VS Code settings and secret storage
+
+### ✅ Error Scenarios and Recovery Mechanisms
+- **Network Errors**: Timeouts, DNS failures, connection issues
+- **API Errors**: Rate limits, authentication, quota exceeded
+- **System Errors**: File permissions, workspace access
+- **Recovery Strategies**: Circuit breaker, exponential backoff, graceful degradation
+
+## Test Quality Metrics
+
+### Coverage Goals
+- **Unit Tests**: >90% code coverage for core components
+- **Integration Tests**: >80% workflow coverage
+- **Error Scenarios**: >95% error path coverage
+
+### Performance Benchmarks
+- **Unit Tests**: <100ms per test average
+- **Integration Tests**: <5s per test average
+- **Total Suite**: <5 minutes execution time
+
+### Reliability Standards
+- **Flaky Test Rate**: <1% of total tests
+- **False Positive Rate**: <0.1% of test runs
+- **Test Isolation**: All tests must be independent
+
+## Mock Data Structure
+
+### Agent Configurations
 ```typescript
-import * as assert from 'assert';
-import * as sinon from 'sinon';
-import { YourClass } from '../path/to/class';
-import { mockData } from '../mocks';
-
-suite('YourClass Tests', () => {
-  let sandbox: sinon.SinonSandbox;
-  let instance: YourClass;
-
-  setup(() => {
-    sandbox = sinon.createSandbox();
-    instance = new YourClass();
-  });
-
-  teardown(() => {
-    sandbox.restore();
-  });
-
-  test('should do something', () => {
-    // Test implementation
-    assert.ok(true);
-  });
-});
+// Basic, intermediate, and advanced capability profiles
+// Multiple provider types (OpenAI, Anthropic, Ollama, Custom)
+// Various specializations and cost tiers
 ```
 
-### Integration Test Example
+### LLM Responses
 ```typescript
-import * as assert from 'assert';
-import * as vscode from 'vscode';
-import { createMockSession } from '../mocks/session-data';
-
-suite('Integration Tests', () => {
-  test('should complete workflow', async () => {
-    const { session } = createMockSession();
-    
-    try {
-      // Test implementation
-      assert.ok(true);
-    } finally {
-      session.dispose();
-    }
-  });
-});
+// Success scenarios for each phase
+// Error responses for different failure types
+// Streaming responses for real-time testing
 ```
 
-## Test Coverage
-
-The test suite aims for comprehensive coverage of:
-
-- ✅ Core functionality (AgentRegistry, ChatBridge, Configuration)
-- ✅ Error scenarios and recovery mechanisms
-- ✅ Integration workflows
-- ✅ VS Code extension integration
-- ✅ Mock data consistency
-- ✅ Performance and resource management
-- ✅ Concurrency and race conditions
-- ✅ Provider-specific features
-
-## Continuous Integration
-
-Tests are designed to run in CI environments with:
-- No external dependencies (all mocked)
-- Deterministic behavior
-- Reasonable execution time
-- Clear failure reporting
-
-## Debugging Tests
-
-### VS Code Debugging
-1. Set breakpoints in test files
-2. Run "Extension Tests" debug configuration
-3. Tests will pause at breakpoints
-
-### Console Debugging
+### Workspace Data
 ```typescript
-console.log('Debug info:', variable);
+// React TypeScript project structure
+// Node.js Express API structure
+// Python Flask application structure
 ```
 
-### Sinon Debugging
+### Session Data
 ```typescript
-console.log('Stub call count:', stub.callCount);
-console.log('Stub call args:', stub.getCall(0).args);
+// Different complexity levels (simple, moderate, complex)
+// Various agent assignment strategies
+// Error and recovery scenarios
 ```
 
 ## Best Practices
 
-1. **Use Mocks**: Always use mock data instead of real external services
-2. **Clean Setup/Teardown**: Reset state between tests
-3. **Descriptive Names**: Use clear, descriptive test names
-4. **Single Responsibility**: Each test should test one specific behavior
-5. **Error Testing**: Include both success and failure scenarios
-6. **Resource Cleanup**: Dispose of resources in teardown/finally blocks
-7. **Async Handling**: Properly handle async operations with await
-8. **Deterministic**: Tests should produce consistent results
+### Test Organization
+1. **Arrange-Act-Assert**: Clear test structure
+2. **Descriptive Names**: Tests describe what they verify
+3. **Single Responsibility**: Each test verifies one behavior
+4. **Proper Cleanup**: All resources cleaned up after tests
+
+### Mock Usage
+1. **Consistent Data**: Use shared mock data across tests
+2. **Realistic Scenarios**: Mocks reflect real-world conditions
+3. **Error Simulation**: Include failure scenarios in mocks
+4. **Performance**: Mocks don't introduce unnecessary delays
+
+### Error Testing
+1. **Comprehensive Coverage**: Test all error paths
+2. **Recovery Verification**: Ensure recovery mechanisms work
+3. **User Experience**: Verify error messages are helpful
+4. **Monitoring**: Test error tracking and reporting
+
+## Continuous Integration
+
+### Pre-commit Hooks
+- Run unit tests before commits
+- Lint and format test files
+- Validate test coverage thresholds
+
+### CI Pipeline
+1. **Fast Feedback**: Unit tests run first
+2. **Parallel Execution**: Integration tests run in parallel
+3. **Coverage Reporting**: Generate and publish coverage reports
+4. **Failure Analysis**: Detailed failure reporting and logs
+
+### Quality Gates
+- All tests must pass before merge
+- Coverage thresholds must be maintained
+- No new flaky tests introduced
+- Performance benchmarks met
+
+## Troubleshooting
+
+### Common Issues
+1. **Timeout Errors**: Increase timeout for slow operations
+2. **Mock Failures**: Verify mock data matches expected format
+3. **VS Code API Issues**: Ensure proper mocking of VS Code APIs
+4. **Async Test Issues**: Use proper async/await patterns
+
+### Debug Mode
+```bash
+# Run tests with debug output
+DEBUG=* npm run test:unit
+
+# Run specific test with debugging
+npm run test:unit -- --grep "specific test name"
+```
+
+### Test Isolation
+- Each test creates fresh instances
+- Singletons are reset between tests
+- No shared state between test suites
+- Proper cleanup in teardown methods

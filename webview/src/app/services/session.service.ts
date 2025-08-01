@@ -1,3 +1,4 @@
+import { Observable, of } from 'rxjs';
 import { Injectable, signal, computed, effect } from '@angular/core';
 import { SessionTab, ConversationSession, ConfigurationSession, SessionState, ChatMessage } from '../models/session.model';
 import { MessageService } from './message.service';
@@ -23,6 +24,25 @@ export class SessionService {
   constructor(private messageService: MessageService) {
     this.setupMessageHandling();
     this.loadPersistedState();
+  }
+
+  // Observable-based API for NgRx integration
+  public getSessions(): Observable<ConversationSession[]> {
+    // Filter only conversation sessions
+    const sessions = Array.from(this.sessionsMap().values()).filter(
+      (s): s is ConversationSession => s.type === 'conversation'
+    );
+    return of(sessions);
+  }
+
+  public createSession$(type: 'conversation' | 'configuration' = 'conversation'): Observable<ConversationSession> {
+    this.createSession(type);
+    // Find the most recently added conversation session
+    const sessions = Array.from(this.sessionsMap().values()).filter(
+      (s): s is ConversationSession => s.type === 'conversation'
+    );
+    const newSession = sessions[sessions.length - 1];
+    return of(newSession);
   }
   
   private setupMessageHandling() {

@@ -11,6 +11,9 @@ export class AgentRegistry {
   private configManager: ConfigurationManager;
   private agents: Map<string, IAgent> = new Map();
   private configurationChangeListener: vscode.Disposable | undefined;
+  private _availabilityCache: Map<string, { available: boolean; timestamp: number; ttl: number; promise?: Promise<boolean> }> = new Map();
+  private _pendingAvailabilityChecks: Map<string, Promise<boolean>> = new Map();
+  private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
   private constructor(configManager: ConfigurationManager) {
     this.configManager = configManager;
@@ -152,20 +155,51 @@ export class AgentRegistry {
   }
 
   /**
-   * Check if an agent is available (connected and configured)
+   * Check if an agent is available (connected and configured) with caching
    */
   public async isAgentAvailable(agentId: string): Promise<boolean> {
+    // Check cache first
+    const cached = this._availabilityCache.get(agentId);
+    if (cached && Date.now() - cached.timestamp < cached.ttl) {
+      return cached.available;
+    }
+
+    // Check if there's already a pending request for this agent
+    if (this._pendingAvailabilityChecks.has(agentId)) {
+      // Wait for the pending request to complete
+      return await this._pendingAvailabilityChecks.get(agentId)!;
+    }
+
     const agent = this.getAgent(agentId);
     if (!agent) {
+      this._cacheAvailability(agentId, false);
       return false;
     }
     
+    // Create a promise for this availability check and cache it
+    const availabilityPromise = this._checkAgentAvailability(agent, agentId);
+    this._pendingAvailabilityChecks.set(agentId, availabilityPromise);
+
     try {
-      return await agent.isAvailable();
+      const available = await availabilityPromise;
+      // Remove pending entry and cache the result
+      this._pendingAvailabilityChecks.delete(agentId);
+      this._cacheAvailability(agentId, available);
+      return available;
     } catch (error) {
+      // Remove pending entry and cache the failure
+      this._pendingAvailabilityChecks.delete(agentId);
       console.error(`Error checking availability for agent ${agentId}:`, error);
+      this._cacheAvailability(agentId, false, 30000); // Cache failures for shorter time
       return false;
     }
+  }
+
+  /**
+   * Internal method to check agent availability
+   */
+  private async _checkAgentAvailability(agent: IAgent, agentId: string): Promise<boolean> {
+    return await agent.isAvailable();
   }
 
   /**
@@ -667,11 +701,48 @@ export class AgentRegistry {
   }
 
   /**
+   * Cache availability result
+   */
+  private _cacheAvailability(agentId: string, available: boolean, customTtl?: number): void {
+    this._availabilityCache.set(agentId, {
+      available,
+      timestamp: Date.now(),
+      ttl: customTtl || this.CACHE_TTL
+    });
+  }
+
+  /**
+   * Clear availability cache for an agent
+   */
+  public clearAvailabilityCache(agentId?: string): void {
+    if (agentId) {
+      this._availabilityCache.delete(agentId);
+      this._pendingAvailabilityChecks.delete(agentId);
+    } else {
+      this._availabilityCache.clear();
+      this._pendingAvailabilityChecks.clear();
+    }
+  }
+
+  /**
+   * Get cached availability status (for testing)
+   */
+  public getCachedAvailability(agentId: string): boolean | null {
+    const cached = this._availabilityCache.get(agentId);
+    if (cached && Date.now() - cached.timestamp < cached.ttl) {
+      return cached.available;
+    }
+    return null;
+  }
+
+  /**
    * Dispose of resources
    */
   public dispose(): void {
     if (this.configurationChangeListener) {
       this.configurationChangeListener.dispose();
     }
+    this._availabilityCache.clear();
+    this._pendingAvailabilityChecks.clear();
   }
 }

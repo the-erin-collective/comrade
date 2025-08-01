@@ -19,7 +19,7 @@
     (operationCancelled)="onOperationCancelled()">
   </app-error-handler>
 
-  @if (activeSession(); as session) {
+  @if (activeSession$ | async; as session) {
     @if (session.type === 'conversation') {
       <app-chat-output 
         [session]="getConversationSession(session)"

@@ -24,6 +24,10 @@ suite('Enhanced AgentRegistry Tests', () => {
   let chatBridge: ChatBridge;
 
   setup(async () => {
+    // Reset singletons FIRST to ensure clean state
+    AgentRegistry.resetInstance();
+    ConfigurationManager.resetInstance();
+    
     sandbox = sinon.createSandbox();
     
     // Mock secret storage
@@ -42,8 +46,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       mockAgentConfigurations.map(createMockAgent)
     );
 
-    // Reset and create registry
-    AgentRegistry.resetInstance();
+    // Create registry
     agentRegistry = AgentRegistry.getInstance(mockConfigManager);
     
     // Create chat bridge

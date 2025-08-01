@@ -82,8 +82,8 @@ export class AgentAssignmentService implements IAgentAssignmentService {
     
     // Validate the assignment
     if (!this.validateAssignment(assignmentResult.mapping, eligibleAgents)) {
-      // Fall back to rule-based assignment
-      return this.performRuleBasedAssignment(context);
+  // Fall back to rule-based assignment
+  return this.performRuleBasedAssignment(context);
     }
 
     return assignmentResult.mapping;
@@ -110,7 +110,9 @@ export class AgentAssignmentService implements IAgentAssignmentService {
     // Validate agent capabilities match phase requirements
     for (const [phase, agentId] of Object.entries(mapping.assignments)) {
       const agent = agents.find(a => a.id === agentId);
-      if (!agent) continue;
+      if (!agent) {
+        continue;
+      }
 
       if (!this.isAgentSuitableForPhase(agent, phase as PhaseType)) {
         return false;
@@ -279,8 +281,12 @@ export class AgentAssignmentService implements IAgentAssignmentService {
     let score = 0;
 
     // Base capability requirements
-    if (criteria.requireVision && !agent.capabilities.hasVision) return 0;
-    if (criteria.requireToolUse && !agent.capabilities.hasToolUse) return 0;
+    if (criteria.requireVision && !agent.capabilities.hasVision) {
+      return 0;
+    }
+    if (criteria.requireToolUse && !agent.capabilities.hasToolUse) {
+      return 0;
+    }
 
     // Phase-specific scoring
     switch (phase) {

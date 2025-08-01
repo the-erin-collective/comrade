@@ -1,14 +1,17 @@
-import { Component, computed } from '@angular/core';
+import { Component, computed, ChangeDetectionStrategy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { SessionService } from '../../services/session.service';
+import { Store, select } from '@ngrx/store';
+import { Observable } from 'rxjs';
+import * as SessionActions from '../../state/session/session.actions';
 
 @Component({
   selector: 'app-session-tabs',
   standalone: true,
   imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="session-tabs">
-      @for (session of sessions(); track session.id) {
+      <ng-container *ngFor="let session of sessions$ | async; trackBy: trackById">
         <button 
           class="session-tab"
           [class.active]="session.isActive"
@@ -21,8 +24,7 @@ import { SessionService } from '../../services/session.service';
             &times;
           </button>
         </button>
-      }
-      
+      </ng-container>
       <div class="session-controls">
         <button 
           class="session-control-btn" 
@@ -122,23 +124,31 @@ import { SessionService } from '../../services/session.service';
   `]
 })
 export class SessionTabsComponent {
-  public sessions = computed(() => this.sessionService.sessions());
-  
-  constructor(private sessionService: SessionService) {}
-  
-  public switchToSession(sessionId: string) {
-    this.sessionService.switchToSession(sessionId);
+  public sessions$: Observable<any[]>;
+
+  constructor(private store: Store<any>) {
+    this.sessions$ = this.store.select(state => state.session.sessions);
   }
-  
+
+  public trackById(index: number, session: any) {
+    return session.id;
+  }
+
+  public switchToSession(sessionId: string) {
+    // Optionally dispatch a switch action here
+    // this.store.dispatch(SessionActions.switchToSession({ sessionId }));
+  }
+
   public closeSession(event: Event, sessionId: string) {
     event.stopPropagation();
-    this.sessionService.closeSession(sessionId);
+    // Optionally dispatch a close action here
+    // this.store.dispatch(SessionActions.closeSession({ sessionId }));
   }
-  
+
   public createNewSession() {
-    this.sessionService.createSession('conversation');
+    this.store.dispatch(SessionActions.createSession({ sessionType: 'conversation' }));
   }
-  
+
   public showSessionHistory() {
     // TODO: Implement session history display
     console.log('Show session history');

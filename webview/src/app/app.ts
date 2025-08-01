@@ -1,4 +1,8 @@
 import { Component, computed, effect, signal } from '@angular/core';
+import { Store } from '@ngrx/store';
+import * as SessionActions from './state/session/session.actions';
+import * as SessionSelectors from './state/session/session.selectors';
+import { Observable } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SessionTabsComponent } from './components/session-tabs/session-tabs.component';
@@ -19,8 +23,8 @@ import { ConversationSession, ContextItem, PhaseAlert, ErrorState, ProgressState
 export class App {
   protected title = 'Comrade';
   
-  public activeSession = computed(() => this.sessionService.activeSession());
-  public sessions = computed(() => this.sessionService.sessions());
+  public sessions$: Observable<any[]>;
+  public activeSession$: Observable<any>;
   public currentMessage = signal('');
   public isLoading = signal(false);
   public loadingMessage = signal('Thinking...');
@@ -36,13 +40,17 @@ export class App {
   
   constructor(
     private sessionService: SessionService,
-    private messageService: MessageService
+    private messageService: MessageService,
+    private store: Store<any>
   ) {
+  this.sessions$ = this.store.select(SessionSelectors.selectSessions);
+  this.activeSession$ = this.store.select(SessionSelectors.selectActiveSession);
+
     // Initialize with a demo session after a short delay
-    effect(() => {
-      if (this.sessions().length === 0) {
+    this.sessions$.subscribe(sessions => {
+      if (sessions.length === 0) {
         setTimeout(() => {
-          this.sessionService.createSession('conversation');
+          this.store.dispatch(SessionActions.createSession({ sessionType: 'conversation' }));
         }, 100);
       }
     });
@@ -57,7 +65,7 @@ export class App {
   }
   
   public createNewSession() {
-    this.sessionService.createSession('conversation');
+    this.store.dispatch(SessionActions.createSession({ sessionType: 'conversation' }));
   }
   
 
@@ -71,17 +79,19 @@ export class App {
   }
   
   public onMessageSubmit(data: { message: string; contextItems: ContextItem[] }) {
-    const activeSession = this.activeSession();
-    if (activeSession) {
-      this.sessionService.sendMessage(activeSession.id, data.message, data.contextItems);
-    }
+    this.activeSession$.subscribe(activeSession => {
+      if (activeSession) {
+        this.sessionService.sendMessage(activeSession.id, data.message, data.contextItems);
+      }
+    }).unsubscribe();
   }
   
   public onAgentChange(agentId: string) {
-    const activeSession = this.activeSession();
-    if (activeSession) {
-      this.messageService.switchAgent(activeSession.id, agentId);
-    }
+    this.activeSession$.subscribe(activeSession => {
+      if (activeSession) {
+        this.messageService.switchAgent(activeSession.id, agentId);
+      }
+    }).unsubscribe();
   }
   
   public onContextAdd(data: { type: string; content?: string }) {
@@ -144,15 +154,16 @@ export class App {
   public onOperationRetried() {
     this.errorState.set(null);
     // Show progress for retry
-    const activeSession = this.activeSession();
-    if (activeSession) {
-      this.progressState.set({
-        isActive: true,
-        message: 'Retrying operation...',
-        cancellable: true,
-        sessionId: activeSession.id
-      });
-    }
+    this.activeSession$.subscribe(activeSession => {
+      if (activeSession) {
+        this.progressState.set({
+          isActive: true,
+          message: 'Retrying operation...',
+          cancellable: true,
+          sessionId: activeSession.id
+        });
+      }
+    }).unsubscribe();
   }
 
   public onConfigurationOpened(configType: string) {
@@ -162,15 +173,16 @@ export class App {
   public onTimeoutExtended() {
     this.timeoutState.set(null);
     // Show progress for extended operation
-    const activeSession = this.activeSession();
-    if (activeSession) {
-      this.progressState.set({
-        isActive: true,
-        message: 'Continuing operation...',
-        cancellable: true,
-        sessionId: activeSession.id
-      });
-    }
+    this.activeSession$.subscribe(activeSession => {
+      if (activeSession) {
+        this.progressState.set({
+          isActive: true,
+          message: 'Continuing operation...',
+          cancellable: true,
+          sessionId: activeSession.id
+        });
+      }
+    }).unsubscribe();
   }
 
   public onOperationCancelled() {

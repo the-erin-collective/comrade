@@ -4,20 +4,19 @@
 
 import * as assert from 'assert';
 import * as sinon from 'sinon';
-import { ChatBridge, ChatBridgeError, ChatMessage, ChatResponse } from '../../core/chat';
-import { IAgent, LLMProvider } from '../../core/agent';
-import { mockAgents, createMockAgent, mockAgentConfigurations } from '../mocks/agents';
-import { getMockResponse, mockLLMResponses } from '../mocks/llm-responses';
+import { ChatBridge, ChatBridgeError, ChatMessage } from '../../core/chat';
+import { createMockAgent, mockAgentConfigurations } from '../mocks/agents';
+import { WebNetworkUtils } from '../../core/webcompat';
 
 suite('Enhanced ChatBridge Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let chatBridge: ChatBridge;
-  let fetchStub: sinon.SinonStub;
+  let makeRequestStub: sinon.SinonStub;
 
   setup(() => {
     sandbox = sinon.createSandbox();
     chatBridge = new ChatBridge();
-    fetchStub = sandbox.stub(global, 'fetch' as any);
+    makeRequestStub = sandbox.stub(WebNetworkUtils, 'makeRequest');
   });
 
   teardown(() => {
@@ -29,21 +28,23 @@ suite('Enhanced ChatBridge Tests', () => {
       const agent = createMockAgent(mockAgentConfigurations[0]); // OpenAI agent
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
+      const mockResponseBody = {
+        error: {
+          message: 'Rate limit exceeded',
+          type: 'rate_limit_error',
+          code: 'rate_limit_exceeded'
+        }
+      };
+
       // Mock rate limit response with retry-after header
-      fetchStub.resolves({
-        ok: false,
+      makeRequestStub.resolves({
         status: 429,
         statusText: 'Too Many Requests',
         headers: {
-          get: (name: string) => name === 'retry-after' ? '60' : null
+          'retry-after': '60'
         },
-        json: sandbox.stub().resolves({
-          error: {
-            message: 'Rate limit exceeded',
-            type: 'rate_limit_error',
-            code: 'rate_limit_exceeded'
-          }
-        })
+        json: async () => mockResponseBody,
+        text: async () => JSON.stringify(mockResponseBody)
       });
 
       try {
@@ -62,10 +63,11 @@ suite('Enhanced ChatBridge Tests', () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
-      fetchStub.resolves({
-        ok: true,
-        status: 200,
-        json: sandbox.stub().resolves({
+      makeRequestStub.resolves({
+        status: 400,
+        statusText: 'Bad Request',
+        headers: {},
+        body: JSON.stringify({
           error: {
             message: 'This model\'s maximum context length is 4097 tokens',
             type: 'invalid_request_error',
@@ -91,15 +93,19 @@ suite('Enhanced ChatBridge Tests', () => {
       });
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
-      fetchStub.resolves({
-        ok: false,
+      const mockResponseBody = {
+        error: {
+          type: 'invalid_request_error',
+          message: 'Invalid request format for Anthropic API'
+        }
+      };
+
+      makeRequestStub.resolves({
         status: 400,
-        json: sandbox.stub().resolves({
-          error: {
-            type: 'invalid_request_error',
-            message: 'Invalid request format for Anthropic API'
-          }
-        })
+        statusText: 'Bad Request',
+        headers: {},
+        json: async () => mockResponseBody,
+        text: async () => JSON.stringify(mockResponseBody)
       });
 
       try {
@@ -119,7 +125,7 @@ suite('Enhanced ChatBridge Tests', () => {
       });
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
-      fetchStub.rejects(new Error('ECONNREFUSED'));
+      makeRequestStub.rejects(new Error('ECONNREFUSED'));
 
       try {
         await chatBridge.sendMessage(agent, messages);
@@ -139,10 +145,19 @@ suite('Enhanced ChatBridge Tests', () => {
       });
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
-      fetchStub.resolves({
-        ok: false,
+      const mockResponseBody = {
+        error: {
+          message: 'Endpoint not found',
+          code: 'not_found'
+        }
+      };
+
+      makeRequestStub.resolves({
         status: 404,
-        statusText: 'Not Found'
+        statusText: 'Not Found',
+        headers: {},
+        json: async () => mockResponseBody,
+        text: async () => JSON.stringify(mockResponseBody)
       });
 
       try {
@@ -150,7 +165,7 @@ suite('Enhanced ChatBridge Tests', () => {
         assert.fail('Should throw ChatBridgeError for 404');
       } catch (error) {
         assert.ok(error instanceof ChatBridgeError);
-        assert.strictEqual(error.code, 'HTTP_ERROR');
+        assert.strictEqual(error.code, 'not_found');
         assert.strictEqual(error.statusCode, 404);
         assert.strictEqual(error.provider, 'custom');
       }
@@ -163,9 +178,9 @@ suite('Enhanced ChatBridge Tests', () => {
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
       // Mock transient network errors followed by success
-      fetchStub.onCall(0).rejects(new Error('Network timeout'));
-      fetchStub.onCall(1).rejects(new Error('Network timeout'));
-      fetchStub.onCall(2).resolves({
+      makeRequestStub.onCall(0).rejects(new Error('Network timeout'));
+      makeRequestStub.onCall(1).rejects(new Error('Network timeout'));
+      makeRequestStub.onCall(2).resolves({
         ok: true,
         status: 200,
         json: sandbox.stub().resolves({
@@ -185,7 +200,7 @@ suite('Enhanced ChatBridge Tests', () => {
 
       assert.strictEqual(result.content, 'Success after retry');
       assert.ok(endTime - startTime >= 300, 'Should implement exponential backoff delays'); // 100 + 200ms delays
-      assert.strictEqual(fetchStub.callCount, 3, 'Should retry failed requests');
+      assert.strictEqual(makeRequestStub.callCount, 3, 'Should retry failed requests');
     });
 
     test('should not retry non-retryable errors', async () => {
@@ -193,7 +208,7 @@ suite('Enhanced ChatBridge Tests', () => {
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
       // Mock authentication error (non-retryable)
-      fetchStub.resolves({
+      makeRequestStub.resolves({
         ok: false,
         status: 401,
         json: sandbox.stub().resolves({
@@ -211,7 +226,7 @@ suite('Enhanced ChatBridge Tests', () => {
       } catch (error) {
         assert.ok(error instanceof ChatBridgeError);
         assert.strictEqual(error.code, 'invalid_api_key');
-        assert.strictEqual(fetchStub.callCount, 1, 'Should not retry authentication errors');
+        assert.strictEqual(makeRequestStub.callCount, 1, 'Should not retry authentication errors');
       }
     });
 
@@ -220,7 +235,7 @@ suite('Enhanced ChatBridge Tests', () => {
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
       // Mock consistent failures
-      fetchStub.resolves({
+      makeRequestStub.resolves({
         ok: false,
         status: 500,
         statusText: 'Internal Server Error'
@@ -239,7 +254,7 @@ suite('Enhanced ChatBridge Tests', () => {
       });
 
       // Circuit breaker implementation would reduce actual network calls
-      assert.ok(fetchStub.callCount >= 1, 'Should make at least one network call');
+      assert.ok(makeRequestStub.callCount >= 1, 'Should make at least one network call');
     });
   });
 
@@ -280,7 +295,7 @@ suite('Enhanced ChatBridge Tests', () => {
       ];
 
       for (const responseData of invalidResponses) {
-        fetchStub.resolves({
+        makeRequestStub.resolves({
           ok: true,
           status: 200,
           json: sandbox.stub().resolves(responseData)
@@ -300,7 +315,7 @@ suite('Enhanced ChatBridge Tests', () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
-      fetchStub.resolves({
+      makeRequestStub.resolves({
         ok: true,
         status: 200,
         json: sandbox.stub().rejects(new SyntaxError('Unexpected token'))
@@ -334,14 +349,18 @@ suite('Enhanced ChatBridge Tests', () => {
         })
       };
 
+      // For streaming, we need to mock fetch directly since makeStreamingRequest uses fetch
+      const fetchStub = sandbox.stub(global, 'fetch' as any);
       fetchStub.resolves({
         ok: true,
         status: 200,
         body: mockStream
       });
 
-      await chatBridge.streamMessage(agent, messages, (chunk) => {
-        chunks.push(chunk);
+      await chatBridge.streamMessage(agent, messages, (chunk, isComplete) => {
+        if (!isComplete && chunk) {
+          chunks.push(chunk);
+        }
       });
 
       assert.deepStrictEqual(chunks, ['Hello', ' world'], 'Should receive streaming chunks');
@@ -358,7 +377,7 @@ suite('Enhanced ChatBridge Tests', () => {
         })
       };
 
-      fetchStub.resolves({
+      makeRequestStub.resolves({
         ok: true,
         status: 200,
         body: mockStream
@@ -393,7 +412,7 @@ suite('Enhanced ChatBridge Tests', () => {
         })
       };
 
-      fetchStub.resolves({
+      makeRequestStub.resolves({
         ok: true,
         status: 200,
         body: mockStream
@@ -422,7 +441,7 @@ suite('Enhanced ChatBridge Tests', () => {
       const messages: ChatMessage[] = [{ role: 'user', content: 'Concurrent test' }];
 
       // Mock successful responses
-      fetchStub.resolves({
+      makeRequestStub.resolves({
         ok: true,
         status: 200,
         json: sandbox.stub().resolves({
@@ -449,7 +468,7 @@ suite('Enhanced ChatBridge Tests', () => {
 
       // Should handle concurrent requests efficiently
       assert.ok(endTime - startTime < 1000, 'Should handle concurrent requests efficiently');
-      assert.strictEqual(fetchStub.callCount, 10, 'Should make all requests');
+      assert.strictEqual(makeRequestStub.callCount, 10, 'Should make all requests');
     });
 
     test('should implement request timeout', async () => {
@@ -457,7 +476,7 @@ suite('Enhanced ChatBridge Tests', () => {
       const messages: ChatMessage[] = [{ role: 'user', content: 'Timeout test' }];
 
       // Mock slow response
-      fetchStub.returns(new Promise(resolve => {
+      makeRequestStub.returns(new Promise(resolve => {
         setTimeout(() => {
           resolve({
             ok: true,
@@ -484,7 +503,7 @@ suite('Enhanced ChatBridge Tests', () => {
 
       // Mock very large response
       const largeContent = 'x'.repeat(1000000); // 1MB of content
-      fetchStub.resolves({
+      makeRequestStub.resolves({
         ok: true,
         status: 200,
         json: sandbox.stub().resolves({
@@ -511,7 +530,7 @@ suite('Enhanced ChatBridge Tests', () => {
       });
       const messages: ChatMessage[] = [{ role: 'user', content: 'Call a function' }];
 
-      fetchStub.resolves({
+      makeRequestStub.resolves({
         ok: true,
         status: 200,
         json: sandbox.stub().resolves({
@@ -557,7 +576,7 @@ suite('Enhanced ChatBridge Tests', () => {
         { role: 'user', content: 'Hello' }
       ];
 
-      fetchStub.resolves({
+      makeRequestStub.resolves({
         ok: true,
         status: 200,
         json: sandbox.stub().resolves({
@@ -573,7 +592,7 @@ suite('Enhanced ChatBridge Tests', () => {
       assert.strictEqual(result.finishReason, 'stop');
       
       // Verify system message was handled correctly in request
-      const requestBody = JSON.parse(fetchStub.getCall(0).args[1].body);
+      const requestBody = JSON.parse(makeRequestStub.getCall(0).args[1].body);
       assert.ok(requestBody.system, 'Should include system parameter for Anthropic');
     });
 
@@ -584,7 +603,7 @@ suite('Enhanced ChatBridge Tests', () => {
       });
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test Ollama' }];
 
-      fetchStub.resolves({
+      makeRequestStub.resolves({
         ok: true,
         status: 200,
         json: sandbox.stub().resolves({
@@ -605,7 +624,7 @@ suite('Enhanced ChatBridge Tests', () => {
       assert.strictEqual(result.content, 'Ollama response');
       
       // Verify parameters were included
-      const requestBody = JSON.parse(fetchStub.getCall(0).args[1].body);
+      const requestBody = JSON.parse(makeRequestStub.getCall(0).args[1].body);
       assert.strictEqual(requestBody.options?.temperature, 0.8);
     });
   });

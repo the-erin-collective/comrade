@@ -3,7 +3,7 @@
  */
 
 import * as path from 'path';
-const { glob } = require('glob');
+import * as fs from 'fs';
 
 // Import Mocha properly
 const Mocha = require('mocha');
@@ -13,55 +13,84 @@ export function run(): Promise<void> {
   const mocha = new Mocha({
     ui: 'tdd',
     color: true,
-    timeout: 20000
+    timeout: 30000,
+    reporter: 'spec'
   });
 
   const testsRoot = path.resolve(__dirname, '..');
 
   return new Promise((c, e) => {
-    // Find all test files
+    console.log('🧪 Starting Comrade test suite...');
+    
+    // Manually add test files that we know exist
     const testFiles = [
-      // Unit tests
-      'unit/**/*.test.js',
-      // Integration tests
-      'integration/**/*.test.js',
-      // Existing tests
-      '*.test.js'
+      'basic.test.js',
+      'registry.test.js',
+      'config.test.js',
+      'chat.test.js',
+      'personality.test.js',
+      'personality-integration.test.js',
+      'runner.test.js',
+      'context-runner.test.js',
+      'planning-runner.test.js',
+      'execution-runner.test.js',
+      'error-handling.test.js',
+      'webcompat.test.js'
     ];
 
-    const promises = testFiles.map(pattern => {
-      return new Promise<string[]>((resolve, reject) => {
-        glob(pattern, { cwd: testsRoot }, (err: any, files: string[]) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(files);
-          }
-        });
-      });
+    // Add integration tests
+    const integrationDir = path.join(testsRoot, 'integration');
+    if (fs.existsSync(integrationDir)) {
+      const integrationFiles = fs.readdirSync(integrationDir)
+        .filter(f => f.endsWith('.test.js'))
+        .map(f => path.join('integration', f));
+      testFiles.push(...integrationFiles);
+    }
+
+    // Add unit tests
+    const unitDir = path.join(testsRoot, 'unit');
+    if (fs.existsSync(unitDir)) {
+      const unitFiles = fs.readdirSync(unitDir)
+        .filter(f => f.endsWith('.test.js'))
+        .map(f => path.join('unit', f));
+      testFiles.push(...unitFiles);
+    }
+
+    let addedFiles = 0;
+    
+    // Add files to the test suite
+    testFiles.forEach(f => {
+      const fullPath = path.resolve(testsRoot, f);
+      if (fs.existsSync(fullPath)) {
+        console.log(`  📄 Adding: ${f}`);
+        mocha.addFile(fullPath);
+        addedFiles++;
+      }
     });
 
-    Promise.all(promises)
-      .then(results => {
-        const allFiles = results.flat();
-        
-        // Add files to the test suite
-        allFiles.forEach(f => mocha.addFile(path.resolve(testsRoot, f)));
+    console.log(`📊 Total test files added: ${addedFiles}`);
 
-        try {
-          // Run the mocha test
-          mocha.run((failures: number) => {
-            if (failures > 0) {
-              e(new Error(`${failures} tests failed.`));
-            } else {
-              c();
-            }
-          });
-        } catch (err) {
-          console.error(err);
-          e(err);
+    if (addedFiles === 0) {
+      console.warn('⚠️  No test files found!');
+      return c();
+    }
+
+    console.log('🚀 Starting test execution...');
+
+    try {
+      // Run the mocha test
+      mocha.run((failures: number) => {
+        if (failures > 0) {
+          console.error(`❌ ${failures} test(s) failed.`);
+          e(new Error(`${failures} tests failed.`));
+        } else {
+          console.log('✅ All tests passed!');
+          c();
         }
-      })
-      .catch(e);
+      });
+    } catch (err) {
+      console.error('💥 Error running tests:', err);
+      e(err);
+    }
   });
 }

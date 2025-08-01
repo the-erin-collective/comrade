@@ -88,6 +88,7 @@ export class Session implements ISession {
 
   private _cancellationTokenSource: vscode.CancellationTokenSource;
   private _lastError: SessionError | null = null;
+  private _timeoutId?: NodeJS.Timeout;
 
   constructor(
     id: string,
@@ -206,9 +207,36 @@ export class Session implements ISession {
   }
 
   /**
+   * Set a timeout for the session
+   */
+  public setTimeout(ms: number): void {
+    if (this._timeoutId) {
+      clearTimeout(this._timeoutId);
+    }
+    this._timeoutId = setTimeout(() => {
+      this.error('Session timeout', {
+        code: 'TIMEOUT',
+        recoverable: true,
+        suggestedFix: 'Try increasing the timeout value or check your network connection'
+      });
+    }, ms);
+  }
+
+  /**
+   * Clear the session timeout
+   */
+  public clearTimeout(): void {
+    if (this._timeoutId) {
+      clearTimeout(this._timeoutId);
+      this._timeoutId = undefined;
+    }
+  }
+
+  /**
    * Dispose resources
    */
   public dispose(): void {
+    this.clearTimeout();
     this._cancellationTokenSource.dispose();
   }
 }

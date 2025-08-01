@@ -22,3 +22,7 @@ export * from './assignment';
 
 // Personality configuration exports
 export * from './personality';
+
+// Tool framework exports
+export * from './tools';
+export * from './tool-manager';

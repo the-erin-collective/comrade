@@ -553,4 +553,295 @@ suite('Workflow Integration Tests', () => {
       session.dispose();
     }
   });
+
+  test('should handle MCP tool integration during execution', async () => {
+    const { session, progress } = createMockSession(
+      'mcp-integration-test',
+      workspaceUri,
+      'toolsRequired',
+      'optimized'
+    );
+
+    // Mock MCP tool responses
+    const fetchStub = sandbox.stub(global, 'fetch' as any);
+    
+    // Mock execution with tool calls
+    fetchStub.resolves({
+      ok: true,
+      status: 200,
+      json: sandbox.stub().resolves({
+        choices: [{
+          message: {
+            content: null,
+            tool_calls: [{
+              id: 'call_123',
+              type: 'function',
+              function: {
+                name: 'create_file',
+                arguments: JSON.stringify({
+                  path: 'src/components/NewComponent.tsx',
+                  content: 'export const NewComponent = () => <div>Hello</div>;'
+                })
+              }
+            }]
+          },
+          finish_reason: 'tool_calls'
+        }],
+        usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 }
+      })
+    });
+
+    try {
+      session.setState(SessionState.EXECUTION);
+      
+      const executionAgent = agentRegistry.getAgent('openai-gpt4')!;
+      const executionRunner = new ExecutionRunner(
+        session, 
+        executionAgent, 
+        'Test personality',
+        { dryRun: true }
+      );
+
+      // Mock action list with MCP tool usage
+      const actionList = createMockActionList('add-authentication');
+      (executionRunner as any).actionList = actionList;
+      (executionRunner as any).loadActionList = async () => {
+        (executionRunner as any).actionList = actionList;
+      };
+
+      const result = await executionRunner.run();
+      
+      assert.strictEqual(result.success, true, 'Execution should succeed with MCP tools');
+      
+      // Verify tool calls were made
+      const toolCalls = fetchStub.getCalls().filter(call => {
+        const body = call.args[1]?.body;
+        return body && (body.includes('tool_calls') || body.includes('function'));
+      });
+      
+      assert.ok(toolCalls.length > 0, 'Should make tool calls during execution');
+
+    } finally {
+      session.dispose();
+    }
+  });
+
+  test('should handle multi-agent workflow with different capabilities', async () => {
+    const { session, progress } = createMockSession(
+      'multi-agent-test',
+      workspaceUri,
+      'complex',
+      'optimized'
+    );
+
+    const fetchStub = sandbox.stub(global, 'fetch' as any);
+
+    try {
+      // Phase 1: Context with fast agent
+      session.setState(SessionState.CONTEXT_GENERATION);
+      const contextAgent = agentRegistry.getAgent(session.agentMapping.assignments.context);
+      assert.ok(contextAgent, 'Context agent should be assigned');
+      
+      fetchStub.onCall(0).resolves({
+        ok: true,
+        status: 200,
+        json: sandbox.stub().resolves({
+          choices: [{ message: { content: 'Context analysis complete' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 }
+        })
+      });
+
+      const contextRunner = new ContextRunner(session, contextAgent, 'Test personality');
+      const contextResult = await contextRunner.run();
+      assert.strictEqual(contextResult.success, true);
+
+      // Phase 2: Planning with advanced agent
+      session.setState(SessionState.PLANNING);
+      const planningAgent = agentRegistry.getAgent(session.agentMapping.assignments.planning);
+      assert.ok(planningAgent, 'Planning agent should be assigned');
+      assert.notStrictEqual(planningAgent.id, contextAgent.id, 'Should use different agents');
+      
+      fetchStub.onCall(1).resolves({
+        ok: true,
+        status: 200,
+        json: sandbox.stub().resolves({
+          choices: [{ message: { content: 'Detailed plan created' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 200, completion_tokens: 100, total_tokens: 300 }
+        })
+      });
+
+      const planningRunner = new PlanningRunner(session, planningAgent, 'Test personality');
+      const planningResult = await planningRunner.run();
+      assert.strictEqual(planningResult.success, true);
+
+      // Phase 3: Execution with tool-capable agent
+      session.setState(SessionState.EXECUTION);
+      const executionAgent = agentRegistry.getAgent(session.agentMapping.assignments.execution);
+      assert.ok(executionAgent, 'Execution agent should be assigned');
+      
+      if (session.requirements.toolsRequired.length > 0) {
+        assert.ok(
+          executionAgent.capabilities.hasToolUse,
+          'Execution agent should have tool capabilities when tools are required'
+        );
+      }
+
+      fetchStub.onCall(2).resolves({
+        ok: true,
+        status: 200,
+        json: sandbox.stub().resolves({
+          choices: [{ message: { content: 'Execution completed' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 150, completion_tokens: 75, total_tokens: 225 }
+        })
+      });
+
+      const executionRunner = new ExecutionRunner(
+        session, 
+        executionAgent, 
+        'Test personality',
+        { dryRun: true }
+      );
+
+      const actionList = createMockActionList('add-authentication');
+      (executionRunner as any).actionList = actionList;
+      (executionRunner as any).loadActionList = async () => {
+        (executionRunner as any).actionList = actionList;
+      };
+
+      const executionResult = await executionRunner.run();
+      assert.strictEqual(executionResult.success, true);
+
+      // Verify different agents were used appropriately
+      assert.ok(fetchStub.callCount >= 3, 'Should make calls for each phase');
+
+    } finally {
+      session.dispose();
+    }
+  });
+
+  test('should handle workflow state persistence and recovery', async () => {
+    const { session, progress } = createMockSession(
+      'persistence-test',
+      workspaceUri,
+      'moderate',
+      'singleAgent'
+    );
+
+    const fetchStub = sandbox.stub(global, 'fetch' as any);
+
+    try {
+      // Start context generation
+      session.setState(SessionState.CONTEXT_GENERATION);
+      
+      // Mock successful context generation
+      fetchStub.resolves({
+        ok: true,
+        status: 200,
+        json: sandbox.stub().resolves({
+          choices: [{ message: { content: 'Context generated' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 }
+        })
+      });
+
+      const contextAgent = agentRegistry.getAgent('openai-gpt4')!;
+      const contextRunner = new ContextRunner(session, contextAgent, 'Test personality');
+      
+      await contextRunner.run();
+      
+      // Verify state persistence
+      assert.strictEqual(session.state, SessionState.CONTEXT_GENERATION);
+      
+      // Simulate session recovery by creating new session with same ID
+      const { session: recoveredSession } = createMockSession(
+        session.id, // Same ID
+        workspaceUri,
+        'moderate',
+        'singleAgent'
+      );
+
+      // Recovered session should be able to continue from where it left off
+      recoveredSession.setState(SessionState.PLANNING);
+      assert.strictEqual(recoveredSession.state, SessionState.PLANNING);
+
+      recoveredSession.dispose();
+
+    } finally {
+      session.dispose();
+    }
+  });
+
+  test('should handle complex error recovery scenarios', async () => {
+    const { session, progress } = createMockSession(
+      'complex-error-recovery-test',
+      workspaceUri,
+      'moderate',
+      'optimized'
+    );
+
+    const fetchStub = sandbox.stub(global, 'fetch' as any);
+
+    try {
+      session.setState(SessionState.EXECUTION);
+      
+      // Mock execution failure followed by recovery
+      fetchStub.onCall(0).resolves({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error'
+      });
+
+      // Mock recovery planning
+      fetchStub.onCall(1).resolves({
+        ok: true,
+        status: 200,
+        json: sandbox.stub().resolves({
+          choices: [{ message: { content: 'Recovery plan created' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 150, completion_tokens: 75, total_tokens: 225 }
+        })
+      });
+
+      // Mock successful retry
+      fetchStub.onCall(2).resolves({
+        ok: true,
+        status: 200,
+        json: sandbox.stub().resolves({
+          choices: [{ message: { content: 'Execution successful after recovery' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 }
+        })
+      });
+
+      const executionAgent = agentRegistry.getAgent('openai-gpt4')!;
+      const executionRunner = new ExecutionRunner(
+        session, 
+        executionAgent, 
+        'Test personality',
+        { 
+          dryRun: true,
+          enableRecovery: true,
+          maxRetries: 3
+        }
+      );
+
+      const actionList = createMockActionList('setup-testing');
+      (executionRunner as any).actionList = actionList;
+      (executionRunner as any).loadActionList = async () => {
+        (executionRunner as any).actionList = actionList;
+      };
+
+      const result = await executionRunner.run();
+      
+      assert.strictEqual(result.success, true, 'Should succeed after complex recovery');
+      assert.ok(fetchStub.callCount >= 2, 'Should make multiple calls for recovery');
+
+      // Verify recovery was attempted
+      const progressReports = progress.getReports();
+      const recoveryReports = progressReports.filter(report => 
+        report.message?.includes('recovery') || report.message?.includes('retry')
+      );
+      assert.ok(recoveryReports.length > 0, 'Should report recovery attempts');
+
+    } finally {
+      session.dispose();
+    }
+  });
 });

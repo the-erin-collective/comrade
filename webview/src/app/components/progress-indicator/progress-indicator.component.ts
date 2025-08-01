@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, signal } from '@angular/core';
+import { Component, EventEmitter, signal, ChangeDetectionStrategy, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ProgressState } from '../../models/session.model';
 import { MessageService } from '../../services/message.service';
@@ -7,8 +7,9 @@ import { MessageService } from '../../services/message.service';
   selector: 'app-progress-indicator',
   standalone: true,
   imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    @if (progressState && progressState!.isActive) {
+  @if (progressState() && progressState()!.isActive) {
       <div class="progress-container">
         <div class="progress-content">
           <div class="progress-spinner">
@@ -16,13 +17,13 @@ import { MessageService } from '../../services/message.service';
           </div>
           
           <div class="progress-info">
-            <span class="progress-message">{{ progressState!.message }}</span>
+            <span class="progress-message">{{ progressState()?.message }}</span>
             <div class="progress-details">
               <span class="progress-status">Processing...</span>
             </div>
           </div>
           
-          @if (progressState!.cancellable) {
+          @if (progressState()?.cancellable) {
             <button 
               class="progress-cancel-btn" 
               (click)="cancelOperation()"
@@ -196,15 +197,14 @@ import { MessageService } from '../../services/message.service';
   `]
 })
 export class ProgressIndicatorComponent {
-  @Input() progressState: ProgressState | null = null;
-  @Input() variant: 'inline' | 'status-bar' = 'inline';
-  
-  @Output() operationCancelled = new EventEmitter<void>();
+  progressState = input<ProgressState | null>(null);
+  variant = input<'inline' | 'status-bar'>('inline');
+  operationCancelled = output<void>();
 
   constructor(private messageService: MessageService) {}
 
   public cancelOperation() {
-    const progress = this.progressState;
+    const progress = this.progressState();
     if (progress && progress.cancellable) {
       this.messageService.cancelOperation(progress.sessionId);
       this.operationCancelled.emit();

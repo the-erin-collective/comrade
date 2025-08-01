@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, OnDestroy, ElementRef, ViewChild, AfterViewChecked, signal, computed } from '@angular/core';
+import { Component, Input, OnInit, OnDestroy, ElementRef, ViewChild, AfterViewChecked, signal, computed, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
@@ -8,6 +8,7 @@ import { ChatMessage, ConversationSession } from '../../models/session.model';
   selector: 'app-chat-output',
   standalone: true,
   imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="chat-output" #chatContainer>
       @if (session && session.messages && session.messages.length > 0) {

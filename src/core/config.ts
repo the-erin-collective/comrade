@@ -179,8 +179,23 @@ export class ConfigurationManager {
   /**
    * Validate and apply defaults to agent configurations
    */
-  private validateAgentConfigurations(agents: AgentConfigurationItem[]): AgentConfigurationItem[] {
-    return agents.map(agent => this.validateAgentConfiguration(agent));
+  private validateAgentConfigurations(agents: AgentConfigurationItem[] | any): AgentConfigurationItem[] {
+    if (!Array.isArray(agents)) {
+      console.warn('Invalid agent configurations: expected array, got', typeof agents);
+      return [];
+    }
+    
+    return agents
+      .filter(agent => agent && typeof agent === 'object')
+      .map(agent => {
+        try {
+          return this.validateAgentConfiguration(agent);
+        } catch (error) {
+          console.warn('Invalid agent configuration:', agent, error);
+          return null;
+        }
+      })
+      .filter((agent): agent is AgentConfigurationItem => agent !== null);
   }
 
   /**
@@ -220,15 +235,25 @@ export class ConfigurationManager {
   /**
    * Validate MCP server configurations
    */
-  private validateMCPServerConfigurations(servers: MCPServerConfig[]): MCPServerConfig[] {
-    return servers.map(server => ({
-      id: server.id || this.generateMCPServerId(),
-      name: server.name || 'Unnamed MCP Server',
-      command: server.command,
-      args: server.args || [],
-      env: server.env,
-      timeout: server.timeout ?? 10000
-    }));
+  private validateMCPServerConfigurations(servers: MCPServerConfig[] | undefined): MCPServerConfig[] {
+    if (!servers || !Array.isArray(servers)) {
+      return [];
+    }
+    
+    return servers.map(server => {
+      if (!server || typeof server !== 'object') {
+        throw new Error('Invalid MCP server configuration: must be an object');
+      }
+      
+      return {
+        id: server.id || this.generateMCPServerId(),
+        name: server.name || 'Unnamed MCP Server',
+        command: server.command || '',
+        args: Array.isArray(server.args) ? server.args : [],
+        env: server.env && typeof server.env === 'object' ? server.env : undefined,
+        timeout: typeof server.timeout === 'number' && server.timeout > 0 ? server.timeout : 10000
+      };
+    }).filter(server => server.command.length > 0); // Filter out servers without commands
   }
 
   /**
@@ -273,6 +298,68 @@ export class ConfigurationManager {
   }
 
   /**
+   * Save agent configuration (implementation for tests)
+   */
+  public async saveAgentConfiguration(agentConfig: AgentConfigurationItem): Promise<void> {
+    await this.addAgent(agentConfig);
+  }
+
+  /**
+   * Remove MCP server configuration
+   */
+  public async removeMcpServerConfiguration(serverId: string): Promise<void> {
+    const config = vscode.workspace.getConfiguration('comrade');
+    const currentServers = config.get<MCPServerConfig[]>('mcp.servers', []);
+    const filteredServers = currentServers.filter(server => server.id !== serverId);
+    await config.update('mcp.servers', filteredServers, vscode.ConfigurationTarget.Global);
+  }
+
+  /**
+   * Get MCP servers configuration
+   */
+  public getMcpServers(): MCPServerConfig[] {
+    const config = this.getConfiguration();
+    return config.mcpServers;
+  }
+
+  /**
+   * Save MCP server configuration
+   */
+  public async saveMcpServerConfiguration(serverConfig: MCPServerConfig): Promise<void> {
+    const config = vscode.workspace.getConfiguration('comrade');
+    const currentServers = config.get<MCPServerConfig[]>('mcp.servers', []);
+    const existingIndex = currentServers.findIndex(s => s.id === serverConfig.id);
+    
+    if (existingIndex >= 0) {
+      currentServers[existingIndex] = serverConfig;
+    } else {
+      currentServers.push(serverConfig);
+    }
+    
+    await config.update('mcp.servers', currentServers, vscode.ConfigurationTarget.Global);
+  }
+
+  /**
+   * Configuration change event handler
+   */
+  public onConfigurationChanged(callback: () => void): vscode.Disposable {
+    return vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration('comrade')) {
+        callback();
+      }
+    });
+  }
+
+  /**
+   * Reload configuration
+   */
+  public async reloadConfiguration(): Promise<void> {
+    // Configuration is automatically reloaded when VS Code settings change
+    // This method is provided for explicit reload requests
+    await this.validateConfigurationOnStartup();
+  }
+
+  /**
    * Validate configuration on startup and show warnings for issues
    */
   public async validateConfigurationOnStartup(): Promise<void> {
@@ -294,6 +381,13 @@ export class ConfigurationManager {
     const duplicateIds = agentIds.filter((id, index) => agentIds.indexOf(id) !== index);
     if (duplicateIds.length > 0) {
       issues.push(`Duplicate agent IDs found: ${duplicateIds.join(', ')}`);
+    }
+
+    // Validate MCP server configurations
+    for (const mcpServer of config.mcpServers) {
+      if (!mcpServer.command) {
+        issues.push(`MCP server "${mcpServer.name}" is missing a command`);
+      }
     }
 
     // Show warnings if issues found
