@@ -6,6 +6,7 @@
  */
 
 import * as vscode from 'vscode';
+import { ChatToolCall } from './chat';
 
 /**
  * JSON Schema definition for tool parameters
@@ -191,6 +192,46 @@ export class ToolRegistry {
    */
   public getToolsByCategory(category: string): ToolDefinition[] {
     return this.getAllTools().filter(tool => tool.category === category);
+  }
+
+  /**
+   * Validate a tool call from AI agent
+   */
+  public validateToolCall(call: ChatToolCall): ValidationResult {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    // Check if tool exists
+    const tool = this.getTool(call.name);
+    if (!tool) {
+      errors.push(`Tool '${call.name}' not found`);
+      return { valid: false, errors, warnings };
+    }
+
+    // Validate call structure
+    if (!call.id || typeof call.id !== 'string') {
+      errors.push('Tool call must have a valid id');
+    }
+
+    if (!call.parameters || typeof call.parameters !== 'object') {
+      errors.push('Tool call must have parameters object');
+      return { valid: false, errors, warnings };
+    }
+
+    // Validate parameters using the tool's schema
+    const paramValidation = ParameterValidator.validate(call.parameters, tool.parameters);
+    if (!paramValidation.valid) {
+      errors.push(...paramValidation.errors);
+    }
+    if (paramValidation.warnings) {
+      warnings.push(...paramValidation.warnings);
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings
+    };
   }
 
   /**
@@ -385,11 +426,242 @@ export class SecurityValidator {
     // Validate parameters for security issues
     this.validateParameterSecurity(parameters, tool.name, errors, warnings);
 
+    // Additional security checks
+    const securityAssessment = this.assessSecurityRisk(tool, parameters, context);
+    warnings.push(...securityAssessment.warnings);
+    
+    if (securityAssessment.blockExecution) {
+      errors.push('Execution blocked due to security policy violations');
+    }
+
     return {
       valid: errors.length === 0,
       errors,
       warnings
     };
+  }
+
+  /**
+   * Assess comprehensive security risk
+   */
+  public static assessSecurityRisk(
+    tool: ToolDefinition,
+    parameters: any,
+    context: ExecutionContext
+  ): {
+    riskScore: number;
+    warnings: string[];
+    blockExecution: boolean;
+    riskFactors: string[];
+  } {
+    const warnings: string[] = [];
+    const riskFactors: string[] = [];
+    let riskScore = 0;
+    let blockExecution = false;
+
+    // Base risk from tool definition
+    switch (tool.security.riskLevel) {
+      case 'high':
+        riskScore += 70;
+        riskFactors.push('High-risk tool category');
+        break;
+      case 'medium':
+        riskScore += 40;
+        riskFactors.push('Medium-risk tool category');
+        break;
+      case 'low':
+        riskScore += 10;
+        riskFactors.push('Low-risk tool category');
+        break;
+    }
+
+    // Security context assessment
+    if (context.security.level === SecurityLevel.RESTRICTED) {
+      riskScore += 20;
+      riskFactors.push('Restricted security context');
+      
+      if (tool.security.riskLevel === 'high') {
+        blockExecution = true;
+        warnings.push('High-risk tools are blocked in restricted mode');
+      }
+    }
+
+    // Parameter-based risk assessment
+    const paramRisk = this.assessParameterRisk(parameters);
+    riskScore += paramRisk.score;
+    warnings.push(...paramRisk.warnings);
+    riskFactors.push(...paramRisk.factors);
+
+    // Environment-based risk
+    if (typeof (global as any).window !== 'undefined') {
+      // Web environment - additional restrictions
+      if (tool.category === 'filesystem' && parameters.path) {
+        warnings.push('File system access in web environment may be limited');
+        riskScore += 10;
+        riskFactors.push('Web environment file access');
+      }
+    }
+
+    // Permission-based risk
+    if (tool.security.permissions) {
+      const highRiskPermissions = [
+        'filesystem.write', 'system.execute', 'network.request', 
+        'vscode.commands', 'git.write'
+      ];
+      
+      const hasHighRiskPerms = tool.security.permissions.some(p => 
+        highRiskPermissions.includes(p)
+      );
+      
+      if (hasHighRiskPerms) {
+        riskScore += 15;
+        riskFactors.push('High-risk permissions required');
+      }
+    }
+
+    // Time-based risk (rapid successive executions)
+    const rapidExecution = this.checkRapidExecution(context.sessionId, tool.name);
+    if (rapidExecution) {
+      riskScore += 10;
+      riskFactors.push('Rapid successive executions detected');
+      warnings.push('Multiple rapid executions of this tool detected');
+    }
+
+    return {
+      riskScore: Math.min(riskScore, 100),
+      warnings,
+      blockExecution,
+      riskFactors
+    };
+  }
+
+  /**
+   * Assess risk from parameters
+   */
+  private static assessParameterRisk(parameters: any): {
+    score: number;
+    warnings: string[];
+    factors: string[];
+  } {
+    const warnings: string[] = [];
+    const factors: string[] = [];
+    let score = 0;
+
+    if (typeof parameters !== 'object' || parameters === null) {
+      return { score, warnings, factors };
+    }
+
+    const paramString = JSON.stringify(parameters).toLowerCase();
+
+    // Dangerous command patterns
+    const dangerousPatterns = [
+      { pattern: /rm\s+-rf|del\s+\/[sq]|format\s+c:/i, warning: 'Destructive file operations', score: 30 },
+      { pattern: /shutdown|reboot|halt/i, warning: 'System control commands', score: 25 },
+      { pattern: /__import__|eval\(|exec\(/i, warning: 'Code execution patterns', score: 20 },
+      { pattern: /\.\.\/|\.\.\\|\.\.\//g, warning: 'Directory traversal patterns', score: 15 },
+      { pattern: /password|secret|token|key|credential/i, warning: 'Sensitive data patterns', score: 10 }
+    ];
+
+    for (const { pattern, warning, score: patternScore } of dangerousPatterns) {
+      if (pattern.test(paramString)) {
+        warnings.push(warning);
+        factors.push(warning);
+        score += patternScore;
+      }
+    }
+
+    // File path analysis
+    if (parameters.path && typeof parameters.path === 'string') {
+      if (parameters.path.startsWith('/') || /^[a-zA-Z]:\\/.test(parameters.path)) {
+        warnings.push('Absolute file path detected');
+        factors.push('Absolute file path usage');
+        score += 15;
+      }
+
+      const sensitiveFiles = [
+        'package.json', '.env', '.git', 'node_modules', 'config',
+        'settings', 'credentials', 'secrets', 'keys'
+      ];
+
+      if (sensitiveFiles.some(file => parameters.path.toLowerCase().includes(file))) {
+        warnings.push('Access to sensitive files detected');
+        factors.push('Sensitive file access');
+        score += 10;
+      }
+    }
+
+    // URL analysis
+    if (parameters.url && typeof parameters.url === 'string') {
+      try {
+        const url = new URL(parameters.url);
+        
+        if (url.protocol !== 'https:') {
+          warnings.push('Non-HTTPS URL detected');
+          factors.push('Insecure protocol');
+          score += 10;
+        }
+
+        // Check for suspicious domains
+        const suspiciousDomains = [
+          'bit.ly', 'tinyurl.com', 'goo.gl', 't.co', 'short.link'
+        ];
+        
+        if (suspiciousDomains.some(domain => url.hostname.includes(domain))) {
+          warnings.push('URL shortener detected');
+          factors.push('URL shortener usage');
+          score += 15;
+        }
+
+        // Check for local/private network access
+        const hostname = url.hostname.toLowerCase();
+        if (hostname === 'localhost' || hostname === '127.0.0.1' ||
+            hostname.startsWith('192.168.') || hostname.startsWith('10.') ||
+            hostname.startsWith('172.')) {
+          warnings.push('Local/private network access detected');
+          factors.push('Local network access');
+          score += 5;
+        }
+      } catch {
+        warnings.push('Invalid URL format');
+        factors.push('Invalid URL format');
+        score += 5;
+      }
+    }
+
+    return { score, warnings, factors };
+  }
+
+  /**
+   * Track execution frequency to detect rapid successive calls
+   */
+  private static executionHistory: Map<string, Date[]> = new Map();
+
+  /**
+   * Check for rapid successive executions
+   */
+  private static checkRapidExecution(sessionId: string, toolName: string): boolean {
+    const key = `${sessionId}:${toolName}`;
+    const now = new Date();
+    const history = this.executionHistory.get(key) || [];
+    
+    // Clean old entries (older than 1 minute)
+    const recentHistory = history.filter(date => 
+      now.getTime() - date.getTime() < 60000
+    );
+    
+    // Add current execution
+    recentHistory.push(now);
+    this.executionHistory.set(key, recentHistory);
+    
+    // Check if more than 5 executions in the last minute
+    return recentHistory.length > 5;
+  }
+
+  /**
+   * Clear execution history (for testing)
+   */
+  public static clearExecutionHistory(): void {
+    this.executionHistory.clear();
   }
 
   private static validateParameterSecurity(

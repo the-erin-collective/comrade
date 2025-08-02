@@ -52,6 +52,231 @@ suite('ChatBridge Tests', () => {
     sinon.restore();
   });
 
+  suite('Web Environment Streaming Fallback', () => {
+    let webCompatibilityStub: sinon.SinonStub;
+
+    setup(() => {
+      // Mock web environment for these tests
+      webCompatibilityStub = sinon.stub(require('../core/webcompat').WebCompatibility, 'isWeb').returns(true);
+      sinon.stub(require('../core/webcompat').WebCompatibility, 'getStreamingSimulationConfig').returns({
+        enabled: true,
+        chunkSize: 10,
+        delay: 10,
+        wordBoundary: true,
+        maxChunks: 50
+      });
+    });
+
+    teardown(() => {
+      webCompatibilityStub.restore();
+    });
+
+    test('should simulate streaming in web environment', async () => {
+      const mockResponse = {
+        choices: [{ message: { content: 'Hello world! This is a test response.' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 }
+      };
+
+      fetchStub.resolves({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify(mockResponse),
+        headers: new Map([['content-type', 'application/json']])
+      });
+
+      const chunks: string[] = [];
+      let completed = false;
+
+      const callback = (chunk: string, isComplete: boolean) => {
+        if (chunk) {
+          chunks.push(chunk);
+        }
+        if (isComplete) {
+          completed = true;
+        }
+      };
+
+      // Mock the makeHttpRequest method to return our test response
+      const makeHttpRequestStub = sinon.stub(chatBridge as any, 'makeHttpRequest').resolves({
+        text: async () => JSON.stringify(mockResponse)
+      });
+
+      try {
+        await (chatBridge as any).makeStreamingRequest(
+          'https://api.openai.com/v1/chat/completions',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: testMessages }),
+            timeout: 30000
+          },
+          callback,
+          'openai'
+        );
+
+        // Verify that streaming simulation worked
+        assert.ok(chunks.length > 1, 'Should have received multiple chunks');
+        assert.strictEqual(completed, true, 'Should have completed');
+        
+        // Verify that all chunks combined equal the original content
+        const combinedContent = chunks.join('');
+        assert.strictEqual(combinedContent, 'Hello world! This is a test response.');
+      } finally {
+        makeHttpRequestStub.restore();
+      }
+    });
+
+    test('should handle empty content gracefully', async () => {
+      const mockResponse = {
+        choices: [{ message: { content: '' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 0, total_tokens: 10 }
+      };
+
+      const chunks: string[] = [];
+      let completed = false;
+
+      const callback = (chunk: string, isComplete: boolean) => {
+        if (chunk) {
+          chunks.push(chunk);
+        }
+        if (isComplete) {
+          completed = true;
+        }
+      };
+
+      const makeHttpRequestStub = sinon.stub(chatBridge as any, 'makeHttpRequest').resolves({
+        text: async () => JSON.stringify(mockResponse)
+      });
+
+      try {
+        await (chatBridge as any).makeStreamingRequest(
+          'https://api.openai.com/v1/chat/completions',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: testMessages }),
+            timeout: 30000
+          },
+          callback,
+          'openai'
+        );
+
+        // Should complete immediately with empty content
+        assert.strictEqual(chunks.length, 0, 'Should have no content chunks');
+        assert.strictEqual(completed, true, 'Should have completed');
+      } finally {
+        makeHttpRequestStub.restore();
+      }
+    });
+
+    test('should break at word boundaries when possible', async () => {
+      const mockResponse = {
+        choices: [{ message: { content: 'This is a test sentence with multiple words that should break nicely.' } }]
+      };
+
+      const chunks: string[] = [];
+      let completed = false;
+
+      const callback = (chunk: string, isComplete: boolean) => {
+        if (chunk) {
+          chunks.push(chunk);
+        }
+        if (isComplete) {
+          completed = true;
+        }
+      };
+
+      const makeHttpRequestStub = sinon.stub(chatBridge as any, 'makeHttpRequest').resolves({
+        text: async () => JSON.stringify(mockResponse)
+      });
+
+      try {
+        await (chatBridge as any).makeStreamingRequest(
+          'https://api.openai.com/v1/chat/completions',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: testMessages }),
+            timeout: 30000
+          },
+          callback,
+          'openai'
+        );
+
+        // Verify word boundary breaking
+        assert.ok(chunks.length > 1, 'Should have multiple chunks');
+        assert.strictEqual(completed, true, 'Should have completed');
+        
+        // Most chunks should end with spaces or punctuation (word boundaries)
+        const chunksEndingWithBoundary = chunks.filter(chunk => 
+          chunk.endsWith(' ') || chunk.endsWith('.') || chunk.endsWith(',') || chunk.endsWith('!')
+        );
+        
+        // At least some chunks should respect word boundaries
+        assert.ok(chunksEndingWithBoundary.length > 0, 'Some chunks should end at word boundaries');
+      } finally {
+        makeHttpRequestStub.restore();
+      }
+    });
+
+    test('should handle different provider formats', async () => {
+      // Test Ollama format
+      const ollamaResponse = {
+        message: { content: 'Ollama response content' },
+        done: true
+      };
+
+      // Test Anthropic format
+      const anthropicResponse = {
+        content: [{ text: 'Anthropic response content' }]
+      };
+
+      const testCases = [
+        { format: 'ollama' as const, response: ollamaResponse, expectedContent: 'Ollama response content' },
+        { format: 'anthropic' as const, response: anthropicResponse, expectedContent: 'Anthropic response content' }
+      ];
+
+      for (const testCase of testCases) {
+        const chunks: string[] = [];
+        let completed = false;
+
+        const callback = (chunk: string, isComplete: boolean) => {
+          if (chunk) {
+            chunks.push(chunk);
+          }
+          if (isComplete) {
+            completed = true;
+          }
+        };
+
+        const makeHttpRequestStub = sinon.stub(chatBridge as any, 'makeHttpRequest').resolves({
+          text: async () => JSON.stringify(testCase.response)
+        });
+
+        try {
+          await (chatBridge as any).makeStreamingRequest(
+            'https://api.example.com/chat',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ messages: testMessages }),
+              timeout: 30000
+            },
+            callback,
+            testCase.format
+          );
+
+          // Verify content was streamed correctly
+          const combinedContent = chunks.join('');
+          assert.strictEqual(combinedContent, testCase.expectedContent, `${testCase.format} content should match`);
+          assert.strictEqual(completed, true, `${testCase.format} should have completed`);
+        } finally {
+          makeHttpRequestStub.restore();
+        }
+      }
+    });
+  });
+
   suite('sendMessage', () => {
     test('should send OpenAI message successfully', async () => {
       const mockResponse = {

@@ -97,6 +97,25 @@ export class WebCompatibility {
   }
 
   /**
+   * Get streaming simulation configuration for web environment
+   */
+  public static getStreamingSimulationConfig(): {
+    enabled: boolean;
+    chunkSize: number;
+    delay: number;
+    wordBoundary: boolean;
+    maxChunks?: number;
+  } {
+    return {
+      enabled: this.isWeb(),
+      chunkSize: 30,        // Characters per chunk
+      delay: 40,            // Milliseconds between chunks
+      wordBoundary: true,   // Break at word boundaries when possible
+      maxChunks: 200        // Maximum number of chunks to prevent infinite loops
+    };
+  }
+
+  /**
    * Show web compatibility warning for unsupported features
    */
   public static async showWebCompatibilityWarning(

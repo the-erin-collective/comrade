@@ -7,6 +7,7 @@ import { PersonalityManager } from './core/personality';
 import { registerContextExampleCommands } from './examples/context-runner-usage';
 import { ComradeSidebarProvider } from './providers/sidebarProvider';
 import { createStatusBarManager, StatusBarManager } from './ui/statusBar';
+import { BuiltInTools } from './core/tool-manager';
 
 // Global instances
 let configurationManager: ConfigurationManager;
@@ -36,6 +37,9 @@ export async function activate(context: vscode.ExtensionContext) {
         
         // Initialize status bar manager
         statusBarManager = createStatusBarManager(context);
+        
+        // Register built-in tools
+        BuiltInTools.registerAll();
         
         // Register webview provider
         const sidebarProvider = new ComradeSidebarProvider(context);

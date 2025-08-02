@@ -4,6 +4,7 @@
 
 import * as vscode from 'vscode';
 import { AgentConfig, AgentCapabilities, LLMProvider, IAgent } from './agent';
+import { ConfigurationValidator, ValidationResult } from './config-validator';
 
 export interface AgentConfigurationItem {
   id: string;
@@ -61,37 +62,100 @@ export class ConfigurationManager {
    * Get the current configuration from VS Code settings
    */
   public getConfiguration(): ComradeConfiguration {
-    const config = vscode.workspace.getConfiguration('comrade');
-    
-    return {
-      agents: this.validateAgentConfigurations(config.get<AgentConfigurationItem[]>('agents', [])),
-      assignmentDefaultMode: config.get<'speed' | 'structure'>('assignment.defaultMode', 'speed'),
-      mcpServers: this.validateMCPServerConfigurations(config.get<MCPServerConfig[]>('mcp.servers', [])),
-      contextMaxFiles: config.get<number>('context.maxFiles', 100),
-      contextMaxTokens: config.get<number>('context.maxTokens', 8000)
-    };
+    try {
+      const config = vscode.workspace.getConfiguration('comrade');
+      
+      const rawConfig = {
+        agents: config.get<AgentConfigurationItem[]>('agents', []),
+        assignmentDefaultMode: config.get<'speed' | 'structure'>('assignment.defaultMode', 'speed'),
+        mcpServers: config.get<MCPServerConfig[]>('mcp.servers', []),
+        contextMaxFiles: config.get<number>('context.maxFiles', 100),
+        contextMaxTokens: config.get<number>('context.maxTokens', 8000)
+      };
+
+      // Validate and apply defaults using the new validation engine
+      const validation = ConfigurationValidator.validateConfiguration(rawConfig);
+      
+      if (!validation.isValid) {
+        console.warn('Configuration validation errors:', validation.errors);
+        // Log warnings but continue with filtered config
+        validation.warnings.forEach(warning => {
+          console.warn(`Configuration warning at ${warning.path}: ${warning.message}`);
+        });
+      }
+
+      // Use filtered/validated configuration or fallback to defaults
+      const validatedConfig = validation.filteredConfig || {
+        agents: [],
+        assignmentDefaultMode: 'speed',
+        mcpServers: [],
+        contextMaxFiles: 100,
+        contextMaxTokens: 8000
+      };
+
+      return {
+        agents: this.validateAgentConfigurations(validatedConfig.agents),
+        assignmentDefaultMode: validatedConfig.assignmentDefaultMode,
+        mcpServers: this.validateMCPServerConfigurations(validatedConfig.mcpServers),
+        contextMaxFiles: validatedConfig.contextMaxFiles,
+        contextMaxTokens: validatedConfig.contextMaxTokens
+      };
+    } catch (error) {
+      console.error('Failed to load configuration:', error);
+      // Return safe defaults when configuration is corrupted
+      return {
+        agents: [],
+        assignmentDefaultMode: 'speed',
+        mcpServers: [],
+        contextMaxFiles: 100,
+        contextMaxTokens: 8000
+      };
+    }
   }
 
   /**
    * Update agent configuration in VS Code settings
    */
   public async updateAgentConfiguration(agents: AgentConfigurationItem[]): Promise<void> {
+    // Validate before saving (Requirement 6.4)
+    const validation = ConfigurationValidator.validateAndSanitizeAgents(agents);
+    
+    if (validation.errors.length > 0) {
+      const errorMessage = `Configuration validation failed: ${validation.errors.map(e => e.message).join(', ')}`;
+      console.error(errorMessage, validation.errors);
+      throw new Error(errorMessage);
+    }
+
+    // Log warnings but continue
+    validation.warnings.forEach(warning => {
+      console.warn(`Configuration warning at ${warning.path}: ${warning.message}`);
+    });
+
     const config = vscode.workspace.getConfiguration('comrade');
-    const validatedAgents = this.validateAgentConfigurations(agents);
-    await config.update('agents', validatedAgents, vscode.ConfigurationTarget.Global);
+    await config.update('agents', validation.valid, vscode.ConfigurationTarget.Global);
   }
 
   /**
    * Add a new agent configuration
    */
   public async addAgent(agentConfig: AgentConfigurationItem): Promise<void> {
+    // Validate single agent before adding (Requirement 6.4)
+    const validation = ConfigurationValidator.validateAgentConfiguration(agentConfig);
+    
+    if (!validation.isValid) {
+      const errorMessage = `Agent configuration validation failed: ${validation.errors.map(e => e.message).join(', ')}`;
+      console.error(errorMessage, validation.errors);
+      throw new Error(errorMessage);
+    }
+
+    const validatedAgent = validation.filteredConfig as AgentConfigurationItem;
     const currentConfig = this.getConfiguration();
-    const existingIndex = currentConfig.agents.findIndex(a => a.id === agentConfig.id);
+    const existingIndex = currentConfig.agents.findIndex(a => a.id === validatedAgent.id);
     
     if (existingIndex >= 0) {
-      currentConfig.agents[existingIndex] = this.validateAgentConfiguration(agentConfig);
+      currentConfig.agents[existingIndex] = validatedAgent;
     } else {
-      currentConfig.agents.push(this.validateAgentConfiguration(agentConfig));
+      currentConfig.agents.push(validatedAgent);
     }
     
     await this.updateAgentConfiguration(currentConfig.agents);
@@ -180,94 +244,110 @@ export class ConfigurationManager {
    * Validate and apply defaults to agent configurations
    */
   private validateAgentConfigurations(agents: AgentConfigurationItem[] | any): AgentConfigurationItem[] {
-    if (!Array.isArray(agents)) {
-      console.warn('Invalid agent configurations: expected array, got', typeof agents);
-      return [];
+    try {
+      // Use the new validation engine (Requirements 6.1, 6.2, 6.3)
+      const validation = ConfigurationValidator.validateAndSanitizeAgents(agents);
+      
+      // Log validation issues
+      validation.errors.forEach(error => {
+        console.error(`Agent configuration error at ${error.path}: ${error.message}`);
+      });
+      
+      validation.warnings.forEach(warning => {
+        console.warn(`Agent configuration warning at ${warning.path}: ${warning.message}`);
+      });
+
+      return validation.valid;
+    } catch (error) {
+      console.error('Error validating agent configurations:', error);
+      return []; // Return empty array on any validation error
     }
-    
-    return agents
-      .filter(agent => agent && typeof agent === 'object')
-      .map(agent => {
-        try {
-          return this.validateAgentConfiguration(agent);
-        } catch (error) {
-          console.warn('Invalid agent configuration:', agent, error);
-          return null;
-        }
-      })
-      .filter((agent): agent is AgentConfigurationItem => agent !== null);
   }
 
   /**
    * Validate and apply defaults to a single agent configuration
+   * @deprecated Use ConfigurationValidator.validateAgentConfiguration instead
    */
   private validateAgentConfiguration(agent: AgentConfigurationItem): AgentConfigurationItem {
-    // Apply default values for missing properties
-    const defaultCapabilities: AgentCapabilities = {
-      hasVision: false,
-      hasToolUse: false,
-      reasoningDepth: 'intermediate',
-      speed: 'medium',
-      costTier: 'medium',
-      maxTokens: 4000,
-      supportedLanguages: ['en'],
-      specializations: ['code']
-    };
+    // Use the new validation engine for consistency
+    const validation = ConfigurationValidator.validateAgentConfiguration(agent);
+    
+    if (!validation.isValid) {
+      console.warn('Agent configuration validation failed:', validation.errors);
+      // Apply legacy fallback logic for backward compatibility
+      const defaultCapabilities: AgentCapabilities = {
+        hasVision: false,
+        hasToolUse: false,
+        reasoningDepth: 'intermediate',
+        speed: 'medium',
+        costTier: 'medium',
+        maxTokens: 4000,
+        supportedLanguages: ['en'],
+        specializations: ['code']
+      };
 
-    return {
-      id: agent.id || this.generateAgentId(),
-      name: agent.name || 'Unnamed Agent',
-      provider: agent.provider || 'openai',
-      model: agent.model || 'gpt-3.5-turbo',
-      endpoint: agent.endpoint,
-      temperature: agent.temperature ?? 0.7,
-      maxTokens: agent.maxTokens,
-      timeout: agent.timeout ?? 30000,
-      capabilities: {
-        ...defaultCapabilities,
-        ...agent.capabilities,
-        maxTokens: agent.capabilities?.maxTokens || agent.maxTokens || defaultCapabilities.maxTokens
-      },
-      isEnabledForAssignment: agent.isEnabledForAssignment ?? true
-    };
+      return {
+        id: agent.id || this.generateAgentId(),
+        name: agent.name || 'Unnamed Agent',
+        provider: agent.provider || 'openai',
+        model: agent.model || 'gpt-3.5-turbo',
+        endpoint: agent.endpoint,
+        temperature: agent.temperature ?? 0.7,
+        maxTokens: agent.maxTokens,
+        timeout: agent.timeout ?? 30000,
+        capabilities: {
+          ...defaultCapabilities,
+          ...agent.capabilities,
+          maxTokens: agent.capabilities?.maxTokens || agent.maxTokens || defaultCapabilities.maxTokens
+        },
+        isEnabledForAssignment: agent.isEnabledForAssignment ?? true
+      };
+    }
+
+    return validation.filteredConfig as AgentConfigurationItem;
   }
 
   /**
    * Validate MCP server configurations
    */
   private validateMCPServerConfigurations(servers: MCPServerConfig[] | undefined): MCPServerConfig[] {
-    if (!servers || !Array.isArray(servers)) {
-      return [];
-    }
-    
-    return servers.map(server => {
-      if (!server || typeof server !== 'object') {
-        throw new Error('Invalid MCP server configuration: must be an object');
+    try {
+      if (!servers || !Array.isArray(servers)) {
+        return [];
       }
       
-      return {
-        id: server.id || this.generateMCPServerId(),
-        name: server.name || 'Unnamed MCP Server',
-        command: server.command || '',
-        args: Array.isArray(server.args) ? server.args : [],
-        env: server.env && typeof server.env === 'object' ? server.env : undefined,
-        timeout: typeof server.timeout === 'number' && server.timeout > 0 ? server.timeout : 10000
-      };
-    }).filter(server => server.command.length > 0); // Filter out servers without commands
+      // Use the new validation engine (Requirements 6.1, 6.2, 6.3)
+      const validServers = ConfigurationValidator.filterValidConfigurations<MCPServerConfig>(
+        servers, 
+        ConfigurationValidator.MCP_SERVER_SCHEMA
+      );
+
+      // Apply additional business logic filtering
+      return validServers.filter(server => {
+        if (!server.command || server.command.length === 0) {
+          console.warn('Filtering out MCP server with empty command:', server);
+          return false;
+        }
+        return true;
+      });
+    } catch (error) {
+      console.error('Error validating MCP server configurations:', error);
+      return []; // Return empty array on any validation error
+    }
   }
 
   /**
    * Generate a unique agent ID
    */
   private generateAgentId(): string {
-    return `agent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return ConfigurationValidator.generateUniqueId('agent');
   }
 
   /**
    * Generate a unique MCP server ID
    */
   private generateMCPServerId(): string {
-    return `mcp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return ConfigurationValidator.generateUniqueId('mcp');
   }
 
   /**
@@ -326,14 +406,24 @@ export class ConfigurationManager {
    * Save MCP server configuration
    */
   public async saveMcpServerConfiguration(serverConfig: MCPServerConfig): Promise<void> {
+    // Validate before saving (Requirement 6.4)
+    const validation = ConfigurationValidator.validateMCPServerConfiguration(serverConfig);
+    
+    if (!validation.isValid) {
+      const errorMessage = `MCP server configuration validation failed: ${validation.errors.map(e => e.message).join(', ')}`;
+      console.error(errorMessage, validation.errors);
+      throw new Error(errorMessage);
+    }
+
+    const validatedServer = validation.filteredConfig as MCPServerConfig;
     const config = vscode.workspace.getConfiguration('comrade');
     const currentServers = config.get<MCPServerConfig[]>('mcp.servers', []);
-    const existingIndex = currentServers.findIndex(s => s.id === serverConfig.id);
+    const existingIndex = currentServers.findIndex(s => s.id === validatedServer.id);
     
     if (existingIndex >= 0) {
-      currentServers[existingIndex] = serverConfig;
+      currentServers[existingIndex] = validatedServer;
     } else {
-      currentServers.push(serverConfig);
+      currentServers.push(validatedServer);
     }
     
     await config.update('mcp.servers', currentServers, vscode.ConfigurationTarget.Global);
@@ -341,6 +431,7 @@ export class ConfigurationManager {
 
   /**
    * Configuration change event handler
+   * @deprecated Use ConfigurationAutoReloadManager instead
    */
   public onConfigurationChanged(callback: () => void): vscode.Disposable {
     return vscode.workspace.onDidChangeConfiguration((event) => {
@@ -357,6 +448,15 @@ export class ConfigurationManager {
     // Configuration is automatically reloaded when VS Code settings change
     // This method is provided for explicit reload requests
     await this.validateConfigurationOnStartup();
+  }
+
+  /**
+   * Force reload of all configuration components
+   */
+  public async forceReloadAllComponents(): Promise<void> {
+    // This method can be called by the auto-reload system
+    await this.validateConfigurationOnStartup();
+    console.log('All configuration components force reloaded');
   }
 
   /**

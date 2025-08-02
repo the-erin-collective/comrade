@@ -235,6 +235,47 @@ suite('Web Compatibility Tests', () => {
     });
   });
 
+  suite('Streaming Simulation', () => {
+    test('should provide streaming simulation configuration', () => {
+      const config = WebCompatibility.getStreamingSimulationConfig();
+      
+      assert.strictEqual(typeof config.enabled, 'boolean');
+      assert.strictEqual(typeof config.chunkSize, 'number');
+      assert.strictEqual(typeof config.delay, 'number');
+      assert.strictEqual(typeof config.wordBoundary, 'boolean');
+      assert.ok(config.chunkSize > 0);
+      assert.ok(config.delay >= 0);
+    });
+
+    test('should enable streaming simulation in web environment', () => {
+      // Mock web environment
+      const originalIsWeb = WebCompatibility.isWeb;
+      (WebCompatibility as any).isWeb = () => true;
+
+      try {
+        const config = WebCompatibility.getStreamingSimulationConfig();
+        assert.strictEqual(config.enabled, true);
+      } finally {
+        // Restore original method
+        (WebCompatibility as any).isWeb = originalIsWeb;
+      }
+    });
+
+    test('should disable streaming simulation in desktop environment', () => {
+      // Mock desktop environment
+      const originalIsWeb = WebCompatibility.isWeb;
+      (WebCompatibility as any).isWeb = () => false;
+
+      try {
+        const config = WebCompatibility.getStreamingSimulationConfig();
+        assert.strictEqual(config.enabled, false);
+      } finally {
+        // Restore original method
+        (WebCompatibility as any).isWeb = originalIsWeb;
+      }
+    });
+  });
+
   suite('Integration Tests', () => {
     test('should handle mixed web/desktop operations', async () => {
       // Test that the system gracefully handles operations in both environments
@@ -246,12 +287,18 @@ suite('Web Compatibility Tests', () => {
         
         const limitations = WebCompatibility.getNetworkLimitations();
         assert.strictEqual(limitations.hasCorsRestrictions, true);
+        
+        const streamingConfig = WebCompatibility.getStreamingSimulationConfig();
+        assert.strictEqual(streamingConfig.enabled, true);
       } else {
         // Desktop environment tests
         assert.strictEqual(WebCompatibility.supportsShellCommands(), true);
         
         const limitations = WebCompatibility.getNetworkLimitations();
         assert.strictEqual(limitations.hasCorsRestrictions, false);
+        
+        const streamingConfig = WebCompatibility.getStreamingSimulationConfig();
+        assert.strictEqual(streamingConfig.enabled, false);
       }
     });
 

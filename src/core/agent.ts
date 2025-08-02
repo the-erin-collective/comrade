@@ -31,6 +31,11 @@ export interface AgentConfig {
   temperature?: number;
   maxTokens?: number;
   timeout?: number;
+  tools?: {
+    enabled: boolean;
+    allowedTools: string[];
+    requireApproval: boolean;
+  };
 }
 
 export interface IAgent {

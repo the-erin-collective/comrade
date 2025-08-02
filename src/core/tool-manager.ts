@@ -10,8 +10,10 @@ import {
   ToolResult,
   ParameterValidator,
   SecurityValidator,
-  SecurityLevel
+  SecurityLevel,
+  ValidationResult
 } from './tools';
+import { ChatToolCall } from './chat';
 
 /**
  * Error thrown during tool execution
@@ -41,12 +43,27 @@ export interface ExecutionStats {
 }
 
 /**
+ * Audit log entry for tool execution
+ */
+export interface AuditLogEntry {
+  timestamp: Date;
+  toolName: string;
+  parameters: any;
+  context: ExecutionContext;
+  result: 'success' | 'failure' | 'denied';
+  error?: string;
+  executionTime: number;
+}
+
+/**
  * Tool Manager handles tool execution with validation and security
  */
 export class ToolManager {
   private static _instance: ToolManager | null = null;
   private registry: ToolRegistry;
   private stats: ExecutionStats;
+  private auditLog: AuditLogEntry[] = [];
+  private readonly MAX_AUDIT_ENTRIES = 1000;
 
   private constructor() {
     this.registry = ToolRegistry.getInstance();
@@ -126,13 +143,16 @@ export class ToolManager {
 
       // Check if approval is required
       if (tool.security.requiresApproval) {
-        const approved = await this.requestUserApproval(tool, parameters, context);
-        if (!approved) {
-          throw new ToolExecutionError(
-            'Tool execution denied by user',
-            'USER_DENIED',
-            toolName
-          );
+        // Check for session-level approval first
+        if (!this.hasSessionApproval(context.sessionId, toolName)) {
+          const approved = await this.requestUserApproval(tool, parameters, context);
+          if (!approved) {
+            throw new ToolExecutionError(
+              'Tool execution denied by user',
+              'USER_DENIED',
+              toolName
+            );
+          }
         }
       }
 
@@ -142,17 +162,25 @@ export class ToolManager {
       // Update statistics
       this.updateStats(toolName, Date.now() - startTime, true);
       
+      // Log successful execution
+      this.logExecution(toolName, parameters, context, 'success', undefined, Date.now() - startTime);
+      
       return result;
     } catch (error) {
       // Update statistics for failure
       this.updateStats(toolName, Date.now() - startTime, false);
+      
+      // Log failed execution
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const resultType = error instanceof ToolExecutionError && error.code === 'USER_DENIED' ? 'denied' : 'failure';
+      this.logExecution(toolName, parameters, context, resultType, errorMessage, Date.now() - startTime);
       
       if (error instanceof ToolExecutionError) {
         throw error;
       }
       
       throw new ToolExecutionError(
-        `Tool execution failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Tool execution failed: ${errorMessage}`,
         'EXECUTION_ERROR',
         toolName,
         error instanceof Error ? error : undefined
@@ -165,6 +193,58 @@ export class ToolManager {
    */
   public getAvailableTools(context: ExecutionContext): ToolDefinition[] {
     return this.registry.getAvailableTools(context);
+  }
+
+  /**
+   * Validate multiple tool calls in batch
+   */
+  public validateToolCalls(calls: ChatToolCall[]): ValidationResult {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    for (let i = 0; i < calls.length; i++) {
+      const call = calls[i];
+      const validation = this.registry.validateToolCall(call);
+      
+      if (!validation.valid) {
+        errors.push(`Tool call ${i + 1} (${call.name}): ${validation.errors.join(', ')}`);
+      }
+      
+      if (validation.warnings) {
+        warnings.push(`Tool call ${i + 1} (${call.name}): ${validation.warnings.join(', ')}`);
+      }
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings
+    };
+  }
+
+  /**
+   * Execute multiple tools in sequence
+   */
+  public async executeToolCalls(
+    calls: ChatToolCall[],
+    context: ExecutionContext
+  ): Promise<Array<{ call: ChatToolCall; result: ToolResult }>> {
+    const results: Array<{ call: ChatToolCall; result: ToolResult }> = [];
+
+    for (const call of calls) {
+      try {
+        const result = await this.executeTool(call.name, call.parameters, context);
+        results.push({ call, result });
+      } catch (error) {
+        const errorResult: ToolResult = {
+          success: false,
+          error: error instanceof Error ? error.message : String(error)
+        };
+        results.push({ call, result: errorResult });
+      }
+    }
+
+    return results;
   }
 
   /**
@@ -188,24 +268,440 @@ export class ToolManager {
   }
 
   /**
-   * Request user approval for tool execution
+   * Get audit log entries
+   */
+  public getAuditLog(): AuditLogEntry[] {
+    return [...this.auditLog];
+  }
+
+  /**
+   * Clear audit log
+   */
+  public clearAuditLog(): void {
+    this.auditLog = [];
+  }
+
+  /**
+   * Get audit log entries for a specific tool
+   */
+  public getAuditLogForTool(toolName: string): AuditLogEntry[] {
+    return this.auditLog.filter(entry => entry.toolName === toolName);
+  }
+
+  /**
+   * Get approval log entries
+   */
+  public getApprovalLog(): Array<{
+    timestamp: Date;
+    toolName: string;
+    parameters: any;
+    context: {
+      agentId: string;
+      sessionId: string;
+      userId: string;
+      securityLevel: SecurityLevel;
+    };
+    decision: 'approved' | 'denied';
+    riskScore: number;
+    riskFactors: string[];
+    warnings: string[];
+  }> {
+    return [...this.approvalLog];
+  }
+
+  /**
+   * Clear approval log
+   */
+  public clearApprovalLog(): void {
+    this.approvalLog = [];
+  }
+
+  /**
+   * Get approval log entries for a specific tool
+   */
+  public getApprovalLogForTool(toolName: string): Array<{
+    timestamp: Date;
+    toolName: string;
+    parameters: any;
+    context: {
+      agentId: string;
+      sessionId: string;
+      userId: string;
+      securityLevel: SecurityLevel;
+    };
+    decision: 'approved' | 'denied';
+    riskScore: number;
+    riskFactors: string[];
+    warnings: string[];
+  }> {
+    return this.approvalLog.filter(entry => entry.toolName === toolName);
+  }
+
+  /**
+   * Get security statistics
+   */
+  public getSecurityStats(): {
+    totalApprovalRequests: number;
+    approvedRequests: number;
+    deniedRequests: number;
+    averageRiskScore: number;
+    highRiskExecutions: number;
+    sessionApprovalsActive: number;
+  } {
+    const totalRequests = this.approvalLog.length;
+    const approved = this.approvalLog.filter(entry => entry.decision === 'approved').length;
+    const denied = this.approvalLog.filter(entry => entry.decision === 'denied').length;
+    const averageRisk = totalRequests > 0 
+      ? this.approvalLog.reduce((sum, entry) => sum + entry.riskScore, 0) / totalRequests 
+      : 0;
+    const highRisk = this.approvalLog.filter(entry => entry.riskScore >= 70).length;
+    const activeApprovals = Array.from(this.sessionApprovals.values())
+      .reduce((total, set) => total + set.size, 0);
+
+    return {
+      totalApprovalRequests: totalRequests,
+      approvedRequests: approved,
+      deniedRequests: denied,
+      averageRiskScore: Math.round(averageRisk * 100) / 100,
+      highRiskExecutions: highRisk,
+      sessionApprovalsActive: activeApprovals
+    };
+  }
+
+  /**
+   * Export audit data for compliance reporting
+   */
+  public exportAuditData(): {
+    executionLog: AuditLogEntry[];
+    approvalLog: Array<{
+      timestamp: Date;
+      toolName: string;
+      parameters: any;
+      context: {
+        agentId: string;
+        sessionId: string;
+        userId: string;
+        securityLevel: SecurityLevel;
+      };
+      decision: 'approved' | 'denied';
+      riskScore: number;
+      riskFactors: string[];
+      warnings: string[];
+    }>;
+    statistics: {
+      totalExecutions: number;
+      successfulExecutions: number;
+      failedExecutions: number;
+      totalApprovalRequests: number;
+      approvedRequests: number;
+      deniedRequests: number;
+      averageRiskScore: number;
+    };
+    exportTimestamp: Date;
+  } {
+    return {
+      executionLog: this.getAuditLog(),
+      approvalLog: this.getApprovalLog(),
+      statistics: {
+        ...this.getExecutionStats(),
+        ...this.getSecurityStats()
+      },
+      exportTimestamp: new Date()
+    };
+  }
+
+  /**
+   * Request user approval for tool execution with enhanced security information
    */
   private async requestUserApproval(
     tool: ToolDefinition,
     parameters: any,
     context: ExecutionContext
   ): Promise<boolean> {
-    const message = `The AI agent wants to execute '${tool.name}': ${tool.description}\n\nParameters: ${JSON.stringify(parameters, null, 2)}\n\nDo you want to allow this?`;
+    // Perform risk assessment
+    const riskAssessment = this.assessToolRisk(tool, parameters, context);
     
-    const choice = await vscode.window.showWarningMessage(
-      message,
-      { modal: true },
-      'Allow',
-      'Deny'
-    );
+    // Create detailed approval message
+    const riskIndicator = this.getRiskIndicator(tool.security.riskLevel);
+    const securityWarnings = riskAssessment.warnings.length > 0 
+      ? `\n\n⚠️ Security Warnings:\n${riskAssessment.warnings.map(w => `• ${w}`).join('\n')}`
+      : '';
     
-    return choice === 'Allow';
+    const message = `${riskIndicator} Tool Execution Request\n\n` +
+      `Tool: ${tool.name}\n` +
+      `Description: ${tool.description}\n` +
+      `Risk Level: ${tool.security.riskLevel.toUpperCase()}\n` +
+      `Category: ${tool.category || 'general'}\n\n` +
+      `Parameters:\n${JSON.stringify(parameters, null, 2)}${securityWarnings}\n\n` +
+      `Agent: ${context.agentId}\n` +
+      `Session: ${context.sessionId}\n\n` +
+      `Do you want to allow this tool execution?`;
+    
+    // Show different UI based on risk level
+    let choice: string | undefined;
+    
+    if (tool.security.riskLevel === 'high') {
+      // High risk tools require explicit confirmation
+      choice = await vscode.window.showErrorMessage(
+        message,
+        { modal: true },
+        'Allow (High Risk)',
+        'Deny'
+      );
+      
+      // Additional confirmation for high-risk tools
+      if (choice === 'Allow (High Risk)') {
+        const confirmChoice = await vscode.window.showWarningMessage(
+          `⚠️ FINAL CONFIRMATION\n\nYou are about to allow a HIGH RISK tool execution. This could potentially:\n• Modify or delete files\n• Execute system commands\n• Access sensitive data\n• Make network requests\n\nAre you absolutely sure?`,
+          { modal: true },
+          'Yes, I understand the risks',
+          'No, cancel'
+        );
+        choice = confirmChoice === 'Yes, I understand the risks' ? 'Allow' : 'Deny';
+      }
+    } else if (tool.security.riskLevel === 'medium') {
+      choice = await vscode.window.showWarningMessage(
+        message,
+        { modal: true },
+        'Allow',
+        'Deny',
+        'Always Allow for this Session'
+      );
+    } else {
+      choice = await vscode.window.showInformationMessage(
+        message,
+        { modal: true },
+        'Allow',
+        'Deny',
+        'Always Allow for this Session'
+      );
+    }
+    
+    // Handle session-level approval
+    if (choice === 'Always Allow for this Session') {
+      this.addSessionApproval(context.sessionId, tool.name);
+      return true;
+    }
+    
+    const approved = choice === 'Allow';
+    
+    // Log approval decision
+    this.logApprovalDecision(tool, parameters, context, approved, riskAssessment);
+    
+    return approved;
   }
+
+  /**
+   * Assess the risk of executing a tool with given parameters
+   */
+  private assessToolRisk(
+    tool: ToolDefinition,
+    parameters: any,
+    context: ExecutionContext
+  ): { score: number; warnings: string[]; factors: string[] } {
+    const warnings: string[] = [];
+    const factors: string[] = [];
+    let score = 0;
+
+    // Base risk from tool definition
+    switch (tool.security.riskLevel) {
+      case 'high':
+        score += 70;
+        factors.push('High-risk tool category');
+        break;
+      case 'medium':
+        score += 40;
+        factors.push('Medium-risk tool category');
+        break;
+      case 'low':
+        score += 10;
+        factors.push('Low-risk tool category');
+        break;
+    }
+
+    // Check for dangerous patterns in parameters
+    const paramString = JSON.stringify(parameters).toLowerCase();
+    const dangerousPatterns = [
+      { pattern: /rm\s+-rf|del\s+\/[sq]|format\s+c:/i, warning: 'Destructive file operations detected', score: 30 },
+      { pattern: /shutdown|reboot|halt/i, warning: 'System control commands detected', score: 25 },
+      { pattern: /__import__|eval\(|exec\(/i, warning: 'Code execution patterns detected', score: 20 },
+      { pattern: /\.\.\/|\.\.\\|\.\.\//g, warning: 'Directory traversal patterns detected', score: 15 },
+      { pattern: /password|secret|token|key/i, warning: 'Sensitive data patterns detected', score: 10 },
+      { pattern: /localhost|127\.0\.0\.1|192\.168\.|10\.|172\./i, warning: 'Local network access detected', score: 5 }
+    ];
+
+    for (const { pattern, warning, score: patternScore } of dangerousPatterns) {
+      if (pattern.test(paramString)) {
+        warnings.push(warning);
+        factors.push(warning);
+        score += patternScore;
+      }
+    }
+
+    // Check file system operations
+    if (parameters.path && typeof parameters.path === 'string') {
+      if (parameters.path.startsWith('/') || parameters.path.includes('C:\\')) {
+        warnings.push('Absolute file path detected - may access system files');
+        factors.push('Absolute file path usage');
+        score += 15;
+      }
+      
+      const sensitiveFiles = [
+        'package.json', 'package-lock.json', '.env', '.git', 'node_modules',
+        'config', 'settings', 'credentials', 'secrets'
+      ];
+      
+      if (sensitiveFiles.some(file => parameters.path.toLowerCase().includes(file))) {
+        warnings.push('Access to sensitive files or directories detected');
+        factors.push('Sensitive file access');
+        score += 10;
+      }
+    }
+
+    // Check web requests
+    if (parameters.url && typeof parameters.url === 'string') {
+      try {
+        const url = new URL(parameters.url);
+        if (url.protocol !== 'https:') {
+          warnings.push('Non-HTTPS URL detected - data may be transmitted insecurely');
+          factors.push('Insecure protocol usage');
+          score += 10;
+        }
+        
+        const suspiciousDomains = ['bit.ly', 'tinyurl.com', 'goo.gl', 't.co'];
+        if (suspiciousDomains.some(domain => url.hostname.includes(domain))) {
+          warnings.push('URL shortener detected - destination unknown');
+          factors.push('URL shortener usage');
+          score += 15;
+        }
+      } catch {
+        warnings.push('Invalid URL format detected');
+        factors.push('Invalid URL format');
+        score += 5;
+      }
+    }
+
+    // Check execution context
+    if (context.security.level === SecurityLevel.RESTRICTED) {
+      warnings.push('Executing in restricted security context');
+      factors.push('Restricted security context');
+      score += 10;
+    }
+
+    // Check permissions
+    if (tool.security.permissions && tool.security.permissions.length > 0) {
+      const highRiskPermissions = ['filesystem.write', 'system.execute', 'network.request'];
+      const hasHighRiskPermissions = tool.security.permissions.some(p => 
+        highRiskPermissions.includes(p)
+      );
+      
+      if (hasHighRiskPermissions) {
+        factors.push('Requires high-risk permissions');
+        score += 10;
+      }
+    }
+
+    return { score: Math.min(score, 100), warnings, factors };
+  }
+
+  /**
+   * Get risk indicator emoji based on risk level
+   */
+  private getRiskIndicator(riskLevel: string): string {
+    switch (riskLevel) {
+      case 'high': return '🔴';
+      case 'medium': return '🟡';
+      case 'low': return '🟢';
+      default: return '⚪';
+    }
+  }
+
+  /**
+   * Session-level approvals for "Always Allow" functionality
+   */
+  private sessionApprovals: Map<string, Set<string>> = new Map();
+
+  /**
+   * Add a session-level approval for a tool
+   */
+  private addSessionApproval(sessionId: string, toolName: string): void {
+    if (!this.sessionApprovals.has(sessionId)) {
+      this.sessionApprovals.set(sessionId, new Set());
+    }
+    this.sessionApprovals.get(sessionId)!.add(toolName);
+  }
+
+  /**
+   * Check if a tool has session-level approval
+   */
+  private hasSessionApproval(sessionId: string, toolName: string): boolean {
+    return this.sessionApprovals.get(sessionId)?.has(toolName) || false;
+  }
+
+  /**
+   * Clear session approvals
+   */
+  public clearSessionApprovals(sessionId?: string): void {
+    if (sessionId) {
+      this.sessionApprovals.delete(sessionId);
+    } else {
+      this.sessionApprovals.clear();
+    }
+  }
+
+  /**
+   * Log approval decision for audit purposes
+   */
+  private logApprovalDecision(
+    tool: ToolDefinition,
+    parameters: any,
+    context: ExecutionContext,
+    approved: boolean,
+    riskAssessment: { score: number; warnings: string[]; factors: string[] }
+  ): void {
+    const approvalEntry = {
+      timestamp: new Date(),
+      toolName: tool.name,
+      parameters: JSON.parse(JSON.stringify(parameters)),
+      context: {
+        agentId: context.agentId,
+        sessionId: context.sessionId,
+        userId: context.user.id,
+        securityLevel: context.security.level
+      },
+      decision: (approved ? 'approved' : 'denied') as 'approved' | 'denied',
+      riskScore: riskAssessment.score,
+      riskFactors: riskAssessment.factors,
+      warnings: riskAssessment.warnings
+    };
+
+    // Store approval decisions separately from execution log
+    this.approvalLog.push(approvalEntry);
+
+    // Keep approval log size manageable
+    if (this.approvalLog.length > this.MAX_AUDIT_ENTRIES) {
+      this.approvalLog = this.approvalLog.slice(-this.MAX_AUDIT_ENTRIES);
+    }
+  }
+
+  /**
+   * Approval log for tracking user decisions
+   */
+  private approvalLog: Array<{
+    timestamp: Date;
+    toolName: string;
+    parameters: any;
+    context: {
+      agentId: string;
+      sessionId: string;
+      userId: string;
+      securityLevel: SecurityLevel;
+    };
+    decision: 'approved' | 'denied';
+    riskScore: number;
+    riskFactors: string[];
+    warnings: string[];
+  }> = [];
 
   /**
    * Update execution statistics
@@ -224,6 +720,39 @@ export class ToolManager {
     // Update average execution time
     const totalTime = this.stats.averageExecutionTime * (this.stats.totalExecutions - 1) + executionTime;
     this.stats.averageExecutionTime = totalTime / this.stats.totalExecutions;
+  }
+
+  /**
+   * Log tool execution for audit purposes
+   */
+  private logExecution(
+    toolName: string,
+    parameters: any,
+    context: ExecutionContext,
+    result: 'success' | 'failure' | 'denied',
+    error?: string,
+    executionTime?: number
+  ): void {
+    const entry: AuditLogEntry = {
+      timestamp: new Date(),
+      toolName,
+      parameters: JSON.parse(JSON.stringify(parameters)), // Deep copy to avoid mutations
+      context: {
+        ...context,
+        // Don't log sensitive information
+        user: { ...context.user }
+      },
+      result,
+      error,
+      executionTime: executionTime || 0
+    };
+
+    this.auditLog.push(entry);
+
+    // Keep audit log size manageable
+    if (this.auditLog.length > this.MAX_AUDIT_ENTRIES) {
+      this.auditLog = this.auditLog.slice(-this.MAX_AUDIT_ENTRIES);
+    }
   }
 }
 
@@ -482,6 +1011,235 @@ export class BuiltInTools {
   }
 
   /**
+   * Create git status tool definition
+   */
+  private static createGitStatusToolDefinition(): ToolDefinition {
+    return {
+      name: 'git_status',
+      description: 'Get the current git status of the workspace',
+      category: 'git',
+      parameters: {
+        type: 'object',
+        properties: {
+          porcelain: {
+            type: 'boolean',
+            description: 'Use porcelain format for machine-readable output'
+          }
+        }
+      },
+      security: {
+        requiresApproval: false,
+        allowedInWeb: false,
+        riskLevel: 'low',
+        permissions: ['git.read']
+      },
+      executor: async (parameters: { porcelain?: boolean }, context: ExecutionContext): Promise<ToolResult> => {
+        try {
+          const workspaceUri = context.workspaceUri || vscode.workspace.workspaceFolders?.[0]?.uri;
+          if (!workspaceUri) {
+            return {
+              success: false,
+              error: 'No workspace available'
+            };
+          }
+
+          // Use VS Code's built-in git extension
+          const gitExtension = vscode.extensions.getExtension('vscode.git');
+          if (!gitExtension) {
+            return {
+              success: false,
+              error: 'Git extension not available'
+            };
+          }
+
+          const git = gitExtension.exports.getAPI(1);
+          const repository = git.getRepository(workspaceUri);
+          
+          if (!repository) {
+            return {
+              success: false,
+              error: 'No git repository found in workspace'
+            };
+          }
+
+          const status = repository.state;
+          
+          return {
+            success: true,
+            data: {
+              branch: status.HEAD?.name || 'unknown',
+              changes: status.workingTreeChanges.length,
+              staged: status.indexChanges.length,
+              untracked: status.untrackedChanges?.length || 0,
+              ahead: status.HEAD?.ahead || 0,
+              behind: status.HEAD?.behind || 0,
+              files: parameters.porcelain ? {
+                working: status.workingTreeChanges.map((change: any) => ({
+                  path: change.uri.fsPath,
+                  status: change.status
+                })),
+                staged: status.indexChanges.map((change: any) => ({
+                  path: change.uri.fsPath,
+                  status: change.status
+                }))
+              } : undefined
+            },
+            metadata: { repository: workspaceUri.fsPath }
+          };
+        } catch (error) {
+          return {
+            success: false,
+            error: `Failed to get git status: ${error instanceof Error ? error.message : String(error)}`
+          };
+        }
+      }
+    };
+  }
+
+  /**
+   * Create web request tool definition
+   */
+  private static createWebRequestToolDefinition(): ToolDefinition {
+    return {
+      name: 'web_request',
+      description: 'Make HTTP requests to web APIs',
+      category: 'web',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: {
+            type: 'string',
+            description: 'URL to make the request to'
+          },
+          method: {
+            type: 'string',
+            enum: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+            description: 'HTTP method to use'
+          },
+          headers: {
+            type: 'object',
+            description: 'HTTP headers to include'
+          },
+          body: {
+            type: 'string',
+            description: 'Request body (for POST, PUT, PATCH)'
+          },
+          timeout: {
+            type: 'number',
+            description: 'Request timeout in milliseconds',
+            minimum: 1000,
+            maximum: 30000
+          }
+        },
+        required: ['url']
+      },
+      security: {
+        requiresApproval: true,
+        allowedInWeb: true,
+        riskLevel: 'medium',
+        permissions: ['web.request']
+      },
+      executor: async (parameters: { 
+        url: string; 
+        method?: string; 
+        headers?: Record<string, string>; 
+        body?: string; 
+        timeout?: number 
+      }, context: ExecutionContext): Promise<ToolResult> => {
+        try {
+          const method = parameters.method || 'GET';
+          const timeout = parameters.timeout || 10000;
+          
+          // Basic URL validation
+          let parsedUrl: URL;
+          try {
+            parsedUrl = new URL(parameters.url);
+          } catch {
+            return {
+              success: false,
+              error: 'Invalid URL format'
+            };
+          }
+
+          // Security check - block localhost and private IPs in production
+          if (context.security.level !== SecurityLevel.ELEVATED) {
+            const hostname = parsedUrl.hostname.toLowerCase();
+            if (hostname === 'localhost' || 
+                hostname === '127.0.0.1' || 
+                hostname.startsWith('192.168.') ||
+                hostname.startsWith('10.') ||
+                hostname.startsWith('172.')) {
+              return {
+                success: false,
+                error: 'Access to local/private networks not allowed'
+              };
+            }
+          }
+
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+          try {
+            const response = await fetch(parameters.url, {
+              method,
+              headers: parameters.headers,
+              body: method !== 'GET' ? parameters.body : undefined,
+              signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            const responseText = await response.text();
+            let responseData: any = responseText;
+
+            // Try to parse as JSON
+            try {
+              responseData = JSON.parse(responseText);
+            } catch {
+              // Keep as text if not valid JSON
+            }
+
+            // Convert headers to object
+            const headers: Record<string, string> = {};
+            response.headers.forEach((value, key) => {
+              headers[key] = value;
+            });
+
+            return {
+              success: true,
+              data: {
+                status: response.status,
+                statusText: response.statusText,
+                headers,
+                data: responseData
+              },
+              metadata: {
+                url: parameters.url,
+                method,
+                responseSize: responseText.length
+              }
+            };
+          } finally {
+            clearTimeout(timeoutId);
+          }
+        } catch (error) {
+          if (error instanceof Error && error.name === 'AbortError') {
+            return {
+              success: false,
+              error: 'Request timed out'
+            };
+          }
+          
+          return {
+            success: false,
+            error: `Web request failed: ${error instanceof Error ? error.message : String(error)}`
+          };
+        }
+      }
+    };
+  }
+
+  /**
    * Create show message tool definition
    */
   private static createShowMessageToolDefinition(): ToolDefinition {
@@ -553,5 +1311,11 @@ export class BuiltInTools {
     
     // Register VS Code tools
     toolManager.registerTool(this.createShowMessageToolDefinition());
+    
+    // Register Git tools
+    toolManager.registerTool(this.createGitStatusToolDefinition());
+    
+    // Register Web tools
+    toolManager.registerTool(this.createWebRequestToolDefinition());
   }
 }
