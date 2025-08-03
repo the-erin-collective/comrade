@@ -3,6 +3,7 @@
  */
 
 import * as assert from 'assert';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import * as vscode from 'vscode';
 import * as sinon from 'sinon';
 import { BaseRunner, RunnerResult, RunnerError, OperationTimeout } from '../runners/base';
@@ -86,13 +87,13 @@ class MockRunner extends BaseRunner {
   }
 }
 
-suite('Error Handling and Cancellation Tests', () => {
+describe('Error Handling and Cancellation', () => {
   let mockAgent: MockAgent;
   let mockSession: Session;
   let mockProgress: vscode.Progress<any>;
   let sandbox: sinon.SinonSandbox;
 
-  setup(() => {
+  beforeEach(() => {
     sandbox = sinon.createSandbox();
     mockAgent = new MockAgent();
     
@@ -139,12 +140,12 @@ suite('Error Handling and Cancellation Tests', () => {
     );
   });
 
-  teardown(() => {
+  afterEach(() => {
     sandbox.restore();
     mockSession.dispose();
   });
 
-  test('should handle successful execution', async () => {
+  it('should handle successful execution', async () => {
     const runner = new MockRunner(mockSession, mockAgent, 'test personality');
     
     const result = await runner.run();
@@ -154,7 +155,7 @@ suite('Error Handling and Cancellation Tests', () => {
     assert.strictEqual(result.error, undefined);
   });
 
-  test('should handle execution failure with error recovery', async () => {
+  it('should handle execution failure with error recovery', async () => {
     const runner = new MockRunner(mockSession, mockAgent, 'test personality');
     runner.setShouldFail(true);
 
@@ -171,7 +172,7 @@ suite('Error Handling and Cancellation Tests', () => {
     assert.ok(showErrorMessageStub.called);
   });
 
-  test('should handle cancellation before execution', async () => {
+  it('should handle cancellation before execution', async () => {
     const runner = new MockRunner(mockSession, mockAgent, 'test personality');
     
     // Cancel session before execution
@@ -184,7 +185,7 @@ suite('Error Handling and Cancellation Tests', () => {
     assert.ok(result.error.message.includes('cancelled before execution'));
   });
 
-  test('should handle cancellation during execution', async () => {
+  it('should handle cancellation during execution', async () => {
     const runner = new MockRunner(mockSession, mockAgent, 'test personality');
     runner.setExecutionDelay(100);
     
@@ -199,7 +200,7 @@ suite('Error Handling and Cancellation Tests', () => {
     assert.ok(result.error.message.includes('cancelled during execution'));
   });
 
-  test('should handle operation timeout', async () => {
+  it('should handle operation timeout', async () => {
     const runner = new MockRunner(mockSession, mockAgent, 'test personality');
     
     const timeout: OperationTimeout = {

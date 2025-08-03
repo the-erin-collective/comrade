@@ -3,17 +3,18 @@
  */
 
 import * as assert from 'assert';
+import { describe, it } from 'mocha';
 import { ConfigurationManager } from '../core/config';
 import { AgentRegistry } from '../core/registry';
 
-suite('Basic Integration Tests', () => {
-  test('should create configuration manager instance', () => {
+describe('Basic Integration Tests', () => {
+  it('should create configuration manager instance', () => {
     // This is a basic test to ensure our classes can be instantiated
     assert.ok(ConfigurationManager);
     assert.ok(AgentRegistry);
   });
 
-  test('should validate agent configuration structure', () => {
+  it('should validate agent configuration structure', () => {
     const agentConfig = {
       id: 'test-agent',
       name: 'Test Agent',
@@ -41,7 +42,7 @@ suite('Basic Integration Tests', () => {
     assert.strictEqual(typeof agentConfig.isEnabledForAssignment, 'boolean');
   });
 
-  test('should validate capability enums', () => {
+  it('should validate capability enums', () => {
     const validReasoningDepths = ['basic', 'intermediate', 'advanced'];
     const validSpeeds = ['fast', 'medium', 'slow'];
     const validCostTiers = ['low', 'medium', 'high'];

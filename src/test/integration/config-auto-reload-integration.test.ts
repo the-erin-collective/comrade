@@ -45,12 +45,17 @@ const mockConfiguration = {
     }, 10);
   },
   has: (key: string) => mockConfigData.hasOwnProperty(key),
-  inspect: (key: string) => ({
+  inspect: <T = any>(key: string) => ({
     key,
-    defaultValue: undefined,
-    globalValue: mockConfigData[key],
-    workspaceValue: undefined,
-    workspaceFolderValue: undefined
+    defaultValue: undefined as unknown as T | undefined,
+    globalValue: mockConfigData[key] as T | undefined,
+    workspaceValue: undefined as T | undefined,
+    workspaceFolderValue: undefined as T | undefined,
+    defaultLanguageValue: undefined as T | undefined,
+    globalLanguageValue: undefined as T | undefined,
+    workspaceLanguageValue: undefined as T | undefined,
+    workspaceFolderLanguageValue: undefined as T | undefined,
+    languageIds: undefined as string[] | undefined
   })
 } as vscode.WorkspaceConfiguration;
 
@@ -228,12 +233,17 @@ suite('Configuration Auto-Reload Integration Tests', () => {
     test('should apply workspace precedence over user settings', async () => {
       // Set up mock inspect to simulate workspace override
       const originalInspect = mockConfiguration.inspect;
-      mockConfiguration.inspect = (key: string) => ({
+      mockConfiguration.inspect = <T = any>(key: string) => ({
         key,
-        defaultValue: undefined,
-        globalValue: 'user-value',
-        workspaceValue: 'workspace-value',
-        workspaceFolderValue: undefined
+        defaultValue: undefined as unknown as T | undefined,
+        globalValue: 'user-value' as unknown as T | undefined,
+        workspaceValue: 'workspace-value' as unknown as T | undefined,
+        workspaceFolderValue: undefined as T | undefined,
+        defaultLanguageValue: undefined as T | undefined,
+        globalLanguageValue: undefined as T | undefined,
+        workspaceLanguageValue: undefined as T | undefined,
+        workspaceFolderLanguageValue: undefined as T | undefined,
+        languageIds: undefined as string[] | undefined,
       });
       
       try {

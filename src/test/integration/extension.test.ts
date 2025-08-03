@@ -6,19 +6,20 @@ import * as assert from 'assert';
 import * as vscode from 'vscode';
 import * as sinon from 'sinon';
 import * as path from 'path';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 
 // Import extension components
-import { activate, deactivate } from '../../extension';
+import { activate, deactivate, getStatusBarManager, getPersonalityManager, getAgentRegistry, getConfigurationManager } from '../../extension';
 import { AgentRegistry } from '../../core/registry';
 import { ConfigurationManager } from '../../core/config';
 import { ComradeSidebarProvider } from '../../providers/sidebarProvider';
 
-suite('VS Code Extension Integration Tests', () => {
+describe('VS Code Extension Integration Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let mockContext: vscode.ExtensionContext;
   let mockSecretStorage: vscode.SecretStorage;
 
-  setup(() => {
+  beforeEach(() => {
     sandbox = sinon.createSandbox();
     
     // Mock extension context
@@ -69,14 +70,14 @@ suite('VS Code Extension Integration Tests', () => {
     } as any);
   });
 
-  teardown(() => {
+  afterEach(() => {
     sandbox.restore();
     // Clean up singletons
     AgentRegistry.resetInstance();
     ConfigurationManager.resetInstance();
   });
 
-  test('should activate extension successfully', async () => {
+  it('should activate extension successfully', async () => {
     try {
       await activate(mockContext);
       
@@ -127,15 +128,15 @@ suite('VS Code Extension Integration Tests', () => {
     }
   });
 
-  test('should deactivate extension cleanly and cleanup all resources', async () => {
+  it('should deactivate extension cleanly and cleanup all resources', async () => {
     // First activate
     await activate(mockContext);
     
     // Create spies for dispose methods
-    const statusBarDisposeSpy = sandbox.spy(statusBarManager, 'dispose');
-    const personalityManagerDisposeSpy = sandbox.spy(personalityManager, 'dispose');
-    const agentRegistryDisposeSpy = sandbox.spy(agentRegistry, 'dispose');
-    const configManagerDisposeSpy = sandbox.spy(configurationManager, 'dispose');
+    const statusBarDisposeSpy = sandbox.spy(getStatusBarManager(), 'dispose');
+    const personalityManagerDisposeSpy = sandbox.spy(getPersonalityManager(), 'dispose');
+    const agentRegistryDisposeSpy = sandbox.spy(getAgentRegistry(), 'dispose');
+    const configManagerDisposeSpy = sandbox.spy(getConfigurationManager(), 'dispose');
     
     // Get the dispose functions from context subscriptions
     const subscriptionDisposeSpies = mockContext.subscriptions
@@ -162,7 +163,7 @@ suite('VS Code Extension Integration Tests', () => {
     assert.ok(true, 'Deactivation should complete without errors');
   });
 
-  test('should handle command execution', async () => {
+  it('should handle command execution', async () => {
     await activate(mockContext);
     
     const registerCommandStub = vscode.commands.registerCommand as sinon.SinonStub;
@@ -185,7 +186,7 @@ suite('VS Code Extension Integration Tests', () => {
     assert.ok(showInfoStub.called, 'Command should show information message');
   });
 
-  test('should handle agent configuration command', async () => {
+  it('should handle agent configuration command', async () => {
     await activate(mockContext);
     
     const registerCommandStub = vscode.commands.registerCommand as sinon.SinonStub;

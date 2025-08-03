@@ -90,7 +90,8 @@ suite('Availability Caching Load Tests', () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock different response times for different agents
-    fetchStub.callsFake((url: string) => {
+    fetchStub.callsFake((...args: any[]) => {
+      const url = args[0] as string;
       const delay = url.includes('openai') ? 100 : 
                    url.includes('anthropic') ? 150 : 
                    url.includes('ollama') ? 200 : 50;

@@ -9,12 +9,13 @@ import * as fs from 'fs';
 const Mocha = require('mocha');
 
 export function run(): Promise<void> {
-  // Create the mocha test
+  // Create the mocha test with BDD interface
   const mocha = new Mocha({
-    ui: 'tdd',
+    ui: 'bdd',  // Changed from 'tdd' to 'bdd' to match our test style
     color: true,
     timeout: 30000,
-    reporter: 'spec'
+    reporter: 'spec',
+    require: ['source-map-support/register']  // Add source map support for better stack traces
   });
 
   const testsRoot = path.resolve(__dirname, '..');

@@ -4,6 +4,7 @@
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import { ConfigurationManager, AgentConfigurationItem } from '../core/config';
 import { AgentCapabilities } from '../core/agent';
 
@@ -26,25 +27,25 @@ const mockConfiguration = {
 const originalGetConfiguration = vscode.workspace.getConfiguration;
 (vscode.workspace as any).getConfiguration = (section?: string) => mockConfiguration;
 
-suite('ConfigurationManager Tests', () => {
+describe('ConfigurationManager', () => {
   let configManager: ConfigurationManager;
 
-  setup(() => {
+  beforeEach(() => {
     configManager = ConfigurationManager.getInstance(mockSecretStorage);
   });
 
-  teardown(() => {
+  afterEach(() => {
     // Reset the mock
     (vscode.workspace as any).getConfiguration = originalGetConfiguration;
   });
 
-  test('should create singleton instance', () => {
+  it('should create singleton instance', () => {
     const instance1 = ConfigurationManager.getInstance(mockSecretStorage);
     const instance2 = ConfigurationManager.getInstance();
     assert.strictEqual(instance1, instance2);
   });
 
-  test('should validate agent configuration with defaults', () => {
+  it('should validate agent configuration with defaults', () => {
     const testAgent: Partial<AgentConfigurationItem> = {
       id: 'test-agent',
       name: 'Test Agent',
@@ -70,7 +71,7 @@ suite('ConfigurationManager Tests', () => {
     assert.ok(testAgent.capabilities);
   });
 
-  test('should generate unique agent IDs', () => {
+  it('should generate unique agent IDs', () => {
     // Test that the configuration manager can handle agents without IDs
     // by generating unique ones (tested indirectly through validation)
     const agentWithoutId: Partial<AgentConfigurationItem> = {
@@ -84,7 +85,7 @@ suite('ConfigurationManager Tests', () => {
     assert.ok(agentWithoutId.provider);
   });
 
-  test('should handle missing capabilities with defaults', () => {
+  it('should handle missing capabilities with defaults', () => {
     const agentWithMinimalCapabilities: Partial<AgentConfigurationItem> = {
       id: 'minimal-agent',
       name: 'Minimal Agent',
@@ -107,7 +108,7 @@ suite('ConfigurationManager Tests', () => {
     assert.strictEqual(agentWithMinimalCapabilities.capabilities?.reasoningDepth, 'basic');
   });
 
-  test('should create agent instance with configuration', async () => {
+  it('should create agent instance with configuration', async () => {
     const agentConfig: AgentConfigurationItem = {
       id: 'test-agent-instance',
       name: 'Test Agent Instance',
@@ -138,7 +139,7 @@ suite('ConfigurationManager Tests', () => {
     assert.deepStrictEqual(agent.capabilities, agentConfig.capabilities);
   });
 
-  test('should handle API key storage and retrieval', async () => {
+  it('should handle API key storage and retrieval', async () => {
     const agentId = 'test-agent-key';
     const apiKey = 'test-api-key-12345';
 
@@ -169,7 +170,7 @@ suite('ConfigurationManager Tests', () => {
     await configManagerWithMockStorage.removeApiKey(agentId);
   });
 
-  test('should validate MCP server configurations', () => {
+  it('should validate MCP server configurations', () => {
     const mcpConfig = {
       id: 'test-mcp',
       name: 'Test MCP Server',
@@ -187,8 +188,8 @@ suite('ConfigurationManager Tests', () => {
   });
 });
 
-suite('Configuration Validation Tests', () => {
-  test('should validate required agent properties', () => {
+describe('Configuration Validation', () => {
+  it('should validate required agent properties', () => {
     const requiredProperties = ['id', 'name', 'provider', 'model', 'capabilities'];
     
     requiredProperties.forEach(prop => {
@@ -196,7 +197,7 @@ suite('Configuration Validation Tests', () => {
     });
   });
 
-  test('should validate capability enums', () => {
+  it('should validate capability enums', () => {
     const validReasoningDepths = ['basic', 'intermediate', 'advanced'];
     const validSpeeds = ['fast', 'medium', 'slow'];
     const validCostTiers = ['low', 'medium', 'high'];
@@ -219,7 +220,7 @@ suite('Configuration Validation Tests', () => {
     });
   });
 
-  test('should validate numeric constraints', () => {
+  it('should validate numeric constraints', () => {
     // Temperature should be between 0 and 2
     const validTemperatures = [0, 0.5, 1.0, 1.5, 2.0];
     const invalidTemperatures = [-0.1, 2.1, -1, 3];

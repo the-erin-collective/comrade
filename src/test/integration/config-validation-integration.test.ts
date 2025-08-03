@@ -5,6 +5,7 @@
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import { ConfigurationManager, AgentConfigurationItem, MCPServerConfig } from '../../core/config';
 import { ConfigurationValidator } from '../../core/config-validator';
 
@@ -33,22 +34,22 @@ const mockConfiguration = {
 const originalGetConfiguration = vscode.workspace.getConfiguration;
 (vscode.workspace as any).getConfiguration = (section?: string) => mockConfiguration;
 
-suite('Configuration Validation Integration Tests', () => {
+describe('Configuration Validation Integration Tests', () => {
   let configManager: ConfigurationManager;
 
-  setup(() => {
+  beforeEach(() => {
     // Reset mock data
     mockConfigData = {};
     ConfigurationManager.resetInstance();
     configManager = ConfigurationManager.getInstance(mockSecretStorage);
   });
 
-  teardown(() => {
+  afterEach(() => {
     // Reset the mock
     (vscode.workspace as any).getConfiguration = originalGetConfiguration;
   });
 
-  suite('Agent Configuration Integration', () => {
+  describe('Agent Configuration Integration', () => {
     
     test('should validate and save valid agent configuration', async () => {
       const validAgent: AgentConfigurationItem = {

@@ -5,20 +5,29 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import * as sinon from 'sinon';
-import { suite, test } from 'mocha';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import { ContextRunner } from '../runners/context';
-import { Session, SessionState } from '../core/session';
+import { SessionState } from '../core/session';
+
+// Define a minimal Session interface for testing
+interface Session {
+  id: string;
+  workspaceUri: vscode.Uri;
+  state: SessionState;
+  isCancelled(): boolean;
+  // Add other required properties here
+}
 import { IAgent, PhaseType } from '../core/agent';
 import { WorkspaceContext } from '../core/workspace';
 
-suite('ContextRunner Tests', () => {
+describe('ContextRunner Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let mockSession: Session;
   let mockAgent: IAgent;
   let contextRunner: ContextRunner;
   let mockWorkspaceUri: vscode.Uri;
 
-  setup(() => {
+  beforeEach(() => {
     sandbox = sinon.createSandbox();
     
     // Create mock workspace URI
@@ -46,7 +55,7 @@ suite('ContextRunner Tests', () => {
     contextRunner = new ContextRunner(mockSession, mockAgent, 'test personality');
   });
 
-  teardown(() => {
+  afterEach(() => {
     sandbox.restore();
   });
 
@@ -124,7 +133,7 @@ suite('ContextRunner Tests', () => {
     assert.strictEqual(emptySummary, 'Empty file');
   });
 
-  test('should calculate file score correctly', () => {
+  it('should calculate file score correctly', () => {
     const calculateFileScore = (contextRunner as any).calculateFileScore.bind(contextRunner);
     
     const importantFile = {
@@ -292,7 +301,7 @@ suite('ContextRunner Tests', () => {
       console.debug = originalDebug;
     });
 
-    test('should handle read errors gracefully', async () => {
+    it('should handle read errors gracefully', async () => {
       const error = new Error('Permission denied') as any;
       error.code = 'EACCES';
       readWorkspaceFileStub.rejects(error);
@@ -332,7 +341,7 @@ suite('ContextRunner Tests', () => {
     });
   });
 
-  test('should select important files within token limits', () => {
+  it('should select important files within token limits', () => {
     const selectImportantFiles = (contextRunner as any).selectImportantFiles.bind(contextRunner);
     
     const analyses = [

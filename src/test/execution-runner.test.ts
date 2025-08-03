@@ -3,6 +3,7 @@
  */
 
 import * as assert from 'assert';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { ExecutionRunner } from '../runners/execution';
@@ -107,7 +108,7 @@ suite('ExecutionRunner Tests', () => {
   let session: Session;
   let executionRunner: ExecutionRunner;
 
-  setup(() => {
+  beforeEach(() => {
     // Create mock workspace URI
     workspaceUri = vscode.Uri.file('/test/workspace');
     
@@ -145,7 +146,7 @@ suite('ExecutionRunner Tests', () => {
     }
   });
 
-  test('should process action list in dry run mode', async () => {
+  it('should process action list in dry run mode', async () => {
     // Create ExecutionRunner with dry run option
     const dryRunExecutionRunner = new ExecutionRunner(
       session,
@@ -171,7 +172,7 @@ suite('ExecutionRunner Tests', () => {
     }
   });
 
-  test('should handle action dependencies correctly', () => {
+  it('should handle action dependencies correctly', () => {
     const runner = executionRunner as any;
     runner.actionList = sampleActionList;
 

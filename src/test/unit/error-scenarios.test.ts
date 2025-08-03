@@ -7,6 +7,7 @@ import * as sinon from 'sinon';
 import * as vscode from 'vscode';
 import { ChatBridge, ChatBridgeError } from '../../core/chat';
 import { AgentRegistry } from '../../core/registry';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import { ConfigurationManager } from '../../core/config';
 import { Session, SessionState } from '../../core/session';
 import { ContextRunner } from '../../runners/context';
@@ -22,14 +23,14 @@ import {
   createMockAgent 
 } from '../mocks/agents';
 
-suite('Comprehensive Error Scenarios Tests', () => {
+describe('Comprehensive Error Scenarios Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let mockSecretStorage: vscode.SecretStorage;
   let configManager: ConfigurationManager;
   let agentRegistry: AgentRegistry;
   let chatBridge: ChatBridge;
 
-  setup(async () => {
+  beforeEach(async () => {
     sandbox = sinon.createSandbox();
     
     // Mock secret storage
@@ -53,13 +54,13 @@ suite('Comprehensive Error Scenarios Tests', () => {
     await agentRegistry.initialize();
   });
 
-  teardown(() => {
+  afterEach(() => {
     sandbox.restore();
     AgentRegistry.resetInstance();
     ConfigurationManager.resetInstance();
   });
 
-  suite('Network Error Scenarios', () => {
+  describe('Network Error Scenarios', () => {
     test('should handle network timeouts with exponential backoff', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       const messages = [{ role: 'user' as const, content: 'Test message' }];
@@ -152,8 +153,8 @@ suite('Comprehensive Error Scenarios Tests', () => {
     });
   });
 
-  suite('API Error Scenarios', () => {
-    test('should handle rate limiting with retry-after header', async () => {
+  describe('API Error Scenarios', () => {
+    it('should handle rate limiting with retry-after header', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       const messages = [{ role: 'user' as const, content: 'Test message' }];
 
@@ -299,8 +300,8 @@ suite('Comprehensive Error Scenarios Tests', () => {
     });
   });
 
-  suite('Runner Error Scenarios', () => {
-    test('should handle context generation failures with recovery', async () => {
+  describe('Runner Error Scenarios', () => {
+    it('should handle context generation failures with recovery', async () => {
       const { session, progress } = createMockSession(
         'context-error-test',
         vscode.Uri.file('/test/workspace'),
@@ -663,8 +664,8 @@ suite('Comprehensive Error Scenarios Tests', () => {
     });
   });
 
-  suite('Recovery Mechanisms', () => {
-    test('should implement circuit breaker pattern', async () => {
+  describe('Recovery Mechanisms', () => {
+    it('should implement circuit breaker pattern', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       const messages = [{ role: 'user' as const, content: 'Test message' }];
 
@@ -783,7 +784,7 @@ suite('Comprehensive Error Scenarios Tests', () => {
       }
     });
 
-    test('should implement automatic retry with jitter', async () => {
+    it('should implement automatic retry with jitter', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       const messages = [{ role: 'user' as const, content: 'Test message' }];
 
@@ -813,8 +814,8 @@ suite('Comprehensive Error Scenarios Tests', () => {
     });
   });
 
-  suite('Error Reporting and Monitoring', () => {
-    test('should collect comprehensive error metrics', async () => {
+  describe('Error Reporting and Monitoring', () => {
+    it('should collect comprehensive error metrics', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       const messages = [{ role: 'user' as const, content: 'Test message' }];
 

@@ -6,7 +6,9 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
+import { describe, beforeEach, afterEach } from 'mocha';
 import * as path from 'path';
+import { ToolDefinition } from '../../core/tools';
 
 // Import all integration test components
 import { ChatBridge, ChatMessage } from '../../core/chat';
@@ -14,9 +16,8 @@ import { AgentRegistry } from '../../core/registry';
 import { ConfigurationManager } from '../../core/config';
 import { ToolManager } from '../../core/tool-manager';
 import { mockAgentConfigurations, createMockAgent } from '../mocks/agents';
-import { getMockResponse } from '../mocks/llm-responses';
 
-suite('Comprehensive Integration Tests', () => {
+describe('Comprehensive Integration Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let chatBridge: ChatBridge;
   let agentRegistry: AgentRegistry;
@@ -165,7 +166,8 @@ suite('Comprehensive Integration Tests', () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock different providers with different behaviors
-    fetchStub.callsFake((url: string) => {
+    fetchStub.callsFake((...args: unknown[]) => {
+      const url = args[0] as string;
       if (url.includes('openai')) {
         // OpenAI streaming success
         const mockStream = {
@@ -217,7 +219,14 @@ suite('Comprehensive Integration Tests', () => {
       { role: 'user', content: 'Test cross-provider streaming' }
     ];
 
-    const results = [];
+    interface TestResult {
+      provider: string;
+      success: boolean;
+      content: string;
+      usedFallback: boolean;
+    }
+
+    const results: TestResult[] = [];
     
     for (const agent of agents) {
       let streamedContent = '';
@@ -232,7 +241,7 @@ suite('Comprehensive Integration Tests', () => {
       results.push({
         provider: agent.provider,
         success: response.success,
-        content: streamedContent || response.content,
+        content: streamedContent || response.content || '',
         usedFallback: agent.provider === 'anthropic'
       });
     }
@@ -248,7 +257,12 @@ suite('Comprehensive Integration Tests', () => {
     });
 
     // Verify caching by making same requests again
-    const cachedResults = [];
+    interface CachedResult {
+      provider: string;
+      available: boolean;
+    }
+    
+    const cachedResults: CachedResult[] = [];
     for (const agent of agents) {
       const isAvailable = await agent.isAvailable();
       cachedResults.push({ provider: agent.provider, available: isAvailable });
@@ -316,70 +330,97 @@ suite('Comprehensive Integration Tests', () => {
     ];
 
     // Register multiple tools with different security levels
-    const tools = [
+    const tools: ToolDefinition[] = [
       {
         name: 'analyze_code',
         description: 'Analyze code file',
+        category: 'code',
         parameters: {
           type: 'object',
           properties: {
-            path: { type: 'string', description: 'File path to analyze' }
+            path: { 
+              type: 'string', 
+              description: 'File path to analyze',
+              minLength: 1
+            }
           },
           required: ['path']
         },
         security: {
           requiresApproval: false,
           allowedInWeb: true,
-          riskLevel: 'low' as const
+          riskLevel: 'low'
         },
-        executor: async (params: any) => {
-          await new Promise(resolve => setTimeout(resolve, 100)); // Simulate analysis time
+        executor: async (params: { path: string }) => {
+          await new Promise(resolve => setTimeout(resolve, 100));
           return {
             success: true,
-            result: `Analysis of ${params.path}: Found 5 functions, 2 classes, 10 imports`
+            data: `Analysis of ${params.path}: Found 5 functions, 2 classes, 10 imports`,
+            metadata: { timestamp: new Date().toISOString() }
           };
         }
       },
       {
         name: 'create_test',
         description: 'Create test file',
+        category: 'testing',
         parameters: {
           type: 'object',
           properties: {
-            testPath: { type: 'string', description: 'Test file path' },
-            sourceFile: { type: 'string', description: 'Source file to test' }
+            testPath: { 
+              type: 'string', 
+              description: 'Test file path',
+              minLength: 1
+            },
+            sourceFile: { 
+              type: 'string', 
+              description: 'Source file to test',
+              minLength: 1
+            }
           },
           required: ['testPath', 'sourceFile']
         },
         security: {
           requiresApproval: false,
           allowedInWeb: true,
-          riskLevel: 'medium' as const
+          riskLevel: 'medium' as const,
+          permissions: ['files.write']
         },
-        executor: async (params: any) => {
-          await new Promise(resolve => setTimeout(resolve, 150)); // Simulate file creation
+        executor: async (params: { testPath: string, sourceFile: string }) => {
+          await new Promise(resolve => setTimeout(resolve, 150));
           const filePath = vscode.Uri.file(path.join(workspaceUri.fsPath, params.testPath));
           await vscode.workspace.fs.writeFile(filePath, Buffer.from('// Generated test file'));
           return {
             success: true,
-            result: `Created test file ${params.testPath} for ${params.sourceFile}`
+            data: {
+              path: params.testPath,
+              sourceFile: params.sourceFile,
+              created: true
+            },
+            metadata: { timestamp: new Date().toISOString() }
           };
         }
       },
       {
         name: 'run_tests',
         description: 'Run test suite (potentially dangerous)',
+        category: 'testing',
         parameters: {
           type: 'object',
           properties: {
-            pattern: { type: 'string', description: 'Test file pattern' }
+            pattern: { 
+              type: 'string', 
+              description: 'Test file pattern',
+              minLength: 1
+            }
           },
           required: ['pattern']
         },
         security: {
           requiresApproval: true,
           allowedInWeb: false,
-          riskLevel: 'high' as const
+          riskLevel: 'high' as const,
+          permissions: ['execute_tests']
         },
         executor: async (params: any) => {
           await new Promise(resolve => setTimeout(resolve, 200)); // Simulate test execution
@@ -426,7 +467,8 @@ suite('Comprehensive Integration Tests', () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock various response types and delays
-    fetchStub.callsFake((url: string) => {
+    fetchStub.callsFake((...args: unknown[]) => {
+      const url = args[0] as string;
       const delay = Math.random() * 100; // Random delay 0-100ms
       const shouldSucceed = Math.random() > 0.1; // 90% success rate
       
@@ -443,7 +485,7 @@ suite('Comprehensive Integration Tests', () => {
                 }],
                 usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
               })
-            });
+            } as Response);
           } else {
             resolve({
               ok: false,
@@ -451,7 +493,7 @@ suite('Comprehensive Integration Tests', () => {
               json: () => Promise.resolve({
                 error: { message: 'Service temporarily unavailable' }
               })
-            });
+            } as Response);
           }
         }, delay);
       });
@@ -474,7 +516,7 @@ suite('Comprehensive Integration Tests', () => {
             const agent = agents[Math.floor(Math.random() * agents.length)];
             const isAvailable = await agent.isAvailable();
             totalOperations++;
-            if (isAvailable) successfulOperations++;
+            if (isAvailable) { successfulOperations++; }
           } catch (error) {
             errors++;
           }
@@ -492,7 +534,7 @@ suite('Comprehensive Integration Tests', () => {
             ];
             const response = await chatBridge.sendMessage(agent, messages);
             totalOperations++;
-            if (response.success) successfulOperations++;
+            if (response.success) { successfulOperations++; }
           } catch (error) {
             errors++;
           }
@@ -617,6 +659,17 @@ suite('Comprehensive Integration Tests', () => {
       const availableTools = toolManager.getAvailableTools(testAgent.capabilities);
       healthChecks.toolManager = Array.isArray(availableTools);
 
+      // Check if any agent is available
+      if (!agents.length) {
+        throw new Error('No agents available for testing');
+      }
+
+      // Check if any agent supports tool use
+      const toolAgent = agents.find(a => a.capabilities.hasToolUse);
+      if (!toolAgent) {
+        throw new Error('No agent with tool use capability available for testing');
+      }
+
       // Check all agents availability
       const availabilityChecks = await Promise.all(
         agents.map(agent => agent.isAvailable())
@@ -627,7 +680,7 @@ suite('Comprehensive Integration Tests', () => {
       const cacheStats = (agentRegistry as any).getCacheStats?.() || {};
       healthChecks.cachingWorking = typeof cacheStats === 'object';
 
-      // Check tool registration
+// ...
       toolManager.registerTool({
         name: 'health_check_tool',
         description: 'Tool for health checking',

@@ -4,6 +4,7 @@
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import { AgentRegistry } from '../core/registry';
 import { ConfigurationManager, AgentConfigurationItem } from '../core/config';
 import { IAgent, PhaseType, AgentCapabilities } from '../core/agent';
@@ -57,7 +58,7 @@ class MockConfigurationManager extends ConfigurationManager {
   }
 }
 
-suite('AgentRegistry Tests', () => {
+describe('AgentRegistry', () => {
   let mockConfigManager: MockConfigurationManager;
   let agentRegistry: AgentRegistry;
 
@@ -85,20 +86,20 @@ suite('AgentRegistry Tests', () => {
     isEnabledForAssignment: isEnabled
   });
 
-  setup(async () => {
+  beforeEach(async () => {
     // Reset singleton instance for clean test state
     AgentRegistry.resetInstance();
     mockConfigManager = MockConfigurationManager.getInstance();
     agentRegistry = AgentRegistry.getInstance(mockConfigManager);
   });
 
-  test('should create singleton instance', () => {
+  it('should create singleton instance', () => {
     const instance1 = AgentRegistry.getInstance(mockConfigManager);
     const instance2 = AgentRegistry.getInstance();
     assert.strictEqual(instance1, instance2);
   });
 
-  test('should load agents from configuration', async () => {
+  it('should load agents from configuration', async () => {
     const testAgents = [
       createTestAgent('agent1', 'Agent 1'),
       createTestAgent('agent2', 'Agent 2'),
@@ -115,7 +116,7 @@ suite('AgentRegistry Tests', () => {
     assert.strictEqual(loadedAgents[2].id, 'agent3');
   });
 
-  test('should get agent by ID', async () => {
+  it('should get agent by ID', async () => {
     const testAgents = [
       createTestAgent('test-agent', 'Test Agent')
     ];
@@ -132,7 +133,7 @@ suite('AgentRegistry Tests', () => {
     assert.strictEqual(nonExistentAgent, undefined);
   });
 
-  test('should filter agents by auto-assignment enabled', async () => {
+  it('should filter agents by auto-assignment enabled', async () => {
     const testAgents = [
       createTestAgent('enabled1', 'Enabled 1', {}, true),
       createTestAgent('disabled1', 'Disabled 1', {}, false),
@@ -147,7 +148,7 @@ suite('AgentRegistry Tests', () => {
     assert.ok(enabledAgents.every(agent => agent.isEnabledForAssignment));
   });
 
-  test('should filter agents by capabilities', async () => {
+  it('should filter agents by capabilities', async () => {
     const testAgents = [
       createTestAgent('vision-agent', 'Vision Agent', { hasVision: true }),
       createTestAgent('tool-agent', 'Tool Agent', { hasToolUse: true }),
@@ -185,7 +186,7 @@ suite('AgentRegistry Tests', () => {
     assert.strictEqual(lowCostAgents[0].id, 'low-cost-agent');
   });
 
-  test('should get agents suitable for different phases', async () => {
+  it('should get agents suitable for different phases', async () => {
     const testAgents = [
       createTestAgent('fast-agent', 'Fast Agent', { speed: 'fast' }),
       createTestAgent('advanced-agent', 'Advanced Agent', { reasoningDepth: 'advanced' }),

@@ -4,16 +4,17 @@
 
 import * as assert from 'assert';
 import * as sinon from 'sinon';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import { ChatBridge, ChatBridgeError, ChatMessage } from '../core/chat';
 import { IAgent, LLMProvider, AgentConfig, AgentCapabilities } from '../core/agent';
 
-suite('ChatBridge Tests', () => {
+describe('ChatBridge', () => {
   let chatBridge: ChatBridge;
   let mockAgent: IAgent;
   let testMessages: ChatMessage[];
   let fetchStub: sinon.SinonStub;
 
-  setup(() => {
+  beforeEach(() => {
     chatBridge = new ChatBridge();
     fetchStub = sinon.stub(global, 'fetch' as any);
 
@@ -48,14 +49,14 @@ suite('ChatBridge Tests', () => {
     ];
   });
 
-  teardown(() => {
+  afterEach(() => {
     sinon.restore();
   });
 
-  suite('Web Environment Streaming Fallback', () => {
+  describe('Web Environment Streaming Fallback', () => {
     let webCompatibilityStub: sinon.SinonStub;
 
-    setup(() => {
+    beforeEach(() => {
       // Mock web environment for these tests
       webCompatibilityStub = sinon.stub(require('../core/webcompat').WebCompatibility, 'isWeb').returns(true);
       sinon.stub(require('../core/webcompat').WebCompatibility, 'getStreamingSimulationConfig').returns({
@@ -67,11 +68,11 @@ suite('ChatBridge Tests', () => {
       });
     });
 
-    teardown(() => {
+    afterEach(() => {
       webCompatibilityStub.restore();
     });
 
-    test('should simulate streaming in web environment', async () => {
+    it('should simulate streaming in web environment', async () => {
       const mockResponse = {
         choices: [{ message: { content: 'Hello world! This is a test response.' } }],
         usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 }
@@ -126,7 +127,7 @@ suite('ChatBridge Tests', () => {
       }
     });
 
-    test('should handle empty content gracefully', async () => {
+    it('should handle empty content gracefully', async () => {
       const mockResponse = {
         choices: [{ message: { content: '' } }],
         usage: { prompt_tokens: 10, completion_tokens: 0, total_tokens: 10 }
@@ -169,7 +170,7 @@ suite('ChatBridge Tests', () => {
       }
     });
 
-    test('should break at word boundaries when possible', async () => {
+    it('should break at word boundaries when possible', async () => {
       const mockResponse = {
         choices: [{ message: { content: 'This is a test sentence with multiple words that should break nicely.' } }]
       };
@@ -277,8 +278,8 @@ suite('ChatBridge Tests', () => {
     });
   });
 
-  suite('sendMessage', () => {
-    test('should send OpenAI message successfully', async () => {
+  describe('sendMessage', () => {
+    it('should send OpenAI message successfully', async () => {
       const mockResponse = {
         ok: true,
         status: 200,
@@ -306,7 +307,7 @@ suite('ChatBridge Tests', () => {
       assert.strictEqual(result.metadata?.provider, 'openai');
     });
 
-    test('should send Ollama message successfully', async () => {
+    it('should send Ollama message successfully', async () => {
       mockAgent.provider = 'ollama';
       mockAgent.config.provider = 'ollama';
       mockAgent.config.endpoint = 'http://localhost:11434';
@@ -334,7 +335,7 @@ suite('ChatBridge Tests', () => {
       assert.strictEqual(result.metadata?.provider, 'ollama');
     });
 
-    test('should send custom provider message successfully', async () => {
+    it('should send custom provider message successfully', async () => {
       mockAgent.provider = 'custom';
       mockAgent.config.provider = 'custom';
       mockAgent.config.endpoint = 'https://custom-api.example.com/v1/chat/completions';
@@ -365,7 +366,7 @@ suite('ChatBridge Tests', () => {
       assert.strictEqual(result.usage?.totalTokens, 30);
     });
 
-    test('should handle OpenAI API errors', async () => {
+    it('should handle OpenAI API errors', async () => {
       const mockResponse = {
         ok: true,
         status: 200,
@@ -388,7 +389,7 @@ suite('ChatBridge Tests', () => {
       }
     });
 
-    test('should handle HTTP errors', async () => {
+    it('should handle HTTP errors', async () => {
       const mockResponse = {
         ok: false,
         status: 401,
@@ -407,7 +408,7 @@ suite('ChatBridge Tests', () => {
       }
     });
 
-    test('should handle network errors', async () => {
+    it('should handle network errors', async () => {
       fetchStub.rejects(new Error('Network error'));
 
       try {
@@ -419,7 +420,7 @@ suite('ChatBridge Tests', () => {
       }
     });
 
-    test('should throw error for unsupported provider', async () => {
+    it('should throw error for unsupported provider', async () => {
       mockAgent.provider = 'unsupported' as LLMProvider;
 
       try {
@@ -431,7 +432,7 @@ suite('ChatBridge Tests', () => {
       }
     });
 
-    test('should throw error for custom provider without endpoint', async () => {
+    it('should throw error for custom provider without endpoint', async () => {
       mockAgent.provider = 'custom';
       mockAgent.config.provider = 'custom';
       mockAgent.config.endpoint = undefined;
@@ -446,8 +447,8 @@ suite('ChatBridge Tests', () => {
     });
   });
 
-  suite('validateConnection', () => {
-    test('should validate OpenAI connection successfully', async () => {
+  describe('validateConnection', () => {
+    it('should validate OpenAI connection successfully', async () => {
       const mockResponse = {
         ok: true,
         status: 200,
@@ -462,7 +463,7 @@ suite('ChatBridge Tests', () => {
       assert.strictEqual(result, true);
     });
 
-    test('should validate Ollama connection successfully', async () => {
+    it('should validate Ollama connection successfully', async () => {
       mockAgent.provider = 'ollama';
       mockAgent.config.provider = 'ollama';
 
@@ -480,14 +481,14 @@ suite('ChatBridge Tests', () => {
       assert.strictEqual(result, true);
     });
 
-    test('should return false for failed connection validation', async () => {
+    it('should return false for failed connection validation', async () => {
       fetchStub.rejects(new Error('Connection failed'));
 
       const result = await chatBridge.validateConnection(mockAgent);
       assert.strictEqual(result, false);
     });
 
-    test('should return false for custom provider without endpoint', async () => {
+    it('should return false for custom provider without endpoint', async () => {
       mockAgent.provider = 'custom';
       mockAgent.config.endpoint = undefined;
 
@@ -496,8 +497,8 @@ suite('ChatBridge Tests', () => {
     });
   });
 
-  suite('streamMessage', () => {
-    test('should handle streaming errors', async () => {
+  describe('streamMessage', () => {
+    it('should handle streaming errors', async () => {
       const mockCallback = sinon.stub();
       fetchStub.rejects(new Error('Stream error'));
 
@@ -511,8 +512,8 @@ suite('ChatBridge Tests', () => {
     });
   });
 
-  suite('ChatBridgeError', () => {
-    test('should create error with correct properties', () => {
+  describe('ChatBridgeError', () => {
+    it('should create error with correct properties', () => {
       const error = new ChatBridgeError('Test error', 'TEST_CODE', 'openai', 400);
       
       assert.strictEqual(error.message, 'Test error');
