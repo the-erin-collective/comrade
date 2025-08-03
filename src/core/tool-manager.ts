@@ -196,6 +196,28 @@ export class ToolManager {
   }
 
   /**
+   * Get available tools as ChatTool format for LLM APIs
+   */
+  public getAvailableChatTools(context: ExecutionContext): import('./chat').ChatTool[] {
+    const tools = this.getAvailableTools(context);
+    return tools.map(tool => this.convertToChatTool(tool));
+  }
+
+  /**
+   * Convert ToolDefinition to ChatTool format
+   */
+  private convertToChatTool(tool: ToolDefinition): import('./chat').ChatTool {
+    return {
+      type: 'function',
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters
+      }
+    };
+  }
+
+  /**
    * Validate multiple tool calls in batch
    */
   public validateToolCalls(calls: ChatToolCall[]): ValidationResult {

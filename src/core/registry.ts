@@ -63,6 +63,21 @@ export class AgentRegistry {
   }
 
   /**
+   * Get all registered agents (alias for getAllAgents for test compatibility)
+   */
+  public getAgents(): IAgent[] {
+    return this.getAllAgents();
+  }
+
+  /**
+   * Dispose of resources
+   */
+  public dispose(): void {
+    // Implementation for disposing resources
+    // This is a placeholder - implement based on actual requirements
+  }
+
+  /**
    * Get an agent by ID
    */
   public getAgent(agentId: string): IAgent | undefined {

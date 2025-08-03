@@ -51,6 +51,23 @@ export class PersonalityManager {
   }
 
   /**
+   * Reset singleton instance (for testing)
+   */
+  public static resetInstance(): void {
+    PersonalityManager.instance = undefined as any;
+  }
+
+  /**
+   * Clear all workspace initializations
+   */
+  public clearAllWorkspaces(): void {
+    // Implementation for clearing workspace data
+    // This is a placeholder - implement based on actual requirements
+  }
+
+
+
+  /**
    * Initialize personality system for a workspace
    */
   public async initialize(workspaceUri: vscode.Uri): Promise<void> {

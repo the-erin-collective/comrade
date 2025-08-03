@@ -21,6 +21,7 @@ export const mockLLMResponses: MockLLMResponse[] = [
       { role: 'user', content: 'Analyze this React TypeScript project...' }
     ],
     response: {
+      success: true,
       content: `# Workspace Analysis
 
 This is a React TypeScript project with the following structure:
@@ -60,6 +61,7 @@ The project follows standard React patterns and is well-structured.`,
       { role: 'user', content: 'Create a plan to add a user authentication system...' }
     ],
     response: {
+      success: true,
       content: `# Implementation Plan: User Authentication System
 
 ## Overview
@@ -106,6 +108,7 @@ Medium risk - involves security considerations and state management.`,
       { role: 'user', content: 'Create src/components/LoginForm.tsx...' }
     ],
     response: {
+      success: true,
       content: `\`\`\`typescript
 import React, { useState } from 'react';
 
@@ -181,6 +184,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSubmit, loading, error }
       { role: 'user', content: 'Any request' }
     ],
     response: {
+      success: false,
       content: '',
       finishReason: 'error',
       metadata: {
@@ -203,6 +207,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSubmit, loading, error }
       { role: 'user', content: 'Any request' }
     ],
     response: {
+      success: false,
       content: '',
       finishReason: 'error',
       metadata: {
@@ -227,6 +232,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSubmit, loading, error }
       { role: 'user', content: 'Create a plan for implementing a REST API...' }
     ],
     response: {
+      success: true,
       content: `# REST API Implementation Plan
 
 ## Architecture Overview
@@ -272,6 +278,7 @@ We'll implement a RESTful API using Express.js with TypeScript, following indust
       { role: 'user', content: 'Create a simple utility function...' }
     ],
     response: {
+      success: true,
       content: `Here's a simple utility function:
 
 \`\`\`javascript

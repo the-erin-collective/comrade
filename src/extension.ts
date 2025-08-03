@@ -4,6 +4,7 @@ import { registerHelloWorldCommand } from './commands/helloWorld';
 import { ConfigurationManager } from './core/config';
 import { AgentRegistry } from './core/registry';
 import { PersonalityManager } from './core/personality';
+import { ConfigurationAutoReloadManager } from './core/config-auto-reload';
 import { registerContextExampleCommands } from './examples/context-runner-usage';
 import { ComradeSidebarProvider } from './providers/sidebarProvider';
 import { createStatusBarManager, StatusBarManager } from './ui/statusBar';
@@ -15,6 +16,7 @@ let configurationManager: ConfigurationManager;
 let agentRegistry: AgentRegistry;
 let personalityManager: PersonalityManager;
 let statusBarManager: StatusBarManager;
+let autoReloadManager: ConfigurationAutoReloadManager;
 
 // This method is called when your extension is activated
 export async function activate(context: vscode.ExtensionContext) {
@@ -31,6 +33,13 @@ export async function activate(context: vscode.ExtensionContext) {
         // Initialize personality system for each workspace
         personalityManager = PersonalityManager.getInstance();
         await initializeWorkspaceDependentFeatures();
+        
+        // Initialize configuration auto-reload system
+        autoReloadManager = ConfigurationAutoReloadManager.getInstance(
+            configurationManager,
+            agentRegistry,
+            personalityManager
+        );
         
         // Register workspace change handlers
         registerWorkspaceChangeHandlers(context, async () => {
@@ -62,7 +71,7 @@ export async function activate(context: vscode.ExtensionContext) {
         registerErrorHandlingCommands(context);
         
         // Add disposables to context
-        context.subscriptions.push(agentRegistry, personalityManager);
+        context.subscriptions.push(agentRegistry, personalityManager, autoReloadManager);
         
         console.log('Comrade extension initialized successfully');
     } catch (error) {
@@ -144,10 +153,34 @@ ${Object.entries(stats.byProvider).map(([provider, count]) => `${provider}: ${co
         vscode.window.showInformationMessage(message);
     });
     
+    // Command to manually reload configuration
+    const reloadConfigurationCommand = vscode.commands.registerCommand('comrade.reloadConfiguration', async () => {
+        try {
+            await configurationManager.reloadConfiguration();
+            vscode.window.showInformationMessage('Configuration reloaded successfully');
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to reload configuration: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    });
+    
+    // Command to show auto-reload stats
+    const showAutoReloadStatsCommand = vscode.commands.registerCommand('comrade.showAutoReloadStats', () => {
+        const stats = autoReloadManager.getReloadStats();
+        const message = `Configuration Auto-Reload Stats:
+Registered Components: ${stats.registeredComponents}
+Reloads in Progress: ${stats.reloadsInProgress}
+Queued Reloads: ${stats.queuedReloads}
+Last Reload: ${stats.lastReloadTime ? stats.lastReloadTime.toLocaleString() : 'Never'}`;
+        
+        vscode.window.showInformationMessage(message);
+    });
+    
     context.subscriptions.push(
         openAgentConfigCommand,
         testAgentConnectivityCommand,
-        showRegistryStatsCommand
+        showRegistryStatsCommand,
+        reloadConfigurationCommand,
+        showAutoReloadStatsCommand
     );
 }
 
@@ -364,21 +397,12 @@ export function deactivate(): Thenable<void> | undefined {
         // Log deactivation
         console.log('Comrade extension is deactivating...');
         
-        // 1. Dispose of all VS Code context subscriptions
-        while (mockContext?.subscriptions.length) {
-            const subscription = mockContext.subscriptions.pop();
-            if (subscription) {
-                try {
-                    subscription.dispose();
-                } catch (error) {
-                    console.error('Error disposing subscription:', error);
-                }
-            }
-        }
+        // VS Code automatically disposes context subscriptions
 
         // 2. Clean up managers in reverse order of initialization
         const managers = [
             { name: 'StatusBarManager', instance: statusBarManager },
+            { name: 'ConfigurationAutoReloadManager', instance: autoReloadManager },
             { name: 'PersonalityManager', instance: personalityManager },
             { name: 'AgentRegistry', instance: agentRegistry },
             { name: 'ConfigurationManager', instance: configurationManager }

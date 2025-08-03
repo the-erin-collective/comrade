@@ -10,6 +10,7 @@ export interface StatusBarManager {
   hideProgress(): void;
   showCancellationButton(session: ISession): void;
   hideCancellationButton(): void;
+  updateWorkspaceStatus(hasWorkspace: boolean): void;
   dispose(): void;
 }
 
@@ -175,6 +176,14 @@ export class ComradeStatusBarManager implements StatusBarManager {
         this.progressItem.hide();
       }
     }, duration);
+  }
+
+  /**
+   * Update workspace status
+   */
+  public updateWorkspaceStatus(hasWorkspace: boolean): void {
+    // Implementation for updating workspace status
+    // This is a placeholder - implement based on actual requirements
   }
 
   /**
