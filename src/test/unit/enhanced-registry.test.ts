@@ -108,6 +108,127 @@ suite('Enhanced AgentRegistry Tests', () => {
       // Should only call isAvailable once due to caching
       assert.strictEqual(isAvailableStub.callCount, 1, 'Should cache availability results');
     });
+
+    test('should respect cache TTL for availability checks', async () => {
+      const agent = agentRegistry.getAgent('openai-gpt4')!;
+      const clock = sandbox.useFakeTimers();
+      const isAvailableStub = sandbox.stub(agent, 'isAvailable').resolves(true);
+      
+      // First check - should call the actual method
+      await agentRegistry.isAgentAvailable('openai-gpt4');
+      assert.strictEqual(isAvailableStub.callCount, 1, 'Should call isAvailable on first check');
+      
+      // Second check immediately after - should use cache
+      await agentRegistry.isAgentAvailable('openai-gpt4');
+      assert.strictEqual(isAvailableStub.callCount, 1, 'Should use cache for immediate subsequent check');
+      
+      // Fast-forward time to just before cache expires
+      clock.tick(4.9 * 60 * 1000); // 4.9 minutes
+      await agentRegistry.isAgentAvailable('openai-gpt4');
+      assert.strictEqual(isAvailableStub.callCount, 1, 'Should still use cache just before TTL expires');
+      
+      // Fast-forward past cache TTL
+      clock.tick(30 * 1000); // 30 more seconds, total 5.2 minutes (past 5 min TTL)
+      await agentRegistry.isAgentAvailable('openai-gpt4');
+      assert.strictEqual(isAvailableStub.callCount, 2, 'Should refresh cache after TTL expires');
+      
+      clock.restore();
+    });
+
+    test('should handle multiple concurrent requests for the same agent', async () => {
+      const agent = agentRegistry.getAgent('openai-gpt4')!;
+      let resolvePromise: (value: boolean) => void;
+      const promise = new Promise<boolean>(resolve => {
+        resolvePromise = resolve;
+      });
+      
+      // Stub to return a promise we can control
+      sandbox.stub(agent, 'isAvailable').returns(promise);
+      
+      // Start multiple concurrent checks
+      const checkPromises = [
+        agentRegistry.isAgentAvailable('openai-gpt4'),
+        agentRegistry.isAgentAvailable('openai-gpt4'),
+        agentRegistry.isAgentAvailable('openai-gpt4')
+      ];
+      
+      // Allow the checks to start
+      await new Promise(resolve => setImmediate(resolve));
+      
+      // Resolve the underlying availability check
+      resolvePromise!(true);
+      
+      // Wait for all checks to complete
+      const results = await Promise.all(checkPromises);
+      
+      // All should return the same result
+      results.forEach((result, index) => {
+        assert.strictEqual(result, true, `Check ${index + 1} should return true`);
+      });
+      
+      // Should have only called the underlying method once
+      const isAvailableStub = agent.isAvailable as sinon.SinonStub;
+      assert.strictEqual(isAvailableStub.callCount, 1, 'Should deduplicate concurrent checks');
+    });
+
+    test('should handle agent becoming unavailable', async () => {
+      const agent = agentRegistry.getAgent('openai-gpt4')!;
+      let isAvailable = true;
+      
+      // Stub to return the current availability state
+      sandbox.stub(agent, 'isAvailable').callsFake(async () => isAvailable);
+      
+      // First check - agent is available
+      let result = await agentRegistry.isAgentAvailable('openai-gpt4');
+      assert.strictEqual(result, true, 'Agent should be available initially');
+      
+      // Clear cache to force recheck
+      agentRegistry.clearAvailabilityCache('openai-gpt4');
+      
+      // Agent becomes unavailable
+      isAvailable = false;
+      
+      // Second check - agent is now unavailable
+      result = await agentRegistry.isAgentAvailable('openai-gpt4');
+      assert.strictEqual(result, false, 'Agent should be unavailable after state change');
+    });
+
+    test('should handle non-existent agent', async () => {
+      const nonExistentId = 'non-existent-agent';
+      const isAvailable = await agentRegistry.isAgentAvailable(nonExistentId);
+      assert.strictEqual(isAvailable, false, 'Should return false for non-existent agent');
+    });
+
+    test('should get available agents', async () => {
+      // Mock some agents as available, others not
+      const agents = [
+        agentRegistry.getAgent('openai-gpt4'),
+        agentRegistry.getAgent('openai-gpt35'),
+        agentRegistry.getAgent('anthropic-claude')
+      ].filter(Boolean);
+      
+      // Set up stubs for each agent
+      agents.forEach((agent, index) => {
+        if (agent) {
+          sandbox.stub(agent, 'isAvailable').resolves(index % 2 === 0);
+        }
+      });
+      
+      const availableAgents = await agentRegistry.getAvailableAgents();
+      
+      // Check that we got the expected number of available agents
+      const expectedCount = agents.filter((_, index) => index % 2 === 0).length;
+      assert.strictEqual(
+        availableAgents.length, 
+        expectedCount, 
+        `Should return ${expectedCount} available agents`
+      );
+      
+      // Verify all returned agents are marked as available
+      availableAgents.forEach(agent => {
+        assert.ok(agent, 'Agent should not be null');
+      });
+    });
   });
 
   suite('Agent Filtering and Selection', () => {
@@ -148,6 +269,7 @@ suite('Enhanced AgentRegistry Tests', () => {
     });
 
     test('should handle phase-specific agent selection with fallbacks', () => {
+      // Test recovery phase which has strict requirements
       // Test recovery phase which has strict requirements
       const recoveryAgents = agentRegistry.getAgentsForPhase(PhaseType.RECOVERY);
       
@@ -347,11 +469,11 @@ suite('Enhanced AgentRegistry Tests', () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       
       // Mock successful connection validation
-      const validateStub = sandbox.stub(chatBridge, 'validateConnection').resolves(true);
+      const validateStub = sandbox.stub(chatBridge, 'validateConnection').resolves([true]);
       
       // Test connectivity through registry
       // Test connectivity through ChatBridge directly
-      const isConnected = await chatBridge.validateConnection(agent);
+      const [isConnected] = await chatBridge.validateConnection(agent);
       
       assert.strictEqual(isConnected, true, 'Should validate agent connectivity');
       assert.ok(validateStub.calledWith(agent), 'Should call ChatBridge validation');
@@ -377,15 +499,19 @@ suite('Enhanced AgentRegistry Tests', () => {
       
       // Mock validation responses
       const validateStub = sandbox.stub(chatBridge, 'validateConnection');
-      validateStub.onCall(0).resolves(true);
-      validateStub.onCall(1).resolves(false);
-      validateStub.onCall(2).resolves(true);
+      validateStub.onCall(0).resolves([true]);
+      validateStub.onCall(1).resolves([false, 'Connection failed']);
+      validateStub.onCall(2).resolves([true]);
       
       // Test connectivity for multiple agents
       const results = await Promise.allSettled(
         agentIds.map(async id => {
           const agent = agentRegistry.getAgent(id);
-          return agent ? await chatBridge.validateConnection(agent) : false;
+          if (!agent) {
+            return [false, 'Agent not found'];
+          }
+          const [isValid] = await chatBridge.validateConnection(agent);
+          return [isValid];
         })
       );
       
@@ -393,21 +519,24 @@ suite('Enhanced AgentRegistry Tests', () => {
       
       // Check first result
       if (results[0].status === 'fulfilled') {
-        assert.strictEqual(results[0].value, true, 'First agent should be connected');
+        const [isValid] = results[0].value as [boolean];
+        assert.strictEqual(isValid, true, 'First agent should be connected');
       } else {
         assert.fail('First agent test should not be rejected');
       }
       
       // Check second result
       if (results[1].status === 'fulfilled') {
-        assert.strictEqual(results[1].value, false, 'Second agent should not be connected');
+        const [isValid] = results[1].value as [boolean];
+        assert.strictEqual(isValid, false, 'Second agent should not be connected');
       } else {
         assert.fail('Second agent test should not be rejected');
       }
       
       // Check third result
       if (results[2].status === 'fulfilled') {
-        assert.strictEqual(results[2].value, true, 'Third agent should be connected');
+        const [isValid] = results[2].value as [boolean];
+        assert.strictEqual(isValid, true, 'Third agent should be connected');
       } else {
         assert.fail('Third agent test should not be rejected');
       }

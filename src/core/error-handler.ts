@@ -11,6 +11,17 @@ export interface ErrorContext {
   retryCount: number;
   timestamp: Date;
   requestId?: string;
+  statusCode?: number;
+  errorType?: string;
+  responseKeys?: string[];
+  choiceType?: string;
+  choiceValue?: string;
+  messageType?: string;
+  messageValue?: string;
+  messageKeys?: string[];
+  responseText?: string;
+  contentType?: string;
+  choicesLength?: number | string;
 }
 
 export interface EnhancedError {

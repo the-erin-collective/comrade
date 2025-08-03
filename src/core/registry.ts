@@ -14,6 +14,8 @@ export class AgentRegistry {
   private _availabilityCache: Map<string, { available: boolean; timestamp: number; ttl: number; promise?: Promise<boolean> }> = new Map();
   private _pendingAvailabilityChecks: Map<string, Promise<boolean>> = new Map();
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  private hasShownEmptyAgentNotification = false;
+  private hasShownNoEnabledAgentsNotification = false;
 
   private constructor(configManager: ConfigurationManager) {
     this.configManager = configManager;
@@ -46,10 +48,18 @@ export class AgentRegistry {
   }
 
   /**
-   * Get all registered agents
+   * Get all registered agents with empty list handling
    */
   public getAllAgents(): IAgent[] {
-    return Array.from(this.agents.values());
+    const agents = Array.from(this.agents.values());
+    
+    if (agents.length === 0) {
+      console.warn('No agents are currently configured. Please add at least one agent to use Comrade.');
+      // Optionally show user notification for first-time setup
+      this.handleEmptyAgentList();
+    }
+    
+    return agents;
   }
 
   /**
@@ -60,10 +70,25 @@ export class AgentRegistry {
   }
 
   /**
-   * Get agents enabled for auto-assignment
+   * Get agents enabled for auto-assignment with empty list handling
    */
   public getAutoAssignmentEnabledAgents(): IAgent[] {
-    return this.getAllAgents().filter(agent => agent.isEnabledForAssignment);
+    const allAgents = this.getAllAgents();
+    
+    if (allAgents.length === 0) {
+      console.warn('No agents configured for auto-assignment. Please configure at least one agent.');
+      return [];
+    }
+    
+    const enabledAgents = allAgents.filter(agent => agent.isEnabledForAssignment);
+    
+    if (enabledAgents.length === 0 && allAgents.length > 0) {
+      console.warn('No agents are enabled for auto-assignment. Consider enabling at least one agent for automatic task assignment.');
+      // Show user guidance
+      this.handleNoEnabledAgents();
+    }
+    
+    return enabledAgents;
   }
 
   /**
@@ -109,49 +134,69 @@ export class AgentRegistry {
   }
 
   /**
-   * Get agents suitable for a specific phase
+   * Get agents suitable for a specific phase with fallback handling
    */
   public getAgentsForPhase(phase: PhaseType): IAgent[] {
     const enabledAgents = this.getAutoAssignmentEnabledAgents();
     
+    if (enabledAgents.length === 0) {
+      console.warn(`No agents available for ${phase} phase. Please configure and enable agents.`);
+      return [];
+    }
+    
+    let suitableAgents: IAgent[] = [];
+    
     switch (phase) {
       case PhaseType.CONTEXT:
         // Context phase benefits from fast agents with good reasoning
-        return enabledAgents.filter(agent => 
+        suitableAgents = enabledAgents.filter(agent => 
           agent.capabilities.speed === 'fast' || 
           agent.capabilities.reasoningDepth === 'advanced'
         );
+        break;
       
       case PhaseType.PLANNING:
         // Planning phase needs good reasoning, tool use helpful
-        return enabledAgents.filter(agent => 
+        suitableAgents = enabledAgents.filter(agent => 
           agent.capabilities.reasoningDepth === 'advanced' || 
           agent.capabilities.reasoningDepth === 'intermediate'
         );
+        break;
       
       case PhaseType.REVIEW:
         // Review phase needs advanced reasoning
-        return enabledAgents.filter(agent => 
+        suitableAgents = enabledAgents.filter(agent => 
           agent.capabilities.reasoningDepth === 'advanced'
         );
+        break;
       
       case PhaseType.EXECUTION:
         // Execution phase benefits from tool use and good reasoning
-        return enabledAgents.filter(agent => 
+        suitableAgents = enabledAgents.filter(agent => 
           agent.capabilities.hasToolUse || 
           agent.capabilities.reasoningDepth === 'advanced'
         );
+        break;
       
       case PhaseType.RECOVERY:
         // Recovery phase needs advanced reasoning and tool use
-        return enabledAgents.filter(agent => 
+        suitableAgents = enabledAgents.filter(agent => 
           agent.capabilities.reasoningDepth === 'advanced' && 
           agent.capabilities.hasToolUse
         );
+        break;
       
       default:
-        return enabledAgents;
+        suitableAgents = enabledAgents;
     }
+    
+    // If no agents match the specific criteria, fall back to any enabled agent
+    if (suitableAgents.length === 0 && enabledAgents.length > 0) {
+      console.warn(`No agents perfectly suited for ${phase} phase. Falling back to available agents.`);
+      suitableAgents = enabledAgents;
+    }
+    
+    return suitableAgents;
   }
 
   /**
@@ -736,11 +781,58 @@ export class AgentRegistry {
   }
 
   /**
-   * Dispose of resources
+   * Handle empty agent list scenario with user guidance
+   */
+  private handleEmptyAgentList(): void {
+    // Only show notification once per session to avoid spam
+    if (!this.hasShownEmptyAgentNotification) {
+      this.hasShownEmptyAgentNotification = true;
+      
+      // Show user-friendly guidance for first-time setup
+      if (vscode.window.showInformationMessage) {
+        vscode.window.showInformationMessage(
+          'Welcome to Comrade! To get started, please configure at least one AI agent.',
+          'Configure Agents',
+          'Learn More'
+        ).then(selection => {
+          if (selection === 'Configure Agents') {
+            vscode.commands.executeCommand('workbench.action.openSettings', 'comrade.agents');
+          } else if (selection === 'Learn More') {
+            vscode.env.openExternal(vscode.Uri.parse('https://github.com/codeium/comrade#configuration'));
+          }
+        });
+      }
+    }
+  }
+  
+  /**
+   * Handle scenario where agents exist but none are enabled for auto-assignment
+   */
+  private handleNoEnabledAgents(): void {
+    // Only show notification once per session to avoid spam
+    if (!this.hasShownNoEnabledAgentsNotification) {
+      this.hasShownNoEnabledAgentsNotification = true;
+      
+      if (vscode.window.showWarningMessage) {
+        vscode.window.showWarningMessage(
+          'You have agents configured but none are enabled for auto-assignment. Enable at least one agent for automatic task assignment.',
+          'Review Agent Settings'
+        ).then(selection => {
+          if (selection === 'Review Agent Settings') {
+            vscode.commands.executeCommand('workbench.action.openSettings', 'comrade.agents');
+          }
+        });
+      }
+    }
+  }
+
+  /**
+   * Dispose resources
    */
   public dispose(): void {
     if (this.configurationChangeListener) {
       this.configurationChangeListener.dispose();
+      this.configurationChangeListener = undefined;
     }
     this._availabilityCache.clear();
     this._pendingAvailabilityChecks.clear();

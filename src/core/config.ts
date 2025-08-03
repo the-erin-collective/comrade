@@ -59,58 +59,381 @@ export class ConfigurationManager {
   }
 
   /**
-   * Get the current configuration from VS Code settings
+   * Get the current configuration from VS Code settings with comprehensive corruption handling
+   * and retry mechanism for transient failures
+   * 
+   * @throws {vscode.ExtensionError} When all retry attempts fail and emergency recovery is not possible
    */
   public getConfiguration(): ComradeConfiguration {
+    let corruptionDetected = false;
+    let corruptionDetails: string[] = [];
+    let lastError: Error | null = null;
+    const maxRetries = 3;
+    const configErrors: string[] = [];
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Track if this is a retry attempt
+        const isRetry = attempt > 1;
+        
+        // Get VS Code configuration with error handling
+        let config: vscode.WorkspaceConfiguration;
+        try {
+          config = vscode.workspace.getConfiguration('comrade');
+        } catch (error) {
+          const errorMessage = `Failed to access VS Code configuration (attempt ${attempt}/${maxRetries}): ${error instanceof Error ? error.message : String(error)}`;
+          console.error(errorMessage);
+          configErrors.push(errorMessage);
+          
+          // If we can't even get the config, try with default values
+          if (attempt === maxRetries) {
+            console.warn('Falling back to default configuration due to VS Code API failure');
+            const defaultConfig = this.getDefaultConfiguration();
+            this.notifyConfigurationError('VS Code configuration API is not available', configErrors, true);
+            return defaultConfig;
+          }
+          
+          throw error; // Will be caught by outer try-catch
+        }
+        
+        // Attempt to load raw configuration with corruption detection
+        const rawConfig = this.loadRawConfigurationSafely(config);
+        
+        if (rawConfig.corruptionDetected) {
+          corruptionDetected = true;
+          corruptionDetails = rawConfig.corruptionDetails;
+          const corruptionMessage = `Configuration corruption detected: ${corruptionDetails.join('; ')}`;
+          console.warn(corruptionMessage);
+          configErrors.push(corruptionMessage);
+        }
+        
+        // Validate and apply defaults using the new validation engine
+        const validation = ConfigurationValidator.validateConfiguration(rawConfig.config);
+        
+        if (!validation.isValid) {
+          const validationErrors = validation.errors.map(e => `${e.path}: ${e.message}`).join('; ');
+          console.warn('Configuration validation errors:', validationErrors);
+          
+          // Log warnings but continue with filtered config
+          validation.warnings.forEach(warning => {
+            const warningMessage = `Configuration warning at ${warning.path}: ${warning.message}`;
+            console.warn(warningMessage);
+            configErrors.push(warningMessage);
+          });
+        }
+
+        // Create final configuration with defaults for any missing values
+        const finalConfig: ComradeConfiguration = {
+          agents: this.validateAgentConfigurations(validation.filteredConfig?.agents || rawConfig.config.agents || []),
+          assignmentDefaultMode: validation.filteredConfig?.assignmentDefaultMode || rawConfig.config.assignmentDefaultMode || 'speed',
+          mcpServers: this.validateMCPServerConfigurations(validation.filteredConfig?.mcpServers || rawConfig.config.mcpServers || []),
+          contextMaxFiles: validation.filteredConfig?.contextMaxFiles || rawConfig.config.contextMaxFiles || 100,
+          contextMaxTokens: validation.filteredConfig?.contextMaxTokens || rawConfig.config.contextMaxTokens || 8000
+        };
+        
+        // If corruption was detected, attempt to repair and save the clean configuration
+        if (corruptionDetected) {
+          this.handleConfigurationCorruption(finalConfig, corruptionDetails);
+        }
+        
+        // If this was a retry, log successful recovery
+        if (isRetry) {
+          console.log(`Configuration loaded successfully after ${attempt} attempts`);
+        }
+        
+        return finalConfig;
+      } catch (error) {
+        lastError = error as Error;
+        const errorMessage = `Failed to load configuration (attempt ${attempt}/${maxRetries}): ${error instanceof Error ? error.message : String(error)}`;
+        console.error(errorMessage);
+        configErrors.push(errorMessage);
+        
+        // If we have more retries left, wait with exponential backoff
+        if (attempt < maxRetries) {
+          const backoffTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+          console.log(`Retrying in ${backoffTime}ms...`);
+          
+          // Simple synchronous sleep for retry delay
+          const start = Date.now();
+          while (Date.now() - start < backoffTime) {
+            // Busy wait for the delay
+          }
+          continue;
+        }
+      }
+    }
+    
+    // If we get here, all retries failed
+    console.error('All configuration loading attempts failed, falling back to emergency recovery');
+    
+    // Log the final error for debugging
+    if (lastError) {
+      console.error('Final configuration loading error:', lastError);
+    }
+    
+    // Attempt emergency recovery
+    const recoveredConfig = this.attemptEmergencyRecovery();
+    
+    // Show user notification about configuration failure
+    const errorMessage = lastError ? 
+      `Configuration loading failed: ${lastError.message}` : 
+      'Failed to load configuration';
+      
+    vscode.window.showErrorMessage(
+      `${errorMessage}. Using emergency recovery settings. Some features may be limited.`,
+      'Show Logs',
+      'Open Settings'
+    ).then(selection => {
+      if (selection === 'Open Settings') {
+        vscode.commands.executeCommand('workbench.action.openSettings', 'comrade');
+      } else if (selection === 'Show Logs') {
+        vscode.commands.executeCommand('comrade.showOutputChannel');
+      }
+    });
+    
+    return recoveredConfig;
+  }
+  
+  /**
+   * Safely load raw configuration with corruption detection
+   */
+  private loadRawConfigurationSafely(config: vscode.WorkspaceConfiguration): {
+    config: any;
+    corruptionDetected: boolean;
+    corruptionDetails: string[];
+  } {
+    const corruptionDetails: string[] = [];
+    let corruptionDetected = false;
+    
+    const safeGet = <T>(key: string, defaultValue: T, validator?: (value: any) => boolean): T => {
+      try {
+        const value = config.get<T>(key, defaultValue);
+        
+        // Additional validation for complex types
+        if (validator && !validator(value)) {
+          corruptionDetails.push(`Invalid value for ${key}: failed validation`);
+          corruptionDetected = true;
+          return defaultValue;
+        }
+        
+        return value;
+      } catch (error) {
+        corruptionDetails.push(`Failed to load ${key}: ${error instanceof Error ? error.message : String(error)}`);
+        corruptionDetected = true;
+        return defaultValue;
+      }
+    };
+    
+    // Validate agents array structure
+    const agentsValidator = (value: any): boolean => {
+      if (!Array.isArray(value)) {
+        return false;
+      }
+      return value.every(agent => 
+        typeof agent === 'object' && 
+        agent !== null && 
+        typeof agent.id === 'string' && 
+        typeof agent.name === 'string'
+      );
+    };
+    
+    // Validate MCP servers array structure
+    const mcpServersValidator = (value: any): boolean => {
+      if (!Array.isArray(value)) {
+        return false;
+      }
+      return value.every(server => 
+        typeof server === 'object' && 
+        server !== null && 
+        typeof server.id === 'string' && 
+        typeof server.command === 'string'
+      );
+    };
+    
+    const rawConfig = {
+      agents: safeGet('agents', [], agentsValidator),
+      assignmentDefaultMode: safeGet('assignment.defaultMode', 'speed', (value) => 
+        value === 'speed' || value === 'structure'
+      ),
+      mcpServers: safeGet('mcp.servers', [], mcpServersValidator),
+      contextMaxFiles: safeGet('context.maxFiles', 100, (value) => 
+        typeof value === 'number' && value > 0 && value <= 1000
+      ),
+      contextMaxTokens: safeGet('context.maxTokens', 8000, (value) => 
+        typeof value === 'number' && value > 0 && value <= 100000
+      )
+    };
+    
+    return {
+      config: rawConfig,
+      corruptionDetected,
+      corruptionDetails
+    };
+  }
+  
+  /**
+   * Get default configuration as fallback
+   */
+  private getDefaultConfiguration(): ComradeConfiguration {
+    return {
+      agents: [],
+      assignmentDefaultMode: 'speed',
+      mcpServers: [],
+      contextMaxFiles: 100,
+      contextMaxTokens: 8000
+    };
+  }
+  
+  /**
+   * Handle configuration corruption by attempting repair and backup
+   */
+  private async handleConfigurationCorruption(
+    cleanConfig: ComradeConfiguration, 
+    corruptionDetails: string[]
+  ): Promise<void> {
+    try {
+      console.log('Attempting to repair corrupted configuration...');
+      
+      // Create backup of current corrupted configuration
+      const config = vscode.workspace.getConfiguration('comrade');
+      const corruptedBackup = {
+        timestamp: new Date().toISOString(),
+        corruptionDetails,
+        originalConfig: {
+          agents: config.get('agents'),
+          assignmentDefaultMode: config.get('assignment.defaultMode'),
+          mcpServers: config.get('mcp.servers'),
+          contextMaxFiles: config.get('context.maxFiles'),
+          contextMaxTokens: config.get('context.maxTokens')
+        }
+      };
+      
+      // Store backup in workspace state or log it
+      console.log('Corrupted configuration backup:', JSON.stringify(corruptedBackup, null, 2));
+      
+      // Attempt to save the clean configuration
+      await config.update('agents', cleanConfig.agents, vscode.ConfigurationTarget.Global);
+      await config.update('assignment.defaultMode', cleanConfig.assignmentDefaultMode, vscode.ConfigurationTarget.Global);
+      await config.update('mcp.servers', cleanConfig.mcpServers, vscode.ConfigurationTarget.Global);
+      await config.update('context.maxFiles', cleanConfig.contextMaxFiles, vscode.ConfigurationTarget.Global);
+      await config.update('context.maxTokens', cleanConfig.contextMaxTokens, vscode.ConfigurationTarget.Global);
+      
+      console.log('Configuration successfully repaired and saved');
+      
+      // Show user notification about successful repair
+      vscode.window.showInformationMessage(
+        'Configuration corruption was detected and automatically repaired. Your settings have been restored to a clean state.'
+      );
+      
+    } catch (repairError) {
+      console.error('Failed to repair configuration:', repairError);
+      
+      // Show error notification
+      vscode.window.showErrorMessage(
+        'Failed to repair corrupted configuration. Please manually review your Comrade settings.',
+        'Open Settings'
+      ).then(selection => {
+        if (selection === 'Open Settings') {
+          vscode.commands.executeCommand('workbench.action.openSettings', 'comrade');
+        }
+      });
+    }
+  }
+  
+  /**
+   * Show user notification about configuration errors
+   * @param message Primary error message
+   * @param details Array of detailed error messages
+   * @param isWarning Whether to show a warning instead of an error
+   */
+  private notifyConfigurationError(message: string, details: string[] = [], isWarning: boolean = false): void {
+    const fullMessage = [message, ...details].join('\n\n');
+    
+    // Log the full error details
+    if (isWarning) {
+      console.warn(fullMessage);
+    } else {
+      console.error(fullMessage);
+    }
+    
+    // Show user-friendly notification
+    const showMessage = isWarning 
+      ? vscode.window.showWarningMessage.bind(vscode.window)
+      : vscode.window.showErrorMessage.bind(vscode.window);
+    
+    showMessage(
+      `${message} ${details.length > 0 ? '(See logs for details)' : ''}`,
+      'Open Settings',
+      'Show Logs'
+    ).then(selection => {
+      if (selection === 'Open Settings') {
+        vscode.commands.executeCommand('workbench.action.openSettings', 'comrade');
+      } else if (selection === 'Show Logs') {
+        vscode.commands.executeCommand('comrade.showOutputChannel');
+      }
+    });
+  }
+
+  /**
+   * Attempt emergency recovery when all else fails
+   */
+  private attemptEmergencyRecovery(): ComradeConfiguration {
+    console.log('Attempting emergency configuration recovery...');
+    
+    // Try to recover any valid agents from corrupted data
+    const recoveredAgents: AgentConfigurationItem[] = [];
+    
     try {
       const config = vscode.workspace.getConfiguration('comrade');
+      const rawAgents = config.get('agents');
       
-      const rawConfig = {
-        agents: config.get<AgentConfigurationItem[]>('agents', []),
-        assignmentDefaultMode: config.get<'speed' | 'structure'>('assignment.defaultMode', 'speed'),
-        mcpServers: config.get<MCPServerConfig[]>('mcp.servers', []),
-        contextMaxFiles: config.get<number>('context.maxFiles', 100),
-        contextMaxTokens: config.get<number>('context.maxTokens', 8000)
-      };
-
-      // Validate and apply defaults using the new validation engine
-      const validation = ConfigurationValidator.validateConfiguration(rawConfig);
-      
-      if (!validation.isValid) {
-        console.warn('Configuration validation errors:', validation.errors);
-        // Log warnings but continue with filtered config
-        validation.warnings.forEach(warning => {
-          console.warn(`Configuration warning at ${warning.path}: ${warning.message}`);
-        });
+      if (Array.isArray(rawAgents)) {
+        for (const agent of rawAgents) {
+          try {
+            if (typeof agent === 'object' && agent !== null && 
+                typeof agent.id === 'string' && typeof agent.name === 'string') {
+              // Attempt to create a minimal valid agent
+              const recoveredAgent: AgentConfigurationItem = {
+                id: agent.id,
+                name: agent.name,
+                provider: agent.provider || 'openai',
+                model: agent.model || 'gpt-3.5-turbo',
+                endpoint: agent.endpoint,
+                temperature: typeof agent.temperature === 'number' ? agent.temperature : 0.7,
+                maxTokens: typeof agent.maxTokens === 'number' ? agent.maxTokens : undefined,
+                timeout: typeof agent.timeout === 'number' ? agent.timeout : 30000,
+                capabilities: agent.capabilities || {
+                  hasVision: false,
+                  hasToolUse: false,
+                  reasoningDepth: 'intermediate',
+                  speed: 'medium',
+                  costTier: 'medium',
+                  maxTokens: 4000,
+                  supportedLanguages: ['en'],
+                  specializations: ['code']
+                },
+                isEnabledForAssignment: typeof agent.isEnabledForAssignment === 'boolean' ? 
+                  agent.isEnabledForAssignment : true
+              };
+              
+              recoveredAgents.push(recoveredAgent);
+              console.log(`Recovered agent: ${recoveredAgent.name}`);
+            }
+          } catch (agentError) {
+            console.warn(`Failed to recover agent:`, agentError);
+          }
+        }
       }
-
-      // Use filtered/validated configuration or fallback to defaults
-      const validatedConfig = validation.filteredConfig || {
-        agents: [],
-        assignmentDefaultMode: 'speed',
-        mcpServers: [],
-        contextMaxFiles: 100,
-        contextMaxTokens: 8000
-      };
-
-      return {
-        agents: this.validateAgentConfigurations(validatedConfig.agents),
-        assignmentDefaultMode: validatedConfig.assignmentDefaultMode,
-        mcpServers: this.validateMCPServerConfigurations(validatedConfig.mcpServers),
-        contextMaxFiles: validatedConfig.contextMaxFiles,
-        contextMaxTokens: validatedConfig.contextMaxTokens
-      };
-    } catch (error) {
-      console.error('Failed to load configuration:', error);
-      // Return safe defaults when configuration is corrupted
-      return {
-        agents: [],
-        assignmentDefaultMode: 'speed',
-        mcpServers: [],
-        contextMaxFiles: 100,
-        contextMaxTokens: 8000
-      };
+    } catch (recoveryError) {
+      console.error('Emergency recovery failed:', recoveryError);
     }
+    
+    const emergencyConfig = this.getDefaultConfiguration();
+    emergencyConfig.agents = recoveredAgents;
+    
+    console.log(`Emergency recovery completed. Recovered ${recoveredAgents.length} agents.`);
+    
+    return emergencyConfig;
   }
 
   /**
@@ -353,15 +676,22 @@ export class ConfigurationManager {
   /**
    * Get all configured agents as agent instances
    */
+  /**
+   * Get all configured agents as agent instances
+   * @throws {Error} When there's a failure to load configuration from VS Code API
+   */
   public async getAllAgents(): Promise<IAgent[]> {
+    // This will throw if VS Code API fails (handled by the caller)
     const config = this.getConfiguration();
     const agents: IAgent[] = [];
     
+    // Process each agent configuration
     for (const agentConfig of config.agents) {
       try {
         const agent = await this.createAgentInstance(agentConfig);
         agents.push(agent);
       } catch (error) {
+        // Log the error but continue with other agents
         console.error(`Failed to create agent instance for ${agentConfig.id}:`, error);
       }
     }

@@ -127,14 +127,38 @@ suite('VS Code Extension Integration Tests', () => {
     }
   });
 
-  test('should deactivate extension cleanly', async () => {
+  test('should deactivate extension cleanly and cleanup all resources', async () => {
     // First activate
     await activate(mockContext);
+    
+    // Create spies for dispose methods
+    const statusBarDisposeSpy = sandbox.spy(statusBarManager, 'dispose');
+    const personalityManagerDisposeSpy = sandbox.spy(personalityManager, 'dispose');
+    const agentRegistryDisposeSpy = sandbox.spy(agentRegistry, 'dispose');
+    const configManagerDisposeSpy = sandbox.spy(configurationManager, 'dispose');
+    
+    // Get the dispose functions from context subscriptions
+    const subscriptionDisposeSpies = mockContext.subscriptions
+      .map(sub => ({
+        id: sub.toString(),
+        spy: sandbox.spy(sub, 'dispose')
+      }));
     
     // Then deactivate
     await deactivate();
     
-    // Verify cleanup (this is mainly to ensure no errors are thrown)
+    // Verify all resources were disposed
+    assert.ok(statusBarDisposeSpy.calledOnce, 'StatusBarManager should be disposed');
+    assert.ok(personalityManagerDisposeSpy.calledOnce, 'PersonalityManager should be disposed');
+    assert.ok(agentRegistryDisposeSpy.calledOnce, 'AgentRegistry should be disposed');
+    assert.ok(configManagerDisposeSpy.calledOnce, 'ConfigurationManager should be disposed');
+    
+    // Verify all context subscriptions were disposed
+    subscriptionDisposeSpies.forEach(({ id, spy }) => {
+      assert.ok(spy.calledOnce, `Context subscription ${id} should be disposed`);
+    });
+    
+    // Verify no errors were thrown
     assert.ok(true, 'Deactivation should complete without errors');
   });
 

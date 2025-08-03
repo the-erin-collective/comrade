@@ -28,19 +28,30 @@ export interface ValidationWarning {
 }
 
 export interface ConfigurationSchema {
-  type: 'object' | 'array' | 'string' | 'number' | 'boolean';
+  type: 'object' | 'array' | 'string' | 'number' | 'boolean' | 'integer';
   required?: boolean;
   properties?: Record<string, ConfigurationSchema>;
   items?: ConfigurationSchema;
   enum?: any[];
+  // Numeric constraints
   minimum?: number;
   maximum?: number;
+  exclusiveMinimum?: number | boolean;
+  exclusiveMaximum?: number | boolean;
+  multipleOf?: number;
+  precision?: number;  // Maximum number of significant digits
+  scale?: number;      // Maximum number of decimal places
+  // String constraints
   minLength?: number;
   maxLength?: number;
   pattern?: RegExp;
+  // Other
   default?: any;
   validator?: (value: any) => boolean;
   description?: string;
+  // Deprecated - for backward compatibility
+  minItems?: number;
+  maxItems?: number;
 }
 
 export class ConfigurationValidator {
@@ -516,6 +527,8 @@ export class ConfigurationValidator {
         return Array.isArray(value);
       case 'object':
         return typeof value === 'object' && value !== null && !Array.isArray(value);
+      case 'integer':
+        return typeof value === 'number' && Number.isInteger(value);
       default:
         return false;
     }
@@ -550,23 +563,132 @@ export class ConfigurationValidator {
     }
   }
 
+  /**
+   * Validate a number against the schema constraints
+   * Implements comprehensive numeric validation including:
+   * - minimum/maximum (inclusive bounds)
+   * - exclusiveMinimum/exclusiveMaximum (exclusive bounds)
+   * - multipleOf (divisibility)
+   * - precision/scale (for decimal numbers)
+   * - integer type checking
+   */
   private static validateNumber(value: number, schema: ConfigurationSchema, path: string, errors: ValidationError[], warnings: ValidationWarning[]): void {
-    if (schema.minimum !== undefined && value < schema.minimum) {
+    // Check for non-finite numbers
+    if (!Number.isFinite(value)) {
       errors.push({
         path,
-        message: `Number must be at least ${schema.minimum}`,
+        message: `Number must be finite, got ${value}`,
+        code: 'INVALID_NUMBER',
+        value
+      });
+      return;
+    }
+
+    // Check for integer type
+    if (schema.type === 'integer' && !Number.isInteger(value)) {
+      errors.push({
+        path,
+        message: `Value must be an integer, got ${value}`,
+        code: 'NOT_AN_INTEGER',
+        value
+      });
+    }
+
+    // Handle exclusiveMinimum (can be number or boolean for backwards compatibility)
+    const exclusiveMin = typeof schema.exclusiveMinimum === 'boolean' 
+      ? (schema.exclusiveMinimum ? schema.minimum : undefined)
+      : schema.exclusiveMinimum;
+
+    if (exclusiveMin !== undefined) {
+      if (value <= exclusiveMin) {
+        errors.push({
+          path,
+          message: `Number must be greater than ${exclusiveMin} (got ${value})`,
+          code: 'NUMBER_TOO_SMALL_EXCLUSIVE',
+          value
+        });
+      }
+    } else if (schema.minimum !== undefined && value < schema.minimum) {
+      errors.push({
+        path,
+        message: `Number must be at least ${schema.minimum} (got ${value})`,
         code: 'NUMBER_TOO_SMALL',
         value
       });
     }
 
-    if (schema.maximum !== undefined && value > schema.maximum) {
+    // Handle exclusiveMaximum (can be number or boolean for backwards compatibility)
+    const exclusiveMax = typeof schema.exclusiveMaximum === 'boolean'
+      ? (schema.exclusiveMaximum ? schema.maximum : undefined)
+      : schema.exclusiveMaximum;
+
+    if (exclusiveMax !== undefined) {
+      if (value >= exclusiveMax) {
+        errors.push({
+          path,
+          message: `Number must be less than ${exclusiveMax} (got ${value})`,
+          code: 'NUMBER_TOO_LARGE_EXCLUSIVE',
+          value
+        });
+      }
+    } else if (schema.maximum !== undefined && value > schema.maximum) {
       errors.push({
         path,
-        message: `Number must be at most ${schema.maximum}`,
+        message: `Number must be at most ${schema.maximum} (got ${value})`,
         code: 'NUMBER_TOO_LARGE',
         value
       });
+    }
+
+    // Check multipleOf constraint
+    if (schema.multipleOf !== undefined) {
+      // Use a small epsilon for floating point comparison
+      const epsilon = 1e-10;
+      const remainder = Math.abs(value) % schema.multipleOf;
+      
+      if (remainder > epsilon && Math.abs(remainder - schema.multipleOf) > epsilon) {
+        errors.push({
+          path,
+          message: `Number must be a multiple of ${schema.multipleOf} (got ${value})`,
+          code: 'NOT_A_MULTIPLE',
+          value
+        });
+      }
+    }
+
+    // Check precision and scale for decimal numbers
+    if (schema.precision !== undefined || schema.scale !== undefined) {
+      const strValue = value.toString();
+      const decimalIndex = strValue.indexOf('.');
+      
+      // Handle precision (total significant digits)
+      if (schema.precision !== undefined) {
+        const significantDigits = decimalIndex === -1 
+          ? strValue.replace(/^0+/, '').length 
+          : strValue.replace(/\.|^0+/g, '').length;
+          
+        if (significantDigits > schema.precision) {
+          errors.push({
+            path,
+            message: `Number must have at most ${schema.precision} significant digits (got ${significantDigits})`,
+            code: 'PRECISION_TOO_HIGH',
+            value
+          });
+        }
+      }
+      
+      // Handle scale (decimal places)
+      if (schema.scale !== undefined) {
+        const decimalPlaces = decimalIndex === -1 ? 0 : strValue.length - decimalIndex - 1;
+        if (decimalPlaces > schema.scale) {
+          errors.push({
+            path,
+            message: `Number must have at most ${schema.scale} decimal places (got ${decimalPlaces})`,
+            code: 'SCALE_TOO_HIGH',
+            value
+          });
+        }
+      }
     }
   }
 

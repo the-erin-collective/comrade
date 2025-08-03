@@ -5,6 +5,7 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import * as sinon from 'sinon';
+import { suite, test } from 'mocha';
 import { ContextRunner } from '../runners/context';
 import { Session, SessionState } from '../core/session';
 import { IAgent, PhaseType } from '../core/agent';
@@ -171,25 +172,164 @@ suite('ContextRunner Tests', () => {
     assert.ok(frameworks.includes('Next.js'));
   });
 
-  test('should load gitignore patterns', async () => {
-    // Mock file reading
-    const readWorkspaceFile = sandbox.stub(contextRunner as any, 'readWorkspaceFile');
-    readWorkspaceFile.resolves(`
-      node_modules/
-      *.log
-      # Comment line
-      dist/
-      .env
-    `);
-    
-    await (contextRunner as any).loadGitignorePatterns();
-    
-    const ignorePatterns = (contextRunner as any).ignorePatterns;
-    assert.ok(ignorePatterns.includes('node_modules/**'));
-    assert.ok(ignorePatterns.includes('**/*.log'));
-    assert.ok(ignorePatterns.includes('dist/**'));
-    assert.ok(ignorePatterns.includes('**/.env'));
-    assert.ok(!ignorePatterns.some((p: string) => p.includes('#')));
+  describe('gitignore pattern loading', () => {
+    let originalIgnorePatterns: string[];
+    let readWorkspaceFileStub: sinon.SinonStub;
+
+    beforeEach(() => {
+      // Save original ignore patterns
+      originalIgnorePatterns = [...(contextRunner as any).ignorePatterns];
+      readWorkspaceFileStub = sandbox.stub(contextRunner as any, 'readWorkspaceFile');
+    });
+
+    afterEach(() => {
+      // Restore original ignore patterns
+      (contextRunner as any).ignorePatterns = [...originalIgnorePatterns];
+    });
+
+    test('should load and convert basic gitignore patterns', async () => {
+      readWorkspaceFileStub.resolves(`
+        node_modules/
+        *.log
+        # Comment line
+        dist/
+        .env
+        /build
+        src/**/test
+      `);
+      
+      await (contextRunner as any).loadGitignorePatterns();
+      
+      const ignorePatterns = (contextRunner as any).ignorePatterns;
+      
+      // Verify patterns were converted correctly
+      assert.ok(ignorePatterns.includes('node_modules/**'));
+      assert.ok(ignorePatterns.includes('**/*.log'));
+      assert.ok(ignorePatterns.includes('dist/**'));
+      assert.ok(ignorePatterns.includes('**/.env'));
+      assert.ok(ignorePatterns.includes('build/**'));
+      assert.ok(ignorePatterns.includes('src/**/test'));
+      
+      // Verify comments and empty lines are filtered out
+      assert.ok(!ignorePatterns.some((p: string) => p.includes('#')));
+      assert.ok(!ignorePatterns.some((p: string) => p.trim() === ''));
+    });
+
+    test('should handle malformed gitignore patterns', async () => {
+      readWorkspaceFileStub.resolves(`
+        # Invalid patterns that should be skipped
+        **
+        *
+        # Valid patterns
+        .DS_Store
+        # Comment with special chars: [ ] ( ) { } ? * !
+        node_modules/
+        # Empty line follows
+        
+        # More valid patterns
+        *.tmp
+      `);
+      
+      await (contextRunner as any).loadGitignorePatterns();
+      
+      const ignorePatterns = (contextRunner as any).ignorePatterns;
+      
+      // Verify only valid patterns are included
+      assert.ok(ignorePatterns.includes('**/.DS_Store'));
+      assert.ok(ignorePatterns.includes('node_modules/**'));
+      assert.ok(ignorePatterns.includes('**/*.tmp'));
+      
+      // Verify invalid patterns are filtered out
+      assert.ok(!ignorePatterns.includes('**'));
+      assert.ok(!ignorePatterns.includes('*'));
+    });
+
+    test('should handle special characters in patterns', async () => {
+      readWorkspaceFileStub.resolves(`
+        # Patterns with special characters
+        file[0-9].txt
+        test?.js
+        dir[abc]/
+        !important.txt
+        path/with spaces/
+        path/with#hash/
+      `);
+      
+      await (contextRunner as any).loadGitignorePatterns();
+      
+      const ignorePatterns = (contextRunner as any).ignorePatterns;
+      
+      // Verify special characters are properly escaped
+      assert.ok(ignorePatterns.some((p: string) => p.includes('file\[0-9\].txt')));
+      assert.ok(ignorePatterns.some((p: string) => p.includes('test\?.js')));
+      assert.ok(ignorePatterns.some((p: string) => p.includes('dir\[abc\]/')));
+      assert.ok(ignorePatterns.some((p: string) => p.includes('path/with spaces/')));
+      assert.ok(ignorePatterns.some((p: string) => p.includes('path/with\#hash/')));
+      
+      // Negation patterns are not supported in glob, so '!important.txt' should be escaped
+      assert.ok(ignorePatterns.some((p: string) => p.includes('\!important.txt')));
+    });
+
+    test('should handle missing .gitignore file', async () => {
+      const error = new Error('File not found') as any;
+      error.code = 'FileNotFound';
+      readWorkspaceFileStub.rejects(error);
+      
+      // Store original console.debug to restore later
+      const originalDebug = console.debug;
+      const debugSpy = sandbox.spy(console, 'debug');
+      
+      await (contextRunner as any).loadGitignorePatterns();
+      
+      // Verify default patterns are still present
+      const ignorePatterns = (contextRunner as any).ignorePatterns;
+      assert.ok(ignorePatterns.length > 0);
+      
+      // Verify debug message was logged
+      assert.ok(debugSpy.calledWith(sinon.match('No .gitignore file found')));
+      
+      // Restore console.debug
+      console.debug = originalDebug;
+    });
+
+    test('should handle read errors gracefully', async () => {
+      const error = new Error('Permission denied') as any;
+      error.code = 'EACCES';
+      readWorkspaceFileStub.rejects(error);
+      
+      // Store original console.error to restore later
+      const originalError = console.error;
+      const errorSpy = sandbox.spy(console, 'error');
+      
+      // Should not throw
+      await (contextRunner as any).loadGitignorePatterns();
+      
+      // Verify error was logged
+      assert.ok(errorSpy.calledWith(sinon.match('Error loading .gitignore patterns')));
+      
+      // Restore console.error
+      console.error = originalError;
+    });
+
+    test('should not add duplicate patterns', async () => {
+      readWorkspaceFileStub.resolves(`
+        node_modules/
+        dist/
+        # Duplicate patterns
+        node_modules/
+        dist/
+      `);
+      
+      await (contextRunner as any).loadGitignorePatterns();
+      
+      const ignorePatterns = (contextRunner as any).ignorePatterns;
+      const nodeModulesCount = ignorePatterns.filter((p: string) => p === 'node_modules/**').length;
+      const distCount = ignorePatterns.filter((p: string) => p === 'dist/**').length;
+      
+      // Verify no duplicates were added
+      assert.strictEqual(nodeModulesCount, 1);
+      assert.strictEqual(distCount, 1);
+    });
   });
 
   test('should select important files within token limits', () => {

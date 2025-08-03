@@ -139,20 +139,42 @@ export class ContextRunner extends BaseRunner {
   }
 
   protected async handleError(error: Error): Promise<void> {
+    // Handle file system permission errors
+    if (error instanceof vscode.FileSystemError) {
+      if (error.code === 'NoPermissions' || error.code === 'FileIsADirectory' || 
+          error.message.toLowerCase().includes('permission') || 
+          error.message.toLowerCase().includes('eacces') ||
+          error.message.toLowerCase().includes('eperm')) {
+        const permissionError = this.createRecoverableError(
+          `Permission denied: ${error.message}`,
+          'PERMISSION_ERROR',
+          { 
+            path: error instanceof vscode.FileSystemError ? error.message.split(':')[0] : 'unknown',
+            code: error.code || 'UNKNOWN'
+          },
+          'Check file permissions and ensure you have read access to the workspace',
+          'command:workbench.action.files.openFolder'
+        );
+        await this.defaultErrorHandler(permissionError);
+        return;
+      }
+    }
+    
     // Handle specific context runner errors
     if (error.message.includes('workspace')) {
       const workspaceError = this.createRecoverableError(
         `Workspace access error: ${error.message}`,
         'WORKSPACE_ERROR',
-        { workspaceUri: this.session.workspaceUri.toString() },
-        'Check workspace permissions and try again'
+        { workspaceUri: this.session.workspaceUri?.toString() || 'unknown' },
+        'Check workspace permissions and try again',
+        'command:workbench.action.files.openFolder'
       );
       await this.defaultErrorHandler(workspaceError);
     } else if (error.message.includes('token')) {
       const tokenError = this.createRecoverableError(
         `Context too large: ${error.message}`,
         'TOKEN_LIMIT_ERROR',
-        { workspaceUri: this.session.workspaceUri.toString() },
+        { workspaceUri: this.session.workspaceUri?.toString() || 'unknown' },
         'Try reducing the workspace size or adjusting context limits',
         'command:comrade.openSettings'
       );
@@ -163,29 +185,81 @@ export class ContextRunner extends BaseRunner {
   }
 
   /**
-   * Load .gitignore patterns from workspace
+   * Validates a gitignore pattern and converts it to a glob pattern
+   * @param pattern The gitignore pattern to validate and convert
+   * @returns A valid glob pattern or null if pattern is invalid
+   */
+  private validateAndConvertPattern(pattern: string): string | null {
+    try {
+      // Skip empty lines and comments
+      if (!pattern || pattern.startsWith('#')) {
+        return null;
+      }
+
+      // Remove trailing spaces and comments at the end of the line
+      const cleanPattern = pattern.replace(/\s*(#.*)?$/, '').trim();
+      if (!cleanPattern) {
+        return null;
+      }
+
+      // Handle special cases and escape special regex characters
+      let globPattern = cleanPattern
+        .replace(/\*\*\//g, '{*,**/}') // Handle **/ pattern
+        .replace(/([\]\[^$.+?(){}|])/g, '\\$1') // Escape special regex chars
+        .replace(/^\/|\/$/g, ''); // Remove leading/trailing slashes
+
+      // Convert gitignore patterns to glob patterns
+      if (cleanPattern.endsWith('/')) {
+        globPattern = `${globPattern}**`; // Directory pattern
+      } else if (!cleanPattern.includes('/') && !cleanPattern.includes('*') && !cleanPattern.includes('?')) {
+        globPattern = `**/${globPattern}`; // Simple filename pattern
+      }
+
+      // Skip patterns that would match everything
+      if (['**', '*', '**/*', '**/**'].includes(globPattern)) {
+        return null;
+      }
+
+      return globPattern;
+    } catch (error) {
+      console.warn(`Invalid gitignore pattern: ${pattern}`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Load .gitignore patterns from workspace with validation and deduplication
+   * @throws {vscode.FileSystemError} If there's an error reading the .gitignore file
    */
   private async loadGitignorePatterns(): Promise<void> {
     try {
       const gitignoreContent = await this.readWorkspaceFile('.gitignore');
-      const patterns = gitignoreContent
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line && !line.startsWith('#'))
-        .map(pattern => {
-          // Convert gitignore patterns to glob patterns
-          if (pattern.endsWith('/')) {
-            return pattern + '**';
-          }
-          if (!pattern.includes('/')) {
-            return '**/' + pattern;
-          }
-          return pattern;
-        });
       
-      this.ignorePatterns.push(...patterns);
-    } catch {
-      // .gitignore doesn't exist or can't be read, use defaults
+      // Process and validate patterns
+      const newPatterns = gitignoreContent
+        .split('\n')
+        .map(line => this.validateAndConvertPattern(line))
+        .filter((pattern): pattern is string => pattern !== null);
+      
+      // Remove duplicates using a Set
+      const uniquePatterns = [...new Set(newPatterns)];
+      
+      // Add new patterns to the beginning of the array
+      // (so project-specific patterns take precedence over defaults)
+      this.ignorePatterns = [...uniquePatterns, ...this.ignorePatterns];
+      
+      // Log the number of patterns loaded for debugging
+      console.log(`Loaded ${uniquePatterns.length} patterns from .gitignore`);
+      
+    } catch (error) {
+      if (error instanceof vscode.FileSystemError && error.code === 'FileNotFound') {
+        // .gitignore doesn't exist, use defaults
+        console.debug('No .gitignore file found, using default ignore patterns');
+      } else {
+        // Log other errors but don't fail the entire operation
+        console.error('Error loading .gitignore patterns:', error);
+        throw error; // Rethrow to allow callers to handle the error
+      }
     }
   }
 
@@ -194,6 +268,7 @@ export class ContextRunner extends BaseRunner {
    */
   private async discoverFiles(): Promise<vscode.Uri[]> {
     const files: vscode.Uri[] = [];
+    const permissionErrors: string[] = [];
     
     try {
       // Use VS Code's file search with exclude patterns
@@ -208,16 +283,29 @@ export class ContextRunner extends BaseRunner {
         maxSearchFiles
       );
       
-      // Filter out directories and very large files
+      // Filter out directories and very large files, collect permission errors
       for (const uri of fileUris) {
         try {
           const stat = await vscode.workspace.fs.stat(uri);
-          if (stat.type === vscode.FileType.File && stat.size < 1024 * 1024) { // Max 1MB per file
-            files.push(uri);
+          if (stat.type === vscode.FileType.File) {
+            if (stat.size < 1024 * 1024) { // Max 1MB per file
+              files.push(uri);
+            }
           }
-        } catch {
-          // Skip files that can't be accessed
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          if (errorMessage.toLowerCase().includes('permission') || 
+              errorMessage.toLowerCase().includes('eacces') ||
+              errorMessage.toLowerCase().includes('eperm')) {
+            permissionErrors.push(uri.fsPath);
+          }
+          // Continue with other files even if some are inaccessible
         }
+      }
+      
+      // Log permission errors for debugging
+      if (permissionErrors.length > 0) {
+        console.warn(`Permission denied for ${permissionErrors.length} files:`, permissionErrors);
       }
       
       // Show web compatibility warning if file count is limited

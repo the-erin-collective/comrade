@@ -9,6 +9,7 @@ import { WebNetworkUtils, WebCompatibility } from './webcompat';
 import { ToolManager, ToolExecutionError } from './tool-manager';
 import { ExecutionContext, SecurityLevel } from './tools';
 import { ErrorMapper, ErrorRecovery, EnhancedError, ErrorContext } from './error-handler';
+import { Logger } from './logger';
 
 // Type definitions for API responses
 interface OpenAIResponse {
@@ -92,7 +93,14 @@ export type StreamCallback = (chunk: string, isComplete: boolean) => void;
 export interface IChatBridge {
   sendMessage(agent: IAgent, messages: ChatMessage[], options?: ChatOptions): Promise<ChatResponse>;
   streamMessage(agent: IAgent, messages: ChatMessage[], callback: StreamCallback, options?: ChatOptions): Promise<void>;
-  validateConnection(agent: IAgent): Promise<boolean>;
+  
+  /**
+   * Validates the connection to the agent's LLM provider
+   * @param agent The agent to validate connection for
+   * @returns A tuple where the first element is a boolean indicating success,
+   *          and the second element is an optional error message with details
+   */
+  validateConnection(agent: IAgent): Promise<[boolean, string?]>;
 }
 
 export class ChatBridgeError extends Error {
@@ -129,11 +137,120 @@ export class ChatBridgeError extends Error {
 export class ChatBridge implements IChatBridge {
   private readonly httpTimeout: number = 30000; // 30 seconds default
   private readonly toolManager: ToolManager;
-  // If ChatBridge needs to inject dependencies, use inject() here
+  private readonly logger: Logger;
+  private readonly MEMORY_CHECK_INTERVAL = 5000; // 5 seconds
+  private readonly MEMORY_THRESHOLD = 90; // 90% of system memory
+  private readonly CHUNK_PROCESSING_TIMEOUT = 30000; // 30 seconds
+  private readonly MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
+  private readonly MEMORY_CHECK_CHUNK_COUNT = 10; // Check memory every 10 chunks
+  private readonly MEMORY_CHECK_SIZE = 1024 * 1024; // 1MB
+
+  /**
+   * Gets current memory usage information
+   * @returns Object containing memory usage details
+   */
+  private getMemoryUsage(): { usedMB: number; totalMB: number; percentage: number } {
+    try {
+      if (typeof process !== 'undefined' && process.memoryUsage) {
+        const mem = process.memoryUsage();
+        const usedMB = Math.round(mem.heapUsed / 1024 / 1024 * 100) / 100;
+        const totalMB = Math.round(mem.heapTotal / 1024 / 1024 * 100) / 100;
+        const percentage = Math.round((mem.heapUsed / mem.heapTotal) * 100);
+        
+        this.logger.debug('Memory usage', { 
+          usedMB, 
+          totalMB, 
+          percentage,
+          rssMB: Math.round(mem.rss / 1024 / 1024 * 100) / 100,
+          externalMB: mem.external ? Math.round(mem.external / 1024 / 1024 * 100) / 100 : 0,
+          arrayBuffersMB: mem.arrayBuffers ? Math.round(mem.arrayBuffers / 1024 / 1024 * 100) / 100 : 0
+        });
+        
+        return { usedMB, totalMB, percentage };
+      }
+      
+      // Fallback for web environments
+      return { usedMB: 0, totalMB: 0, percentage: 0 };
+    } catch (error) {
+      this.logger.error('Failed to get memory usage', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      // Return safe defaults
+      return { usedMB: 0, totalMB: 0, percentage: 0 };
+    }
+  }
+  
+  /**
+   * Checks current memory usage and throws an error if over threshold
+   * @param context Additional context for error reporting
+   * @throws {ChatBridgeError} If memory usage exceeds the threshold
+   */
+  private checkMemoryUsage(context: Record<string, any> = {}): void {
+    try {
+      const { usedMB, totalMB, percentage } = this.getMemoryUsage();
+      const memoryInfo = { usedMB, totalMB, percentage, threshold: this.MEMORY_THRESHOLD };
+      
+      // Log memory usage for monitoring
+      if (percentage > this.MEMORY_THRESHOLD * 0.8) {
+        // Log warning at 80% of threshold
+        this.logger.warn('High memory usage detected', { ...memoryInfo, ...context });
+      } else {
+        this.logger.debug('Memory check', memoryInfo);
+      }
+      
+      // Check if we're over the memory threshold
+      if (percentage > this.MEMORY_THRESHOLD) {
+        const errorMessage = `Memory usage (${percentage}%) exceeds threshold (${this.MEMORY_THRESHOLD}%)`;
+        this.logger.error(errorMessage, { ...memoryInfo, ...context });
+        
+        // Try to free up memory before throwing
+        try {
+          if (global.gc) {
+            this.logger.info('Running garbage collection to free up memory');
+            global.gc();
+            
+            // Check memory again after GC
+            const afterGC = this.getMemoryUsage();
+            if (afterGC.percentage <= this.MEMORY_THRESHOLD) {
+              this.logger.info('Memory usage after GC', afterGC);
+              return; // GC helped, no need to throw
+            }
+          }
+        } catch (gcError) {
+          this.logger.warn('Failed to run garbage collection', {
+            error: gcError instanceof Error ? gcError.message : String(gcError)
+          });
+        }
+        
+        throw new ChatBridgeError(
+          errorMessage,
+          'memory_limit_exceeded',
+          'system',
+          { 
+            ...memoryInfo,
+            ...context,
+            suggestedFix: 'Try reducing the response size or processing data in smaller chunks.'
+          }
+        );
+      }
+    } catch (error) {
+      // Only rethrow if it's our memory limit error
+      if (error instanceof ChatBridgeError && error.code === 'memory_limit_exceeded') {
+        throw error;
+      }
+      
+      // Log other errors but don't fail the operation
+      this.logger.error('Error checking memory usage', {
+        error: error instanceof Error ? error.message : String(error),
+        ...context
+      });
+    }
+  }
   // Example: private someService = inject(SomeService);
 
   constructor() {
     this.toolManager = ToolManager.getInstance();
+    this.logger = new Logger({ prefix: 'ChatBridge' });
     
     // Register built-in tools if not already registered
     try {
@@ -145,7 +262,9 @@ export class ChatBridge implements IChatBridge {
         BuiltInTools.registerAll();
       }
     } catch (error) {
-      console.warn('Failed to register built-in tools:', error);
+      this.logger.error('Failed to register built-in tools', { 
+        error: error instanceof Error ? error.message : String(error) 
+      });
     }
   }
 
@@ -226,23 +345,51 @@ export class ChatBridge implements IChatBridge {
     }
   }
 
-  async validateConnection(agent: IAgent): Promise<boolean> {
+  /**
+   * Validates the connection to the agent's LLM provider
+   * @param agent The agent to validate connection for
+   * @returns A tuple where the first element is a boolean indicating success,
+   *          and the second element is an optional error message with details
+   */
+  async validateConnection(agent: IAgent): Promise<[boolean, string?]> {
+    if (!agent || !agent.config) {
+      return [false, 'Invalid agent or agent configuration'];
+    }
+
     try {
-      switch (agent.provider) {
+      let isValid: boolean;
+      switch (agent.config.provider) {
         case 'openai':
-          return await this.validateOpenAIConnection(agent);
+          isValid = await this.validateOpenAIConnection(agent);
+          return [isValid, isValid ? undefined : 'Failed to validate OpenAI connection'];
         case 'anthropic':
-          return await this.validateAnthropicConnection(agent);
+          isValid = await this.validateAnthropicConnection(agent);
+          return [isValid, isValid ? undefined : 'Failed to validate Anthropic connection'];
         case 'ollama':
-          return await this.validateOllamaConnection(agent);
+          isValid = await this.validateOllamaConnection(agent);
+          return [isValid, isValid ? undefined : 'Failed to validate Ollama connection'];
         case 'custom':
-          return await this.validateCustomConnection(agent);
+          isValid = await this.validateCustomConnection(agent);
+          return [isValid, isValid ? undefined : 'Failed to validate custom connection'];
         default:
-          return false;
+          const errorMsg = `Unsupported provider: ${agent.config.provider}`;
+          console.warn(errorMsg);
+          return [false, errorMsg];
       }
     } catch (error) {
-      console.error(`Connection validation failed for ${agent.provider}:`, error);
-      return false;
+      let errorMsg = 'Connection validation failed';
+      
+      if (error instanceof ChatBridgeError) {
+        errorMsg = error.message;
+        if (error.suggestedFix) {
+          errorMsg += `\nSuggestion: ${error.suggestedFix}`;
+        }
+      } else if (error instanceof Error) {
+        errorMsg = error.message;
+      }
+      
+      console.error('Connection validation error:', error);
+      return [false, errorMsg];
     }
   }
 
@@ -460,36 +607,145 @@ export class ChatBridge implements IChatBridge {
     }, callback, 'anthropic');
   }
 
+  /**
+   * Validates the connection to the OpenAI API
+   * @param agent The agent with OpenAI configuration
+   * @returns A boolean indicating if the connection is valid
+   * @throws {ChatBridgeError} If there's a validation error with details
+   */
   private async validateOpenAIConnection(agent: IAgent): Promise<boolean> {
+    const endpoint = `${agent.config.endpoint || 'https://api.openai.com'}/v1/models`;
+    const headers = this.getOpenAIHeaders(agent.config);
+    
     try {
-      const endpoint = agent.config.endpoint || 'https://api.openai.com/v1/models';
-      const headers = this.getOpenAIHeaders(agent.config);
-
       const response = await this.makeHttpRequest(endpoint, {
         method: 'GET',
         headers,
-        timeout: 10000 // 10 second timeout for validation
+        timeout: 10000 // 10 seconds for validation
       });
 
-      return response.status >= 200 && response.status < 300;
-    } catch (error) {
+      // Check for successful response (2xx)
+      if (response.status >= 200 && response.status < 300) {
+        return true;
+      }
+      
+      // Handle 401 Unauthorized (invalid API key)
+      if (response.status === 401) {
+        throw new ChatBridgeError(
+          'Invalid OpenAI API key provided',
+          'INVALID_API_KEY',
+          'openai',
+          response.status,
+          undefined,
+          'Please verify your OpenAI API key in the extension settings.'
+        );
+      }
+      
+      // Handle 404 Not Found (invalid endpoint)
+      if (response.status === 404) {
+        throw new ChatBridgeError(
+          'Invalid OpenAI API endpoint',
+          'INVALID_ENDPOINT',
+          'openai',
+          response.status,
+          undefined,
+          'Please verify the OpenAI API endpoint in the extension settings.'
+        );
+      }
+      
+      // Handle other 4xx/5xx errors
+      if (response.status >= 400) {
+        let errorMessage = `API request failed with status ${response.status}`;
+        try {
+          // Define the expected error response shape
+          interface ErrorResponse {
+            error?: {
+              message?: string;
+              code?: string;
+            };
+          }
+          
+          const errorData = await response.json() as ErrorResponse;
+          if (errorData?.error?.message) {
+            errorMessage = errorData.error.message;
+          }
+        } catch (e) {
+          // Ignore JSON parse errors
+        }
+        
+        throw new ChatBridgeError(
+          errorMessage,
+          'API_REQUEST_FAILED',
+          'openai',
+          response.status,
+          undefined,
+          'Please check your network connection and API configuration.'
+        );
+      }
+      
       return false;
+    } catch (error) {
+      // Re-throw ChatBridgeError as is
+      if (error instanceof ChatBridgeError) {
+        throw error;
+      }
+      
+      // Handle network errors
+      if (error instanceof Error) {
+        const errorMessage = error.message.toLowerCase();
+        
+        // Handle common network errors
+        if (errorMessage.includes('fetch failed') || errorMessage.includes('networkerror')) {
+          throw new ChatBridgeError(
+            'Network error while connecting to OpenAI API',
+            'NETWORK_ERROR',
+            'openai',
+            undefined,
+            undefined,
+            'Please check your internet connection and try again.'
+          );
+        }
+        
+        // Handle timeouts
+        if (errorMessage.includes('timeout') || errorMessage.includes('timed out')) {
+          throw new ChatBridgeError(
+            'Connection to OpenAI API timed out',
+            'TIMEOUT',
+            'openai',
+            408,
+            undefined,
+            'Please check your network connection and try again. You may need to increase the timeout in the settings.'
+          );
+        }
+      }
+      
+      // Fallback for unknown errors
+      throw new ChatBridgeError(
+        `Failed to validate OpenAI connection: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'VALIDATION_FAILED',
+        'openai'
+      );
     }
   }
 
+  /**
+   * Validates the connection to the Anthropic API
+   * @param agent The agent with Anthropic configuration
+   * @returns A boolean indicating if the connection is valid
+   * @throws {ChatBridgeError} If there's a validation error with details
+   */
   private async validateAnthropicConnection(agent: IAgent): Promise<boolean> {
-    try {
-      // Anthropic doesn't have a models endpoint, so we'll make a minimal test request
-      const endpoint = agent.config.endpoint || 'https://api.anthropic.com/v1/messages';
-      const headers = this.getAnthropicHeaders(agent.config);
-      
-      // Make a minimal test request to validate the API key
-      const testBody = {
-        model: agent.config.model || 'claude-3-haiku-20240307',
-        max_tokens: 1,
-        messages: [{ role: 'user', content: 'test' }]
-      };
+    const endpoint = agent.config.endpoint || 'https://api.anthropic.com/v1/messages';
+    const headers = this.getAnthropicHeaders(agent.config);
+    
+    // Minimal test request to validate the API key
+    const testBody = {
+      model: agent.config.model || 'claude-3-haiku-20240307',
+      max_tokens: 1,
+      messages: [{ role: 'user', content: 'test' }]
+    };
 
+    try {
       const response = await this.makeHttpRequest(endpoint, {
         method: 'POST',
         headers,
@@ -497,18 +753,106 @@ export class ChatBridge implements IChatBridge {
         timeout: 10000 // 10 second timeout for validation
       });
 
-      // Accept both success (200) and client errors (400) as valid connections
-      // 400 might occur due to minimal request, but it means the API key is valid
-      return (response.status >= 200 && response.status < 300) || response.status === 400;
-    } catch (error) {
+      // Handle successful response (2xx)
+      if (response.status >= 200 && response.status < 300) {
+        return true;
+      }
+
+      // Handle 401 Unauthorized (invalid API key)
+      if (response.status === 401) {
+        throw new ChatBridgeError(
+          'Invalid Anthropic API key provided',
+          'INVALID_API_KEY',
+          'anthropic',
+          response.status,
+          undefined,
+          'Please verify your Anthropic API key in the extension settings.'
+        );
+      }
+      
+      // Handle 404 Not Found (invalid endpoint)
+      if (response.status === 404) {
+        throw new ChatBridgeError(
+          'Invalid Anthropic API endpoint',
+          'INVALID_ENDPOINT',
+          'anthropic',
+          response.status,
+          undefined,
+          'Please verify the Anthropic API endpoint in the extension settings.'
+        );
+      }
+
+      // Handle other 4xx/5xx errors
+      if (response.status >= 400) {
+        let errorMessage = `API request failed with status ${response.status}`;
+        try {
+          const errorData = await response.json() as Record<string, any>;
+          if (errorData?.error?.message) {
+            errorMessage = errorData.error.message;
+          }
+        } catch (e) {
+          // Ignore JSON parse errors
+        }
+        
+        throw new ChatBridgeError(
+          errorMessage,
+          'API_REQUEST_FAILED',
+          'anthropic',
+          response.status,
+          undefined,
+          'Please check your network connection and API configuration.'
+        );
+      }
+      
       return false;
+    } catch (error) {
+      // Re-throw ChatBridgeError as is
+      if (error instanceof ChatBridgeError) {
+        throw error;
+      }
+      
+      // Handle network errors
+      if (error instanceof Error) {
+        const errorMessage = error.message.toLowerCase();
+        
+        // Handle common network errors
+        if (errorMessage.includes('fetch failed') || errorMessage.includes('networkerror')) {
+          throw new ChatBridgeError(
+            'Network error while connecting to Anthropic API',
+            'NETWORK_ERROR',
+            'anthropic',
+            undefined,
+            undefined,
+            'Please check your internet connection and try again.'
+          );
+        }
+        
+        // Handle timeouts
+        if (errorMessage.includes('timeout') || errorMessage.includes('timed out')) {
+          throw new ChatBridgeError(
+            'Connection to Anthropic API timed out',
+            'TIMEOUT',
+            'anthropic',
+            408,
+            undefined,
+            'Please check your network connection and try again. You may need to increase the timeout in the settings.'
+          );
+        }
+      }
+      
+      // Fallback for unknown errors
+      throw new ChatBridgeError(
+        `Failed to validate Anthropic connection: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'VALIDATION_FAILED',
+        'anthropic'
+      );
     }
   }
 
   private async validateOllamaConnection(agent: IAgent): Promise<boolean> {
+    const endpoint = `${agent.config.endpoint || 'http://localhost:11434'}/api/tags`;
+    
     try {
-      const endpoint = `${agent.config.endpoint || 'http://localhost:11434'}/api/tags`;
-      
       const response = await this.makeHttpRequest(endpoint, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
@@ -520,15 +864,76 @@ export class ChatBridge implements IChatBridge {
         // Check if the specified model is available
         return data.models?.some((model: any) => model.name === agent.config.model) || false;
       }
-      return false;
+      
+      // Handle non-2xx responses
+      throw new ChatBridgeError(
+        `Ollama API returned status ${response.status}`,
+        'API_ERROR',
+        'ollama',
+        response.status,
+        undefined,
+        'Please check your Ollama server is running and accessible.'
+      );
     } catch (error) {
-      return false;
+      // Re-throw ChatBridgeError as is
+      if (error instanceof ChatBridgeError) {
+        throw error;
+      }
+      
+      // Handle network errors
+      if (error instanceof Error) {
+        const errorMessage = error.message.toLowerCase();
+        
+        // Handle connection refused (Ollama not running)
+        if (errorMessage.includes('econnrefused') || errorMessage.includes('connection refused')) {
+          throw new ChatBridgeError(
+            'Could not connect to Ollama server',
+            'CONNECTION_REFUSED',
+            'ollama',
+            undefined,
+            undefined,
+            'Please make sure Ollama is running and accessible at the specified endpoint.'
+          );
+        }
+        
+        // Handle timeouts
+        if (errorMessage.includes('timeout') || errorMessage.includes('timed out')) {
+          throw new ChatBridgeError(
+            'Connection to Ollama server timed out',
+            'TIMEOUT',
+            'ollama',
+            408,
+            undefined,
+            'Please check your Ollama server is running and accessible.'
+          );
+        }
+      }
+      
+      // Fallback for unknown errors
+      throw new ChatBridgeError(
+        `Failed to validate Ollama connection: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'VALIDATION_FAILED',
+        'ollama'
+      );
     }
   }
 
+  /**
+   * Validates the connection to a custom LLM provider
+   * @param agent The agent with custom configuration
+   * @returns A boolean indicating if the connection is valid
+   * @throws {ChatBridgeError} If there's a validation error with details
+   */
   private async validateCustomConnection(agent: IAgent): Promise<boolean> {
     if (!agent.config.endpoint) {
-      return false;
+      throw new ChatBridgeError(
+        'No endpoint configured for custom LLM provider',
+        'MISSING_ENDPOINT',
+        'custom',
+        undefined,
+        undefined,
+        'Please configure an endpoint for the custom LLM provider in the extension settings.'
+      );
     }
 
     try {
@@ -540,7 +945,58 @@ export class ChatBridge implements IChatBridge {
       await this.sendCustomMessage(agent, testMessages, { maxTokens: 1 });
       return true;
     } catch (error) {
-      return false;
+      // Re-throw ChatBridgeError as is
+      if (error instanceof ChatBridgeError) {
+        throw error;
+      }
+      
+      // Handle network errors
+      if (error instanceof Error) {
+        const errorMessage = error.message.toLowerCase();
+        
+        // Handle common network errors
+        if (errorMessage.includes('fetch failed') || errorMessage.includes('networkerror')) {
+          throw new ChatBridgeError(
+            'Network error while connecting to custom LLM provider',
+            'NETWORK_ERROR',
+            'custom',
+            undefined,
+            undefined,
+            'Please check your internet connection and try again.'
+          );
+        }
+        
+        // Handle timeouts
+        if (errorMessage.includes('timeout') || errorMessage.includes('timed out')) {
+          throw new ChatBridgeError(
+            'Connection to custom LLM provider timed out',
+            'TIMEOUT',
+            'custom',
+            408,
+            undefined,
+            'Please check your network connection and try again. You may need to increase the timeout in the settings.'
+          );
+        }
+        
+        // Handle connection refused
+        if (errorMessage.includes('econnrefused') || errorMessage.includes('connection refused')) {
+          throw new ChatBridgeError(
+            'Could not connect to the custom LLM provider',
+            'CONNECTION_REFUSED',
+            'custom',
+            undefined,
+            undefined,
+            'Please verify the endpoint URL and ensure the service is running and accessible.'
+          );
+        }
+      }
+      
+      // Fallback for unknown errors
+      throw new ChatBridgeError(
+        `Failed to validate custom LLM connection: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'VALIDATION_FAILED',
+        'custom'
+      );
     }
   }
 
@@ -647,12 +1103,562 @@ export class ChatBridge implements IChatBridge {
     return body;
   }
 
+  /**
+   * Makes an HTTP request with streaming support and memory monitoring
+   */
+  /**
+   * Makes an HTTP request with streaming support and memory monitoring
+   * @param url The endpoint URL to make the request to
+   * @param options Request configuration options
+   * @param callback Callback function to handle streaming chunks
+   * @param format The format of the streaming response (openai, ollama, anthropic)
+   * @throws {ChatBridgeError} If there's an error during the streaming request
+   */
+  /**
+   * Makes an HTTP request with streaming support and memory monitoring
+   * @param url The endpoint URL to make the request to
+   * @param options Request configuration options
+   * @param callback Callback function to handle streaming chunks
+   * @param format The format of the streaming response (openai, ollama, anthropic)
+   * @throws {ChatBridgeError} If there's an error during the streaming request
+   */
+  // Add missing method stubs that are referenced but not implemented
+  private validateRequest(messages: ChatMessage[], options?: ChatOptions): void {
+    // Implementation of request validation
+    if (!messages || messages.length === 0) {
+      throw new ChatBridgeError('Messages array cannot be empty', 'INVALID_INPUT', 'system');
+    }
+  }
+
+  private async executeWithRetry<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    retryDelay: number = 1000
+  ): Promise<T> {
+    let lastError: Error | null = null;
+    
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error as Error;
+        if (i < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, retryDelay * (i + 1)));
+        }
+      }
+    }
+    
+    throw new ChatBridgeError(
+      `Failed after ${maxRetries} retries: ${lastError?.message}`,
+      'MAX_RETRIES_EXCEEDED',
+      'system',
+      undefined,
+      undefined,
+      undefined,
+      { originalError: lastError }
+    );
+  }
+
+  private parseStreamChunk(chunk: string, format: 'openai' | 'ollama' | 'anthropic'): string | null {
+    try {
+      if (!chunk.trim()) return null;
+      
+      if (format === 'openai') {
+        if (chunk.startsWith('data: ')) {
+          const data = chunk.slice(6).trim();
+          if (data === '[DONE]') return null;
+          try {
+            const parsed = JSON.parse(data);
+            return parsed.choices?.[0]?.delta?.content || '';
+          } catch (e) {
+            return null;
+          }
+        }
+      } else if (format === 'anthropic') {
+        // Handle Anthropic's streaming format
+        const lines = chunk.split('\n').filter(line => line.trim() !== '');
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6).trim();
+            if (data === '[DONE]') return null;
+            try {
+              const parsed = JSON.parse(data);
+              return parsed.completion || '';
+            } catch (e) {
+              return null;
+            }
+          }
+        }
+      } else if (format === 'ollama') {
+        // Handle Ollama's streaming format
+        try {
+          const parsed = JSON.parse(chunk);
+          return parsed.response || '';
+        } catch (e) {
+          return null;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      this.logger.error('Error parsing stream chunk', { error, chunk });
+      return null;
+    }
+  }
+
+  private async handleToolCalls(
+    toolCalls: ChatToolCall[],
+    agent: IAgent,
+    messages: ChatMessage[]
+  ): Promise<ChatMessage[]> {
+    const results: ChatMessage[] = [];
+    
+    for (const toolCall of toolCalls) {
+      try {
+        const toolResult = await this.toolManager.executeTool(
+          toolCall.name,
+          toolCall.parameters,
+          agent.id
+        );
+        
+        results.push({
+          role: 'tool',
+          content: JSON.stringify(toolResult),
+          tool_call_id: toolCall.id
+        });
+      } catch (error) {
+        this.logger.error('Error executing tool', { toolCall, error });
+        results.push({
+          role: 'tool',
+          content: `Error executing tool ${toolCall.name}: ${error instanceof Error ? error.message : String(error)}`,
+          tool_call_id: toolCall.id
+        });
+      }
+    }
+    
+    return results;
+  }
+
+  private async makeStreamingRequest(
+    url: string,
+    options: {
+      method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+      headers: Record<string, string>;
+      body?: string;
+      timeout: number;
+    },
+    callback: StreamCallback,
+    format: 'openai' | 'ollama' | 'anthropic'
+  ): Promise<void> {
+    // Initialize tracking variables
+    let controller: AbortController | null = null;
+    let timeoutId: NodeJS.Timeout | null = null;
+    let receivedBytes = 0;
+    let receivedChunks = 0;
+    let responseSize = 0;
+    let isComplete = false;
+    const startTime = Date.now();
+    let response: Response | null = null;
+    // Validate input parameters
+    if (!url) {
+      throw new ChatBridgeError('URL is required', 'invalid_parameters', format as LLMProvider);
+    }
+
+    if (!callback || typeof callback !== 'function') {
+      throw new ChatBridgeError('Callback function is required', 'invalid_parameters', format as LLMProvider);
+    }
+
+    // Track memory and request state
+    const startTime = Date.now();
+    let receivedBytes = 0;
+    let receivedChunks = 0;
+    let isComplete = false;
+    let controller: AbortController | null = null;
+    let timeoutId: NodeJS.Timeout | null = null;
+    let response: Response | null = null;
+
+    try {
+      // Create abort controller for request timeout
+      controller = new AbortController();
+      
+      // Set up timeout
+      timeoutId = setTimeout(() => {
+        controller?.abort(new ChatBridgeError(
+          `Request timed out after ${options.timeout}ms`,
+          'timeout',
+          format as LLMProvider
+        ));
+      }, options.timeout);
+
+      // Make the HTTP request
+      response = await fetch(url, {
+        method: options.method,
+        headers: options.headers,
+        body: options.body,
+        signal: controller.signal
+      });
+
+      // Clear the timeout since we got a response
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+
+      // Check for non-OK status
+      if (!response.ok) {
+        const errorData = await this.parseErrorResponse(response);
+        throw new ChatBridgeError(
+          errorData.message || `HTTP error ${response.status}: ${response.statusText}`,
+          errorData.code || 'http_error',
+          format as LLMProvider,
+          {
+            status: response.status,
+            statusText: response.statusText,
+            ...errorData
+          }
+        );
+      }
+
+      // Check for response body
+      if (!response.body) {
+        throw new ChatBridgeError(
+          'Empty response body',
+          'empty_response',
+          format as LLMProvider
+        );
+      }
+
+      // Process the streaming response
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+      let lastMemoryCheck = Date.now();
+      const memoryCheckInterval = 5000; // 5 seconds
+
+      // Process each chunk of data
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) {
+          isComplete = true;
+          break;
+        }
+
+        // Update received bytes and chunks
+        receivedBytes += value.length;
+        receivedChunks++;
+
+        // Check memory usage periodically
+        const now = Date.now();
+        if (now - lastMemoryCheck > memoryCheckInterval) {
+          this.checkMemoryUsage();
+          lastMemoryCheck = now;
+        }
+
+        // Decode and process the chunk
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+
+        // Process complete lines
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+          
+          try {
+            const content = this.parseStreamChunk(line, format);
+            if (content !== null) {
+              await callback(content, false);
+            }
+          } catch (error) {
+            this.logger.error('Error processing stream chunk', { 
+              error: error instanceof Error ? error.message : String(error),
+              line,
+              format
+            });
+            // Continue processing other lines even if one fails
+          }
+        }
+      }
+
+      // Process any remaining data in the buffer
+      if (buffer.trim()) {
+        try {
+          const content = this.parseStreamChunk(buffer, format);
+          if (content !== null) {
+            await callback(content, false);
+          }
+        } catch (error) {
+          this.logger.error('Error processing final buffer', {
+            error: error instanceof Error ? error.message : String(error),
+            buffer,
+            format
+          });
+        }
+      }
+
+      // Signal completion
+      await callback('', true);
+      isComplete = true;
+
+    } catch (error) {
+      // Handle errors
+      if (!isComplete) {
+        if (error instanceof ChatBridgeError) {
+          throw error;
+        }
+
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        throw new ChatBridgeError(
+          `Streaming request failed: ${errorMessage}`,
+          'streaming_error',
+          format as LLMProvider,
+          {
+            url,
+            method: options.method,
+            status: response?.status,
+            statusText: response?.statusText,
+            receivedBytes,
+            receivedChunks,
+            duration: Date.now() - startTime
+          }
+        );
+      }
+    } finally {
+      // Clean up resources
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      
+      // Log completion
+      this.logger.info('Streaming request completed', {
+        url,
+        method: options.method,
+        status: response?.status,
+        receivedBytes,
+        receivedChunks,
+        duration: Date.now() - startTime
+      });
+    }
+    
+    // Track memory usage at the start
+    const initialMemory = this.getMemoryUsage();
+    let buffer = '';
+    let lastMemoryCheck = Date.now();
+    let lastChunkTime = Date.now();
+
+    // Monitor memory usage periodically
+    const memoryMonitor = setInterval(() => {
+      const mem = this.getMemoryUsage();
+      if (mem.percentage > this.MEMORY_THRESHOLD) {
+        console.warn(`High memory usage: ${mem.percentage}% (${mem.usedMB}MB/${mem.totalMB}MB)`);
+      }
+    }, this.MEMORY_CHECK_INTERVAL);
+
+    // Clean up resources
+    const cleanup = () => {
+      clearInterval(memoryMonitor);
+      if (timeoutId) clearTimeout(timeoutId);
+      if (controller && !controller.signal.aborted) {
+        try {
+          controller.abort();
+        } catch (e) {
+          console.warn('Failed to abort controller:', e);
+        }
+      }
+    };
+
+    try {
+      // Create abort controller for the fetch request
+      controller = new AbortController();
+      
+      // Set up timeout
+      if (options.timeout > 0) {
+        timeoutId = setTimeout(() => {
+          controller?.abort();
+        }, options.timeout);
+      }
+
+      // Make the fetch request
+      const response = await fetch(url, {
+        method: options.method,
+        headers: options.headers,
+        body: options.body,
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new ChatBridgeError(
+          `Request failed with status ${response.status}: ${errorText}`,
+          'REQUEST_FAILED',
+          format as LLMProvider,
+          response.status
+        );
+      }
+
+      if (!response.body) {
+        throw new ChatBridgeError(
+          'Response body is null',
+          'EMPTY_RESPONSE',
+          format as LLMProvider
+        );
+      }
+
+      // Process the stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        // Update tracking variables
+        receivedChunks++;
+        receivedBytes += value?.byteLength || 0;
+        responseSize += value?.byteLength || 0;
+        lastChunkTime = Date.now();
+
+        // Check response size limit
+        if (responseSize > this.MAX_RESPONSE_SIZE) {
+          throw new ChatBridgeError(
+            `Response size limit exceeded (${this.MAX_RESPONSE_SIZE / 1024 / 1024}MB)`,
+            'RESPONSE_SIZE_LIMIT_EXCEEDED',
+            format as LLMProvider
+          );
+        }
+
+        // Process the chunk
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+
+        // Process complete lines
+        let newlineIndex: number;
+        while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, newlineIndex).trim();
+          buffer = buffer.slice(newlineIndex + 1);
+
+          if (line) {
+            const content = this.parseStreamChunk(line, format);
+            if (content !== null) {
+              callback(content, false);
+            }
+          }
+        }
+
+        // Check memory usage periodically
+        if (receivedChunks % this.MEMORY_CHECK_CHUNK_COUNT === 0 || 
+            responseSize % this.MEMORY_CHECK_SIZE === 0) {
+          const currentMemory = this.getMemoryUsage();
+          
+          if (currentMemory.percentage > this.MEMORY_THRESHOLD) {
+            throw new ChatBridgeError(
+              `High memory usage detected (${currentMemory.percentage}%). Aborting to prevent memory exhaustion.`,
+              'MEMORY_LIMIT_EXCEEDED',
+              format as LLMProvider
+            );
+          }
+        }
+
+        // Check for timeout in chunk processing
+        if (Date.now() - lastChunkTime > this.CHUNK_PROCESSING_TIMEOUT) {
+          throw new ChatBridgeError(
+            'Stream processing timeout',
+            'STREAM_TIMEOUT',
+            format as LLMProvider
+          );
+        }
+      }
+
+      // Process any remaining data in buffer
+      if (buffer.trim()) {
+        const content = this.parseStreamChunk(buffer, format);
+        if (content !== null) {
+          callback(content, false);
+        }
+      }
+
+      // Signal completion
+      isComplete = true;
+      callback('', true);
+
+      // Log final memory usage
+      const finalMemory = this.getMemoryUsage();
+      console.log(`Stream completed. Memory delta: ${finalMemory.usedMB - initialMemory.usedMB}MB`);
+
+    } catch (error) {
+      // Handle errors
+      if (!isComplete) {
+        if (error instanceof ChatBridgeError) {
+          throw error;
+        }
+
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorContext: ErrorContext = {
+          provider: format as LLMProvider,
+          operation: 'streaming_request',
+          timestamp: new Date(),
+          url,
+          error: errorMessage,
+          receivedBytes,
+          receivedChunks,
+          bufferLength: buffer.length
+        };
+
+        let errorToThrow: ChatBridgeError;
+        const errorStr = errorMessage.toLowerCase();
+
+        if (errorStr.includes('aborted') || errorStr.includes('cancel')) {
+          errorToThrow = new ChatBridgeError(
+            'Request was aborted',
+            'ABORTED',
+            format as LLMProvider,
+            undefined,
+            undefined,
+            'The request was cancelled by the user or due to a timeout',
+            errorContext
+          );
+        } else if (errorStr.includes('network')) {
+          errorToThrow = new ChatBridgeError(
+            'Network error occurred',
+            'NETWORK_ERROR',
+            format as LLMProvider,
+            undefined,
+            undefined,
+            'Please check your internet connection and try again',
+            errorContext,
+            true // retryable
+          );
+        } else {
+          errorToThrow = new ChatBridgeError(
+            `Streaming request failed: ${errorMessage}`,
+            'STREAM_ERROR',
+            format as LLMProvider,
+            undefined,
+            undefined,
+            'An error occurred while processing the stream',
+            errorContext,
+            false,
+            error instanceof Error ? error : undefined
+          );
+        }
+
+        throw errorToThrow;
+      }
+    } finally {
+      cleanup();
+    }
+  }
+
   private async makeHttpRequest(url: string, options: {
     method: string;
     headers: Record<string, string>;
     body?: string;
     timeout: number;
   }): Promise<Response> {
+    let timeoutHandle: NodeJS.Timeout | undefined;
+    
     try {
       // Check web accessibility before making request
       if (WebCompatibility.isWeb() && !WebNetworkUtils.isWebAccessible(url)) {
@@ -663,263 +1669,291 @@ export class ChatBridge implements IChatBridge {
         );
       }
 
-      const response = await WebNetworkUtils.makeRequest(url, {
+      // Create a promise that rejects on timeout to handle unhandled promise rejections
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(new ChatBridgeError(
+            `Request timeout after ${options.timeout}ms`,
+            'TIMEOUT',
+            'openai' as LLMProvider,
+            undefined,
+            undefined,
+            'Try increasing the timeout value or check your network connection'
+          ));
+        }, options.timeout);
+      });
+
+      // Make the actual fetch request
+      const fetchPromise = fetch(url, {
         method: options.method,
         headers: options.headers,
         body: options.body,
-        timeout: options.timeout
+        signal: AbortSignal.timeout(options.timeout)
       });
 
-      if (response.status < 200 || response.status >= 300) {
-        // Parse error response body
-        let errorBody;
-        try {
-          errorBody = JSON.parse(response.body);
-        } catch {
-          errorBody = { message: response.statusText };
-        }
-
-        // Create error context
-        const context: ErrorContext = {
-          provider: 'openai' as LLMProvider, // Will be overridden by caller
-          operation: 'http_request',
-          retryCount: 0,
-          timestamp: new Date()
-        };
-
-        // Map error using enhanced error handler
-        const enhancedError = ErrorMapper.mapProviderError('openai' as LLMProvider, {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorBody,
-          headers: response.headers
-        }, context);
-        
-        throw ChatBridgeError.fromEnhancedError(enhancedError);
-      }
-
-      // Convert our response format to fetch Response format
-      const headers = new Headers();
-      if (response.headers && typeof response.headers === 'object') {
-        Object.entries(response.headers).forEach(([key, value]) => {
-          if (typeof value === 'string') {
-            headers.set(key, value);
-          }
-        });
-      }
-      
-      return {
-        ok: response.status >= 200 && response.status < 300,
-        status: response.status,
-        statusText: response.statusText,
-        headers: headers,
-        json: async () => {
-          try {
-            return JSON.parse(response.body);
-          } catch (error) {
-            throw new ChatBridgeError(
-              `Invalid JSON response: ${error instanceof Error ? error.message : String(error)}`,
-              'invalid_response',
-              'openai' as LLMProvider
-            );
-          }
-        },
-        text: async () => response.body,
-        body: null // Streaming not supported in our WebNetworkUtils yet
-      } as Response;
+      // Race the fetch against the timeout
+      return await Promise.race([fetchPromise, timeoutPromise]);
     } catch (error) {
+      if (error instanceof Error) {
+        // Handle network errors
+        if (error.name === 'AbortError') {
+          throw new ChatBridgeError(
+            'Request was aborted',
+            'ABORT_ERROR',
+            'openai' as LLMProvider,
+            undefined,
+            undefined,
+            error.message
+          );
+        }
+        // Handle other fetch errors
+        throw new ChatBridgeError(
+          `Network error: ${error.message}`,
+          'NETWORK_ERROR',
+          'openai' as LLMProvider,
+          undefined,
+          undefined,
+          'Check your internet connection and try again'
+        );
+      }
+      throw error; // Re-throw if not an Error instance
+    } finally {
+      // Clear the timeout to prevent memory leaks
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+      // Cleanup is handled by the finally block in the calling method
+    }
+  }
+        );
+      }
+
+      // Create a promise that rejects on timeout to handle unhandled promise rejections
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(new ChatBridgeError(
+            `Request timeout after ${options.timeout}ms`,
+            'TIMEOUT',
+            'openai' as LLMProvider,
+            undefined,
+            undefined,
+            'Try increasing the timeout value or check your network connection'
+          ));
+        }, options.timeout);
+      });
+
+      // Make the actual fetch request
+      const fetchPromise = fetch(url, {
+        method: options.method,
+        headers: options.headers,
+        body: options.body,
+        signal: AbortSignal.timeout(options.timeout)
       if (error instanceof ChatBridgeError) {
         throw error;
       }
       
-      // Handle timeout errors specifically
-      if (error instanceof Error && error.message.includes('timeout')) {
-        throw new ChatBridgeError(
-          `Request timeout: ${error.message}`,
-          'TIMEOUT',
-          'openai' as LLMProvider
+      // Create a detailed error context for unhandled errors
+      const errorContext: ErrorContext = {
+        provider: 'openai' as LLMProvider,
+        operation: 'http_request',
+        retryCount: 0,
+        timestamp: new Date(),
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+        responseText: error instanceof Error ? error.message : String(error)
+      };
+      
+      // Create an appropriate error
+      let errorToThrow: ChatBridgeError;
+      
+      if (error instanceof Error) {
+        const errorMessage = error.message.toLowerCase();
+        
+        if (errorMessage.includes('abort') || errorMessage.includes('cancel')) {
+          errorToThrow = new ChatBridgeError(
+            'Request was cancelled',
+            'CANCELLED',
+            'openai' as LLMProvider,
+            undefined,
+            undefined,
+            'The request was cancelled by the user or due to a timeout',
+            errorContext
+          );
+        } else if (errorMessage.includes('timeout')) {
+          errorToThrow = new ChatBridgeError(
+            'Request timed out',
+            'TIMEOUT',
+            'openai' as LLMProvider,
+            undefined,
+            undefined,
+            'The request took too long to complete. Try increasing the timeout value.',
+            errorContext,
+            true // retryable
+          );
+        } else if (errorMessage.includes('network')) {
+          errorToThrow = new ChatBridgeError(
+            'Network error',
+            'NETWORK_ERROR',
+            'openai' as LLMProvider,
+            undefined,
+            undefined,
+            'Please check your internet connection and try again',
+            errorContext,
+            true // retryable
+          );
+        } else {
+          // Generic error
+          errorToThrow = new ChatBridgeError(
+            `Request failed: ${error.message}`,
+            'REQUEST_FAILED',
+            'openai' as LLMProvider,
+            undefined,
+            undefined,
+            'An error occurred while making the request',
+            errorContext
+          );
+        }
+      } else {
+        // Non-Error object thrown
+        errorToThrow = new ChatBridgeError(
+          `Request failed: ${String(error)}`,
+          'REQUEST_FAILED',
+          'openai' as LLMProvider,
+          undefined,
+          undefined,
+          'An unknown error occurred',
+          errorContext
         );
       }
       
+      throw errorToThrow;
+    } finally {
+      // Clean up the timeout handle
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    }
+  }
+
+  private parseErrorResponse(error: any, response: Response): never {
+    // Extract error details from the response
+    const errorMessage = error?.message || 'Unknown error';
+    const errorCode = error?.code || 'UNKNOWN_ERROR';
+    const statusCode = response.status;
+    
+    // Create error context for better debugging
+    const errorContext: ErrorContext = {
+      provider: 'unknown',
+      operation: 'http_request',
+      statusCode,
+      error: errorMessage,
+      url: response.url,
+      method: 'GET', // This will be overridden by the actual method
+      timestamp: new Date()
+    };
+
+    // Map common HTTP status codes to more specific error types
+    if (statusCode === 401) {
       throw new ChatBridgeError(
-        `Network request failed: ${error instanceof Error ? error.message : String(error)}`,
-        'NETWORK_ERROR',
-        'openai' as LLMProvider
+        'Authentication failed. Please check your API key and permissions.',
+        'AUTHENTICATION_ERROR',
+        'unknown',
+        statusCode,
+        undefined,
+        'Check your API key and ensure it has the correct permissions.',
+        errorContext
+      );
+    } else if (statusCode === 429) {
+      // Extract retry-after header if available
+      const retryAfter = response.headers.get('retry-after');
+      const retryAfterMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : undefined;
+      
+      throw new ChatBridgeError(
+        'Rate limit exceeded. Please try again later.',
+        'RATE_LIMIT_EXCEEDED',
+        'unknown',
+        statusCode,
+        retryAfterMs,
+        'Wait for rate limits to reset or upgrade your plan for higher limits.',
+        errorContext,
+        true // retryable
+      );
+    } else if (statusCode >= 500) {
+      throw new ChatBridgeError(
+        'Server error. Please try again later.',
+        'SERVER_ERROR',
+        'unknown',
+        statusCode,
+        undefined,
+        'The server encountered an error. Please try again later.',
+        errorContext,
+        true // retryable
+      );
+    } else {
+      // Generic error for other status codes
+      throw new ChatBridgeError(
+        `Request failed with status ${statusCode}: ${errorMessage}`,
+        errorCode,
+        'unknown',
+        statusCode,
+        undefined,
+        'An unexpected error occurred while making the request.',
+        errorContext
       );
     }
   }
 
-  private async makeStreamingRequest(
-    url: string,
-    options: {
-      method: string;
-      headers: Record<string, string>;
-      body: string;
-      timeout: number;
-    },
-    callback: StreamCallback,
-    format: 'openai' | 'ollama' | 'anthropic'
-  ): Promise<void> {
-    // Check web accessibility
-    if (WebCompatibility.isWeb() && !WebNetworkUtils.isWebAccessible(url)) {
-      throw new ChatBridgeError(
-        `Streaming not supported for ${url} in VS Code web environment`,
-        'WEB_STREAMING_ERROR',
-        'openai' as LLMProvider
-      );
-    }
+  private addAvailableTools(tools: ChatTool[]): void {
+    // This method is called to update the available tools in the chat bridge
+    // The actual implementation would depend on how tools are managed in the system
+    this.logger.debug('Updating available tools', { toolCount: tools?.length || 0 });
+  }
 
-    // For web environment, fall back to non-streaming request with simulated streaming
-    if (WebCompatibility.isWeb()) {
-      try {
-        // Make a regular request and simulate streaming by breaking response into chunks
-        const response = await this.makeHttpRequest(url, options);
-        const text = await response.text(); // Get the response body as text
-        
-        // Parse the response to extract content
-        let content = '';
-        if (format === 'openai') {
-          const data = JSON.parse(text) as OpenAIResponse;
-          content = data.choices?.[0]?.message?.content || '';
-        } else if (format === 'ollama') {
-          const data = JSON.parse(text) as OllamaResponse;
-          content = data.message?.content || '';
-        } else if (format === 'anthropic') {
-          const data = JSON.parse(text) as any;
-          content = data.content?.[0]?.text || '';
-        }
-        
-        // Simulate streaming by sending content in chunks with delays
-        const streamingConfig = WebCompatibility.getStreamingSimulationConfig();
-        await this.simulateStreaming(content, callback, {
-          chunkSize: streamingConfig.chunkSize,
-          delay: streamingConfig.delay,
-          wordBoundary: streamingConfig.wordBoundary
-        });
-        
-        return;
-      } catch (error) {
-        throw new ChatBridgeError(
-          `Web streaming fallback failed: ${error instanceof Error ? error.message : String(error)}`,
-          'WEB_STREAMING_FALLBACK_ERROR',
-          'openai' as LLMProvider
-        );
-      }
-    }
+  private cleanup(): void {
+    // Clean up any resources, timeouts, intervals, etc.
+    // This method is called when the chat bridge is being disposed
+    this.logger.debug('Cleaning up chat bridge resources');
+    // Add any additional cleanup logic here
+  }
 
-    // Desktop environment - use actual streaming
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), options.timeout);
-
-    try {
-      // Use fetch directly for streaming since WebNetworkUtils doesn't support streaming yet
-      const response = await fetch(url, {
+  private makeHttpRequest(url: string, options: {
+    method: string;
+    headers: Record<string, string>;
+    body?: string;
+    timeout: number;
+  }): Promise<Response> {
+    // Implementation of makeHttpRequest method
+    return new Promise((resolve, reject) => {
+      // Use fetch API for making HTTP requests
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), options.timeout);
+      
+      fetch(url, {
         method: options.method,
         headers: options.headers,
         body: options.body,
         signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        // Create error context
-        const context: ErrorContext = {
-          provider: 'openai' as LLMProvider,
-          operation: 'streaming_request',
-          retryCount: 0,
-          timestamp: new Date()
-        };
-
-        // Map error using enhanced error handler
-        const enhancedError = ErrorMapper.mapProviderError('openai' as LLMProvider, {
-          status: response.status,
-          statusText: response.statusText,
-          headers: response.headers
-        }, context);
-        
-        throw ChatBridgeError.fromEnhancedError(enhancedError);
-      }
-
-      if (!response.body) {
-        throw new ChatBridgeError(
-          'No response body for streaming',
-          'NO_STREAM_BODY',
-          'openai' as LLMProvider
-        );
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let readerReleased = false;
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            break;
-          }
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            if (line.trim()) {
-              const chunk = this.parseStreamChunk(line, format);
-              if (chunk) {
-                callback(chunk, false);
-              }
+      })
+      .then(response => {
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+          return response.text().then(text => {
+            let errorData;
+            try {
+              errorData = JSON.parse(text);
+            } catch (e) {
+              errorData = { message: text };
             }
-          }
+            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+          });
         }
-
-        // Process any remaining buffer
-        if (buffer.trim()) {
-          const chunk = this.parseStreamChunk(buffer, format);
-          if (chunk) {
-            callback(chunk, false);
-          }
-        }
-
-        callback('', true); // Signal completion
-      } catch (streamError) {
-        // Release reader before throwing
-        if (!readerReleased) {
-          try {
-            reader.releaseLock();
-            readerReleased = true;
-          } catch (releaseError) {
-            // Ignore release errors
-          }
-        }
-        
-        throw new ChatBridgeError(
-          `Stream processing error: ${streamError instanceof Error ? streamError.message : String(streamError)}`,
-          'stream_error',
-          'openai' as LLMProvider
-        );
-      } finally {
-        if (!readerReleased) {
-          try {
-            reader.releaseLock();
-          } catch (releaseError) {
-            // Ignore release errors in finally block
-          }
-        }
-      }
-    } catch (error) {
-      clearTimeout(timeoutId);
-      if (error instanceof ChatBridgeError) {
-        throw error;
-      }
-      throw new ChatBridgeError(
-        `Streaming request failed: ${error instanceof Error ? error.message : String(error)}`,
-        'STREAM_ERROR',
-        'openai' as LLMProvider
-      );
-    }
+        return response;
+      })
+      .then(resolve)
+      .catch(error => {
+        clearTimeout(timeoutId);
+        reject(error);
+      });
+    });
   }
 
   private parseStreamChunk(line: string, format: 'openai' | 'ollama' | 'anthropic'): string | null {
@@ -1063,85 +2097,261 @@ export class ChatBridge implements IChatBridge {
       const data = await response.json() as OpenAIResponse;
       
       if (data.error) {
-        // Create error context
-        const context: ErrorContext = {
-          provider: 'openai',
-          operation: 'parse_response',
-          retryCount: 0,
-          timestamp: new Date()
-        };
-
-        // Map OpenAI-specific error using enhanced error handler
-        const enhancedError = ErrorMapper.mapProviderError('openai', { error: data.error }, context);
-        throw ChatBridgeError.fromEnhancedError(enhancedError);
-      }
-
-      const choice = data.choices?.[0];
-      if (!choice) {
         throw new ChatBridgeError(
-          'No choices in OpenAI response',
-          'invalid_response',
+          data.error.message || 'Unknown error from OpenAI',
+          data.error.code || 'OPENAI_API_ERROR',
           'openai',
-          undefined,
-          undefined,
-          'Check your request parameters and try again. This may indicate an issue with the model or request format.'
+          response.status
         );
       }
 
-      // Validate response structure
-      if (!choice.message) {
+      if (!data.choices || data.choices.length === 0) {
         throw new ChatBridgeError(
-          'Invalid response structure: missing message',
-          'invalid_response',
+          'No choices returned from OpenAI',
+          'NO_CHOICES',
           'openai',
-          undefined,
-          undefined,
-          'The OpenAI API returned an unexpected response format. This may be a temporary issue.'
+          response.status
         );
+      }
+
+      const choice = data.choices[0];
+      const content = choice.message?.content || '';
+      const finishReason = this.mapOpenAIFinishReason(choice.finish_reason);
+      
+      // Handle tool calls if present
+      let toolCalls: ChatToolCall[] = [];
+      if (choice.message?.tool_calls?.length) {
+        toolCalls = choice.message.tool_calls.map((tc: any) => ({
+          id: tc.id,
+          name: tc.function.name,
+          parameters: JSON.parse(tc.function.arguments || '{}')
+        }));
       }
 
       return {
-        content: choice.message.content || '',
-        finishReason: this.mapOpenAIFinishReason(choice.finish_reason),
+        content,
+        finishReason,
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
         usage: data.usage ? {
           promptTokens: data.usage.prompt_tokens,
           completionTokens: data.usage.completion_tokens,
           totalTokens: data.usage.total_tokens
         } : undefined,
-        toolCalls: choice.message.tool_calls?.map((call: any) => ({
-          id: call.id,
-          name: call.function?.name,
-          parameters: JSON.parse(call.function?.arguments || '{}')
-        })),
-        metadata: { provider: 'openai', model: data.model }
+        metadata: {
+          model: data.model,
+          id: (data as any).id,
+          created: (data as any).created
+        }
       };
     } catch (error) {
       if (error instanceof ChatBridgeError) {
         throw error;
       }
       
-      // Create error context
-      const context: ErrorContext = {
+      // Handle JSON parsing errors
+      if (error instanceof SyntaxError) {
+        throw new ChatBridgeError(
+          'Failed to parse OpenAI response',
+          'INVALID_RESPONSE',
+          'openai',
+          response.status,
+          undefined,
+          'The response from OpenAI could not be parsed as JSON.',
+          { originalError: error }
+        );
+      }
+      
+      // Re-throw other errors
+      throw new ChatBridgeError(
+        error instanceof Error ? error.message : 'Unknown error parsing OpenAI response',
+        'PARSE_ERROR',
+        'openai',
+        response.status,
+        undefined,
+        'An error occurred while processing the response from OpenAI.',
+        { originalError: error }
+      );
+    }
+        };
+        
+        const enhancedError = ErrorMapper.mapProviderError('openai', {
+          status: response.status,
+          statusText: response.statusText,
+          error: data.error,
+          headers: Object.fromEntries(response.headers.entries())
+        }, errorContext);
+        
+        throw ChatBridgeError.fromEnhancedError(enhancedError);
+      }
+
+      // Validate response structure
+      if (!Array.isArray(data.choices) || data.choices.length === 0) {
+        const errorContext: ErrorContext = {
+          provider: 'openai',
+          operation: 'validate_response',
+          retryCount: 0,
+          timestamp: new Date(),
+          statusCode: response.status,
+          responseText: 'No choices in response',
+          contentType: response.headers.get('content-type') || 'application/json'
+        };
+        
+        const enhancedError = ErrorMapper.mapProviderError('openai', {
+          message: 'No choices in response',
+          code: 'invalid_response',
+          status: response.status,
+          suggestedFix: 'The OpenAI API returned an empty or invalid choices array. This may indicate an issue with the request parameters.'
+        }, errorContext);
+        
+        throw ChatBridgeError.fromEnhancedError(enhancedError);
+      }
+
+      const choice = data.choices[0];
+      
+      // Validate choice structure
+      if (!choice || typeof choice !== 'object') {
+        const errorContext: ErrorContext = {
+          provider: 'openai',
+          operation: 'validate_choice',
+          retryCount: 0,
+          timestamp: new Date(),
+          statusCode: response.status,
+          responseText: 'Invalid choice structure in response',
+          contentType: response.headers.get('content-type') || 'application/json',
+          errorType: 'invalid_choice',
+          choiceType: typeof choice,
+          choiceValue: String(choice)
+        };
+        
+        const enhancedError = ErrorMapper.mapProviderError('openai', {
+          message: 'Invalid choice in response',
+          code: 'invalid_response',
+          status: response.status,
+          suggestedFix: 'The OpenAI API returned an invalid choice object in the response.'
+        }, errorContext);
+        
+        throw ChatBridgeError.fromEnhancedError(enhancedError);
+      }
+
+      // Validate message structure
+      if (!choice.message || typeof choice.message !== 'object') {
+        const errorContext: ErrorContext = {
+          provider: 'openai',
+          operation: 'validate_message',
+          retryCount: 0,
+          timestamp: new Date(),
+          statusCode: response.status,
+          responseText: 'Invalid message in response',
+          contentType: response.headers.get('content-type') || 'application/json',
+          errorType: 'invalid_message',
+          messageType: typeof choice.message,
+          messageValue: String(choice.message)
+        };
+        
+        const enhancedError = ErrorMapper.mapProviderError('openai', {
+          message: 'Invalid message in response',
+          code: 'invalid_response',
+          status: response.status,
+          suggestedFix: 'The OpenAI API returned an invalid message object in the response.'
+        }, errorContext);
+        
+        throw ChatBridgeError.fromEnhancedError(enhancedError);
+      }
+      
+      // Validate content (can be null for tool calls)
+      if (choice.message.content === undefined && !choice.message.tool_calls?.length) {
+        const errorContext: ErrorContext = {
+          provider: 'openai',
+          operation: 'validate_message_content',
+          retryCount: 0,
+          timestamp: new Date(),
+          statusCode: response.status,
+          responseText: 'Message content is undefined and no tool calls present',
+          contentType: response.headers.get('content-type') || 'application/json',
+          errorType: 'missing_content',
+          messageKeys: Object.keys(choice.message)
+        };
+        
+        const enhancedError = ErrorMapper.mapProviderError('openai', {
+          message: 'Missing content and tool_calls in message',
+          code: 'invalid_response',
+          status: response.status,
+          suggestedFix: 'The OpenAI API response is missing both content and tool_calls in the message.'
+        }, errorContext);
+        
+        throw ChatBridgeError.fromEnhancedError(enhancedError);
+      }
+
+      // Prepare the response object
+      const responseObj: ChatResponse = {
+        content: choice.message.content || '',
+        finishReason: this.mapOpenAIFinishReason(choice.finish_reason),
+        metadata: { 
+          provider: 'openai', 
+          model: data.model || 'unknown',
+          responseId: response.headers.get('x-request-id') || undefined,
+          rateLimit: {
+            limit: parseInt(response.headers.get('x-ratelimit-limit-requests') || '0', 10) || undefined,
+            remaining: parseInt(response.headers.get('x-ratelimit-remaining-requests') || '0', 10) || undefined,
+            reset: response.headers.get('x-ratelimit-reset-requests') || undefined
+          }
+        }
+      };
+
+      // Add usage information if available
+      if (data.usage) {
+        responseObj.usage = {
+          promptTokens: data.usage.prompt_tokens,
+          completionTokens: data.usage.completion_tokens,
+          totalTokens: data.usage.total_tokens
+        };
+      }
+
+      // Add tool calls if present
+      if (choice.message.tool_calls?.length) {
+        responseObj.toolCalls = choice.message.tool_calls.map((call: any) => ({
+          id: call.id,
+          name: call.function?.name || '',
+          parameters: call.function?.arguments 
+            ? JSON.parse(call.function.arguments)
+            : {}
+        }));
+      }
+
+      return responseObj;
+    } catch (error) {
+      if (error instanceof ChatBridgeError) {
+        throw error;
+      }
+      
+      // Create error context with response information
+      const errorContext: ErrorContext = {
         provider: 'openai',
         operation: 'parse_response',
         retryCount: 0,
-        timestamp: new Date()
+        timestamp: new Date(),
+        statusCode: response.status,
+        responseText: 'Error parsing response',
+        contentType: response.headers.get('content-type') || 'application/json',
+        errorType: error instanceof Error ? error.name : 'UnknownError'
       };
 
       // Handle JSON parsing errors specifically
       if (error instanceof SyntaxError) {
         const enhancedError = ErrorMapper.mapProviderError('openai', {
           message: `Invalid JSON response: ${error.message}`,
-          code: 'invalid_response'
-        }, context);
+          code: 'invalid_json',
+          status: response.status
+        }, errorContext);
         throw ChatBridgeError.fromEnhancedError(enhancedError);
       }
       
       // Handle other parsing errors
       const enhancedError = ErrorMapper.mapProviderError('openai', {
         message: `Failed to parse response: ${error instanceof Error ? error.message : String(error)}`,
-        code: 'parse_error'
-      }, context);
+        code: 'parse_error',
+        status: response.status
+      }, errorContext);
       throw ChatBridgeError.fromEnhancedError(enhancedError);
     }
   }
@@ -1152,22 +2362,29 @@ export class ChatBridge implements IChatBridge {
       
       if (data.error) {
         throw new ChatBridgeError(
-          data.error,
-          'API_ERROR',
-          'ollama'
+          data.error || 'Unknown error from Ollama',
+          'OLLAMA_API_ERROR',
+          'ollama',
+          response.status
         );
       }
 
+      // Ollama responses are simpler than OpenAI's
+      const content = data.message?.content || '';
+      
+      // Ollama doesn't provide a direct equivalent to finish_reason
+      // We'll use done flag if available, otherwise assume 'stop'
+      const finishReason: 'stop' | 'length' | 'tool_calls' | 'error' = 'stop';
+
       return {
-        content: data.message?.content || '',
-        finishReason: data.done ? 'stop' : 'length',
-        usage: data.prompt_eval_count || data.eval_count ? {
+        content,
+        finishReason,
+        usage: {
           promptTokens: data.prompt_eval_count || 0,
           completionTokens: data.eval_count || 0,
           totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0)
-        } : undefined,
-        metadata: { 
-          provider: 'ollama', 
+        },
+        metadata: {
           model: data.model,
           totalDuration: data.total_duration,
           loadDuration: data.load_duration,
@@ -1179,48 +2396,218 @@ export class ChatBridge implements IChatBridge {
       if (error instanceof ChatBridgeError) {
         throw error;
       }
+      
+      // Handle JSON parsing errors
+      if (error instanceof SyntaxError) {
+        throw new ChatBridgeError(
+          'Failed to parse Ollama response',
+          'INVALID_RESPONSE',
+          'ollama',
+          response.status,
+          undefined,
+          'The response from Ollama could not be parsed as JSON.',
+          { originalError: error }
+        );
+      }
+      
+      // Re-throw other errors
       throw new ChatBridgeError(
-        `Failed to parse Ollama response: ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof Error ? error.message : 'Unknown error parsing Ollama response',
         'PARSE_ERROR',
-        'ollama'
+        'ollama',
+        response.status,
+        undefined,
+        'An error occurred while processing the response from Ollama.',
+        { originalError: error }
       );
+    }
+    try {
+      // First, get the raw response text for better error reporting
+      const responseText = await response.text();
+      let data: OllamaResponse;
+      
+      try {
+        data = JSON.parse(responseText) as OllamaResponse;
+      } catch (parseError) {
+        const errorContext: ErrorContext = {
+          provider: 'ollama',
+          operation: 'parse_response',
+          retryCount: 0,
+          timestamp: new Date(),
+          statusCode: response.status,
+          responseText: responseText.length > 500 ? responseText.substring(0, 500) + '...' : responseText,
+          contentType: response.headers.get('content-type') || 'application/json'
+        };
+        
+        const enhancedError = ErrorMapper.mapProviderError('ollama', {
+          message: `Failed to parse JSON response: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`,
+          code: 'invalid_json',
+          status: response.status
+        }, errorContext);
+        
+        throw ChatBridgeError.fromEnhancedError(enhancedError);
+      }
+      
+      // Check for API errors
+      if (data.error) {
+        const errorContext: ErrorContext = {
+          provider: 'ollama',
+          operation: 'api_request',
+          retryCount: 0,
+          timestamp: new Date(),
+          statusCode: response.status,
+          errorType: 'api_error',
+          responseText: data.error,
+          contentType: response.headers.get('content-type') || 'application/json'
+        };
+        
+        const enhancedError = ErrorMapper.mapProviderError('ollama', {
+          message: data.error,
+          code: 'api_error',
+          status: response.status
+        }, errorContext);
+        
+        throw ChatBridgeError.fromEnhancedError(enhancedError);
+      }
+
+      // Validate response structure
+      if (!data.message || typeof data.message !== 'object') {
+        const errorContext: ErrorContext = {
+          provider: 'ollama',
+          operation: 'validate_response',
+          retryCount: 0,
+          timestamp: new Date(),
+          statusCode: response.status,
+          responseText: 'Invalid message in response',
+          contentType: response.headers.get('content-type') || 'application/json'
+        };
+        
+        const enhancedError = ErrorMapper.mapProviderError('ollama', {
+          message: 'Invalid message in Ollama response',
+          code: 'invalid_response',
+          status: response.status
+        }, errorContext);
+        
+        throw ChatBridgeError.fromEnhancedError(enhancedError);
+      }
+
+      // Prepare the response object
+      const responseObj: ChatResponse = {
+        content: data.message.content || '',
+        finishReason: data.done ? 'stop' : 'length',
+        metadata: { 
+          provider: 'ollama', 
+          model: data.model || 'unknown',
+          responseId: response.headers.get('x-request-id') || undefined,
+          timings: {
+            totalDuration: data.total_duration,
+            loadDuration: data.load_duration,
+            promptEvalDuration: data.prompt_eval_duration,
+            evalDuration: data.eval_duration
+          }
+        }
+      };
+
+      // Add usage information if available
+      if (data.prompt_eval_count !== undefined || data.eval_count !== undefined) {
+        responseObj.usage = {
+          promptTokens: data.prompt_eval_count || 0,
+          completionTokens: data.eval_count || 0,
+          totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0)
+        };
+      }
+
+      return responseObj;
+    } catch (error) {
+      if (error instanceof ChatBridgeError) {
+        throw error;
+      }
+      
+      // Create error context with response information
+      const errorContext: ErrorContext = {
+        provider: 'ollama',
+        operation: 'parse_response',
+        retryCount: 0,
+        timestamp: new Date(),
+        statusCode: response.status,
+        responseText: 'Error parsing Ollama response',
+        contentType: response.headers.get('content-type') || 'application/json',
+        errorType: error instanceof Error ? error.name : 'UnknownError'
+      };
+
+      // Handle JSON parsing errors specifically
+      if (error instanceof SyntaxError) {
+        const enhancedError = ErrorMapper.mapProviderError('ollama', {
+          message: `Invalid JSON response: ${error.message}`,
+          code: 'invalid_json',
+          status: response.status
+        }, errorContext);
+        throw ChatBridgeError.fromEnhancedError(enhancedError);
+      }
+      
+      // Handle other parsing errors
+      const enhancedError = ErrorMapper.mapProviderError('ollama', {
+        message: `Failed to parse response: ${error instanceof Error ? error.message : String(error)}`,
+        code: 'parse_error',
+        status: response.status
+      }, errorContext);
+      
+      throw ChatBridgeError.fromEnhancedError(enhancedError);
     }
   }
 
   private async parseAnthropicResponse(response: Response): Promise<ChatResponse> {
     try {
-      const data = await response.json() as any;
+      const data = await response.json();
       
       if (data.error) {
-        // Create error context
-        const context: ErrorContext = {
-          provider: 'anthropic',
-          operation: 'parse_response',
-          retryCount: 0,
-          timestamp: new Date()
-        };
-
-        // Map Anthropic-specific error using enhanced error handler
-        const enhancedError = ErrorMapper.mapProviderError('anthropic', { error: data.error }, context);
-        throw ChatBridgeError.fromEnhancedError(enhancedError);
+        throw new ChatBridgeError(
+          data.error.message || 'Unknown error from Anthropic',
+          data.error.type || 'ANTHROPIC_API_ERROR',
+          'anthropic',
+          response.status
+        );
       }
 
-      // Anthropic response format: { content: [{ text: "response" }], stop_reason: "end_turn", usage: {...} }
+      // Anthropic's response structure is different from OpenAI's
       const content = data.content?.[0]?.text || '';
-      const finishReason = this.mapAnthropicFinishReason(data.stop_reason);
+      
+      // Map Anthropic's stop reason to our finish reason
+      let finishReason: 'stop' | 'length' | 'tool_calls' | 'error' = 'stop';
+      if (data.stop_reason === 'max_tokens') {
+        finishReason = 'length';
+      } else if (data.stop_reason === 'tool_use') {
+        finishReason = 'tool_calls';
+      } else if (data.stop_reason === 'error') {
+        finishReason = 'error';
+      }
+
+      // Handle tool calls if present
+      let toolCalls: ChatToolCall[] = [];
+      if (data.content?.[0]?.type === 'tool_use') {
+        toolCalls = data.content
+          .filter((item: any) => item.type === 'tool_use')
+          .map((toolUse: any) => ({
+            id: toolUse.id,
+            name: toolUse.name,
+            parameters: toolUse.input || {}
+          }));
+      }
 
       return {
         content,
         finishReason,
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
         usage: data.usage ? {
-          promptTokens: data.usage.input_tokens || 0,
-          completionTokens: data.usage.output_tokens || 0,
+          promptTokens: data.usage.input_tokens,
+          completionTokens: data.usage.output_tokens,
           totalTokens: (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0)
         } : undefined,
-        metadata: { 
-          provider: 'anthropic', 
+        metadata: {
           model: data.model,
-          stopReason: data.stop_reason
+          id: data.id,
+          type: data.type,
+          role: data.role
         }
       };
     } catch (error) {
@@ -1228,28 +2615,160 @@ export class ChatBridge implements IChatBridge {
         throw error;
       }
       
-      // Create error context
-      const context: ErrorContext = {
+      // Handle JSON parsing errors
+      if (error instanceof SyntaxError) {
+        throw new ChatBridgeError(
+          'Failed to parse Anthropic response',
+          'INVALID_RESPONSE',
+          'anthropic',
+          response.status,
+          undefined,
+          'The response from Anthropic could not be parsed as JSON.',
+          { originalError: error }
+        );
+      }
+      
+      // Re-throw other errors
+      throw new ChatBridgeError(
+        error instanceof Error ? error.message : 'Unknown error parsing Anthropic response',
+        'PARSE_ERROR',
+        'anthropic',
+        response.status,
+        undefined,
+        'An error occurred while processing the response from Anthropic.',
+        { originalError: error }
+      );
+    }
+    try {
+      // First, get the raw response text for better error reporting
+      const responseText = await response.text();
+      let data: any;
+      
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        const errorContext: ErrorContext = {
+          provider: 'anthropic',
+          operation: 'parse_response',
+          retryCount: 0,
+          timestamp: new Date(),
+          statusCode: response.status,
+          responseText: responseText.length > 500 ? responseText.substring(0, 500) + '...' : responseText,
+          contentType: response.headers.get('content-type') || 'application/json'
+        };
+        
+        const enhancedError = ErrorMapper.mapProviderError('anthropic', {
+          message: `Failed to parse JSON response: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`,
+          code: 'invalid_json',
+          status: response.status
+        }, errorContext);
+        
+        throw ChatBridgeError.fromEnhancedError(enhancedError);
+      }
+      
+      // Check for API errors
+      if (data.error) {
+        const errorContext: ErrorContext = {
+          provider: 'anthropic',
+          operation: 'api_request',
+          retryCount: 0,
+          timestamp: new Date(),
+          statusCode: response.status,
+          errorType: data.error.type || 'api_error',
+          responseText: JSON.stringify(data.error),
+          contentType: response.headers.get('content-type') || 'application/json'
+        };
+        
+        const enhancedError = ErrorMapper.mapProviderError('anthropic', { 
+          error: data.error 
+        }, errorContext);
+        
+        throw ChatBridgeError.fromEnhancedError(enhancedError);
+      }
+
+      // Validate response structure
+      if (!Array.isArray(data.content) || data.content.length === 0) {
+        const errorContext: ErrorContext = {
+          provider: 'anthropic',
+          operation: 'validate_response',
+          retryCount: 0,
+          timestamp: new Date(),
+          statusCode: response.status,
+          responseText: 'Invalid or empty content in response',
+          contentType: response.headers.get('content-type') || 'application/json'
+        };
+        
+        const enhancedError = ErrorMapper.mapProviderError('anthropic', {
+          message: 'Invalid response format from Anthropic API',
+          code: 'invalid_response',
+          status: response.status
+        }, errorContext);
+        
+        throw ChatBridgeError.fromEnhancedError(enhancedError);
+      }
+
+      // Prepare the response object
+      const responseObj: ChatResponse = {
+        content: data.content[0]?.text || '',
+        finishReason: this.mapAnthropicFinishReason(data.stop_reason),
+        metadata: { 
+          provider: 'anthropic', 
+          model: data.model || 'unknown',
+          responseId: response.headers.get('x-request-id') || undefined,
+          stopReason: data.stop_reason,
+          type: data.type
+        }
+      };
+
+      // Add usage information if available
+      if (data.usage) {
+        responseObj.usage = {
+          promptTokens: data.usage.input_tokens || 0,
+          completionTokens: data.usage.output_tokens || 0,
+          totalTokens: (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0)
+        };
+      }
+
+      return responseObj;
+    } catch (error) {
+      if (error instanceof ChatBridgeError) {
+        throw error;
+      }
+      
+      // Create error context with response information
+      const errorContext: ErrorContext = {
         provider: 'anthropic',
         operation: 'parse_response',
         retryCount: 0,
-        timestamp: new Date()
+        timestamp: new Date(),
+        statusCode: response.status || 500,
+        responseText: 'Error parsing Anthropic response',
+        contentType: response.headers.get('content-type') || 'application/json',
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+        errorMessage: error instanceof Error ? error.message : String(error)
       };
 
       // Handle JSON parsing errors specifically
       if (error instanceof SyntaxError) {
         const enhancedError = ErrorMapper.mapProviderError('anthropic', {
           message: `Invalid JSON response: ${error.message}`,
-          code: 'invalid_response'
-        }, context);
+          code: 'invalid_json',
+          status: response.status || 500
+        }, errorContext);
         throw ChatBridgeError.fromEnhancedError(enhancedError);
       }
       
       // Handle other parsing errors
       const enhancedError = ErrorMapper.mapProviderError('anthropic', {
         message: `Failed to parse response: ${error instanceof Error ? error.message : String(error)}`,
-        code: 'parse_error'
-      }, context);
+        code: 'parse_error',
+        status: response.status || 500,
+        details: error instanceof Error ? {
+          name: error.name,
+          stack: error.stack
+        } : undefined
+      }, errorContext);
+      
       throw ChatBridgeError.fromEnhancedError(enhancedError);
     }
   }
@@ -1281,6 +2800,9 @@ export class ChatBridge implements IChatBridge {
 
   /**
    * Validate request format before sending
+   * @param messages Array of chat messages to validate
+   * @param options Optional chat options to validate
+   * @throws {ChatBridgeError} If validation fails
    */
   private validateRequest(messages: ChatMessage[], options?: ChatOptions): void {
     // Validate messages array
@@ -1288,33 +2810,60 @@ export class ChatBridge implements IChatBridge {
       throw new ChatBridgeError(
         'Messages array cannot be empty',
         'invalid_request',
-        'openai' as LLMProvider
+        'openai' as LLMProvider,
+        {
+          context: {
+            operation: 'validate_request',
+            messagesCount: 0,
+            hasOptions: options !== undefined
+          }
+        }
       );
     }
 
     // Validate each message
-    for (const message of messages) {
+    messages.forEach((message, index) => {
+      const messageContext = { messageIndex: index, role: message?.role };
+      
       if (!message || typeof message !== 'object') {
         throw new ChatBridgeError(
           'Invalid message format: message must be an object',
           'invalid_request',
-          'openai' as LLMProvider
+          'openai' as LLMProvider,
+          { context: { ...messageContext, type: 'invalid_message_format' } }
         );
       }
 
-      if (!message.role || !['system', 'user', 'assistant'].includes(message.role)) {
+      // Validate message role
+      if (!message.role || !['system', 'user', 'assistant', 'function'].includes(message.role)) {
         throw new ChatBridgeError(
-          `Invalid message role: ${message.role}. Must be 'system', 'user', or 'assistant'`,
+          `Invalid message role: ${message.role}. Must be 'system', 'user', 'assistant', or 'function'`,
           'invalid_request',
-          'openai' as LLMProvider
+          'openai' as LLMProvider,
+          { context: { ...messageContext, type: 'invalid_role' } }
         );
       }
 
+      // For function calls, content is optional but function_call is required
+      if (message.role === 'function') {
+        if (!message.name) {
+          throw new ChatBridgeError(
+            'Function message must have a name',
+            'invalid_request',
+            'openai' as LLMProvider,
+            { context: { ...messageContext, type: 'missing_function_name' } }
+          );
+        }
+        return; // Skip content validation for function messages
+      }
+
+      // For non-function messages, content must be a non-empty string
       if (typeof message.content !== 'string') {
         throw new ChatBridgeError(
           'Invalid message content: content must be a string',
           'invalid_request',
-          'openai' as LLMProvider
+          'openai' as LLMProvider,
+          { context: { ...messageContext, type: 'invalid_content_type' } }
         );
       }
 
@@ -1322,7 +2871,35 @@ export class ChatBridge implements IChatBridge {
         throw new ChatBridgeError(
           'Invalid message content: content cannot be empty',
           'invalid_request',
-          'openai' as LLMProvider
+          'openai' as LLMProvider,
+          { context: { ...messageContext, type: 'empty_content' } }
+        );
+      }
+    });
+
+    // Validate options if provided
+    if (options) {
+      const { temperature, maxTokens, timeout } = options;
+      const validationErrors: string[] = [];
+
+      if (temperature !== undefined && (isNaN(temperature) || temperature < 0 || temperature > 2)) {
+        validationErrors.push('Temperature must be between 0 and 2');
+      }
+
+      if (maxTokens !== undefined && (isNaN(maxTokens) || maxTokens <= 0)) {
+        validationErrors.push('maxTokens must be a positive number');
+      }
+
+      if (timeout !== undefined && (isNaN(timeout) || timeout <= 0)) {
+        validationErrors.push('timeout must be a positive number');
+      }
+
+      if (validationErrors.length > 0) {
+        throw new ChatBridgeError(
+          `Invalid options: ${validationErrors.join('; ')}`,
+          'invalid_request',
+          'openai' as LLMProvider,
+          { context: { options, validationErrors } }
         );
       }
     }
@@ -1353,12 +2930,6 @@ export class ChatBridge implements IChatBridge {
         );
       }
     }
-  }
-
-
-
-  /**
-   * Execute request with retry logic and exponential backoff
    */
   private async executeWithRetry<T>(
     operation: () => Promise<T>,
@@ -1369,43 +2940,74 @@ export class ChatBridge implements IChatBridge {
     let lastError: ChatBridgeError | null = null;
     
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const isLastAttempt = attempt === maxRetries;
+      
       try {
+        // Execute the operation and return its result if successful
         return await operation();
       } catch (error) {
-        if (!(error instanceof ChatBridgeError)) {
+        // Handle different types of errors
+        if (error instanceof ChatBridgeError) {
+          lastError = error;
+          
+          // Update retry count in the error context
+          if (lastError.context) {
+            lastError.context.retryCount = attempt;
+            lastError.context.isLastAttempt = isLastAttempt;
+          } else {
+            lastError.context = { 
+              retryCount: attempt,
+              isLastAttempt,
+              operation: 'retry_operation',
+              provider,
+              timestamp: new Date()
+            };
+          }
+          
+          // Don't retry if the error is not retryable or we've hit max retries
+          if (isLastAttempt || !this.isRetryableError(lastError)) {
+            break;
+          }
+        } else {
           // Convert non-ChatBridge errors to enhanced errors
-          const context: ErrorContext = {
+          const errorContext: ErrorContext = {
             provider,
             operation: 'retry_operation',
             retryCount: attempt,
-            timestamp: new Date()
+            timestamp: new Date(),
+            isLastAttempt,
+            errorType: error instanceof Error ? error.name : 'UnknownError',
+            errorMessage: error instanceof Error ? error.message : String(error)
           };
           
-          const enhancedError = ErrorMapper.mapProviderError(provider, error, context);
+          const enhancedError = ErrorMapper.mapProviderError(
+            provider, 
+            error, 
+            errorContext
+          );
+          
           lastError = ChatBridgeError.fromEnhancedError(enhancedError);
-        } else {
-          lastError = error;
-          // Update retry count in context
-          if (lastError.context) {
-            lastError.context.retryCount = attempt;
+          
+          // Don't retry if we've hit max retries or if the error is not retryable
+          if (isLastAttempt || !this.isRetryableError(lastError)) {
+            break;
           }
         }
         
-        // Check if we should retry using enhanced error recovery
-        if (!ErrorRecovery.shouldRetry(lastError, attempt, maxRetries)) {
-          throw lastError;
-        }
+        // Calculate exponential backoff with jitter
+        const delay = this.calculateBackoff(attempt, baseDelay);
         
-        // Calculate delay with enhanced retry logic
-        const delay = ErrorRecovery.getRetryDelayWithHeader(attempt, lastError.retryAfter, baseDelay);
-        
-        console.log(`Request failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${Math.round(delay)}ms: ${lastError.message}`);
-        if (lastError.suggestedFix) {
-          console.log(`Suggested fix: ${lastError.suggestedFix}`);
-        }
+        // Log the retry attempt
+        this.logger.warn(`Attempt ${attempt + 1}/${maxRetries} failed. Retrying in ${delay}ms...`, {
+          error: lastError.message,
+          provider,
+          attempt: attempt + 1,
+          maxRetries,
+          delay
+        });
         
         // Wait before retrying
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await this.delay(delay);
       }
     }
     

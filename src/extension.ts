@@ -8,6 +8,7 @@ import { registerContextExampleCommands } from './examples/context-runner-usage'
 import { ComradeSidebarProvider } from './providers/sidebarProvider';
 import { createStatusBarManager, StatusBarManager } from './ui/statusBar';
 import { BuiltInTools } from './core/tool-manager';
+import { hasWorkspace, handleNoWorkspace, registerWorkspaceChangeHandlers } from './utils/workspace';
 
 // Global instances
 let configurationManager: ConfigurationManager;
@@ -29,10 +30,16 @@ export async function activate(context: vscode.ExtensionContext) {
         
         // Initialize personality system for each workspace
         personalityManager = PersonalityManager.getInstance();
-        if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
-            for (const workspaceFolder of vscode.workspace.workspaceFolders) {
-                await personalityManager.initialize(workspaceFolder.uri);
-            }
+        await initializeWorkspaceDependentFeatures();
+        
+        // Register workspace change handlers
+        registerWorkspaceChangeHandlers(context, async () => {
+            await initializeWorkspaceDependentFeatures();
+        });
+        
+        // Handle case where no workspace is open
+        if (!hasWorkspace()) {
+            handleNoWorkspace(context);
         }
         
         // Initialize status bar manager
@@ -318,12 +325,110 @@ export function getStatusBarManager(): StatusBarManager {
     return statusBarManager;
 }
 
-// This method is called when your extension is deactivated
-export function deactivate() {
-    if (agentRegistry) {
-        agentRegistry.dispose();
+/**
+ * Initialize features that depend on having a workspace open
+ */
+async function initializeWorkspaceDependentFeatures(): Promise<void> {
+    if (hasWorkspace() && personalityManager) {
+        // Clear any existing workspace initializations
+        personalityManager.clearAllWorkspaces();
+        
+        // Initialize for each workspace folder
+        const workspaceFolders = vscode.workspace.workspaceFolders || [];
+        for (const workspaceFolder of workspaceFolders) {
+            try {
+                await personalityManager.initialize(workspaceFolder.uri);
+            } catch (error) {
+                console.error(`Failed to initialize workspace ${workspaceFolder.name}:`, error);
+                vscode.window.showErrorMessage(
+                    `Failed to initialize workspace '${workspaceFolder.name}': ${error instanceof Error ? error.message : String(error)}`
+                );
+            }
+        }
+        
+        // Update status bar
+        if (statusBarManager) {
+            statusBarManager.updateWorkspaceStatus(true);
+        }
+    } else if (statusBarManager) {
+        statusBarManager.updateWorkspaceStatus(false);
     }
-    if (personalityManager) {
-        personalityManager.dispose();
+}
+
+// This method is called when your extension is deactivated
+export function deactivate(): Thenable<void> | undefined {
+    const disposables: { dispose(): any }[] = [];
+    const cleanupPromises: Promise<void>[] = [];
+    
+    try {
+        // Log deactivation
+        console.log('Comrade extension is deactivating...');
+        
+        // 1. Dispose of all VS Code context subscriptions
+        while (mockContext?.subscriptions.length) {
+            const subscription = mockContext.subscriptions.pop();
+            if (subscription) {
+                try {
+                    subscription.dispose();
+                } catch (error) {
+                    console.error('Error disposing subscription:', error);
+                }
+            }
+        }
+
+        // 2. Clean up managers in reverse order of initialization
+        const managers = [
+            { name: 'StatusBarManager', instance: statusBarManager },
+            { name: 'PersonalityManager', instance: personalityManager },
+            { name: 'AgentRegistry', instance: agentRegistry },
+            { name: 'ConfigurationManager', instance: configurationManager }
+        ];
+
+        for (const { name, instance } of managers) {
+            if (instance) {
+                try {
+                    if (typeof instance.dispose === 'function') {
+                        console.log(`Disposing ${name}...`);
+                        instance.dispose();
+                    }
+                } catch (error) {
+                    console.error(`Error disposing ${name}:`, error);
+                }
+            }
+        }
+
+        // 3. Clear any global state if needed
+        if (globalThis.comradeState) {
+            try {
+                delete globalThis.comradeState;
+            } catch (error) {
+                console.error('Error cleaning up global state:', error);
+            }
+        }
+
+        console.log('Comrade extension has been deactivated');
+        
+    } catch (error) {
+        console.error('Error during extension deactivation:', error);
+        // Re-throw to ensure VS Code is aware of the error
+        throw error;
+    } finally {
+        // Ensure we clean up even if an error occurred
+        for (const disposable of disposables) {
+            try {
+                disposable.dispose();
+            } catch (error) {
+                console.error('Error during final cleanup:', error);
+            }
+        }
+        
+        // Wait for any pending cleanup promises
+        if (cleanupPromises.length > 0) {
+            return Promise.all(cleanupPromises)
+                .then(() => {})
+                .catch(error => {
+                    console.error('Error during async cleanup:', error);
+                });
+        }
     }
 }
