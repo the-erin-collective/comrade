@@ -422,9 +422,9 @@ export function deactivate(): Thenable<void> | undefined {
         }
 
         // 3. Clear any global state if needed
-        if (globalThis.comradeState) {
+        if ((globalThis as any).comradeState) {
             try {
-                delete globalThis.comradeState;
+                delete (globalThis as any).comradeState;
             } catch (error) {
                 console.error('Error cleaning up global state:', error);
             }

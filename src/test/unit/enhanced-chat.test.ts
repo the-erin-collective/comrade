@@ -550,18 +550,15 @@ suite('Enhanced ChatBridge Tests', () => {
 
       const result = await chatBridge.sendMessage(agent, messages, {
         tools: [{
-          type: 'function',
-          function: {
-            name: 'get_weather',
-            description: 'Get weather information',
-            parameters: {
-              type: 'object',
-              properties: {
-                location: { type: 'string' }
+          name: 'get_weather',
+          description: 'Get weather information',
+          parameters: {
+            type: 'object',
+            properties: {
+              location: { type: 'string' }
               }
             }
-          }
-        }]
+          }]
       });
 
       assert.strictEqual(result.finishReason, 'tool_calls');

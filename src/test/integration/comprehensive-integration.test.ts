@@ -308,7 +308,7 @@ suite('Comprehensive Integration Tests', () => {
 
     // Mock user approval for dangerous operations
     const showWarningMessageStub = sandbox.stub(vscode.window, 'showWarningMessage');
-    showWarningMessageStub.resolves('Approve');
+    showWarningMessageStub.resolves({ title: 'Approve' });
 
     const toolAgent = agentRegistry.getAgents().find(a => a.capabilities.hasToolUse)!;
     const messages: ChatMessage[] = [

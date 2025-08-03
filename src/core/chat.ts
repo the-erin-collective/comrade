@@ -56,19 +56,19 @@ export interface ChatOptions {
   temperature?: number;
   maxTokens?: number;
   maxRetries?: number;
+  retryDelay?: number;
   webEnvironment?: boolean;
+  concurrentToolExecution?: boolean;
+  executionContext?: any;
   stream?: boolean;
   timeout?: number;
   tools?: ChatTool[];
 }
 
 export interface ChatTool {
-  type: 'function';
-  function: {
-    name: string;
-    description: string;
-    parameters: Record<string, any>;
-  };
+  name: string;
+  description: string;
+  parameters: Record<string, any>;
 }
 
 export interface ChatResponse {
@@ -1907,11 +1907,12 @@ export class ChatBridge implements IChatBridge {
    * Check if an error is retryable
    */
   private isRetryableError(error: ChatBridgeError): boolean {
-    return Boolean(error.retryable) ||
-      error.code === 'NETWORK_ERROR' ||
-      error.code === 'TIMEOUT' ||
-      error.code === 'RATE_LIMIT_EXCEEDED' ||
-      (error.statusCode && error.statusCode >= 500);
+    if (Boolean((error as any).retryable)) return true;
+    if (error.code === 'NETWORK_ERROR') return true;
+    if (error.code === 'TIMEOUT') return true;
+    if (error.code === 'RATE_LIMIT_EXCEEDED') return true;
+    if (error.statusCode && error.statusCode >= 500) return true;
+    return false;
   }
 
   /**
@@ -2422,19 +2423,16 @@ export class ChatBridge implements IChatBridge {
         ? availableTools.filter(tool => allowedTools.includes(tool.name))
         : availableTools;
 
-      // Convert to OpenAI tools format
-      const openaiTools: ChatTool[] = filteredTools.map(tool => ({
-        type: 'function' as const,
-        function: {
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters
-        }
+      // Convert to ChatTool format
+      const chatTools: ChatTool[] = filteredTools.map(tool => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters
       }));
 
       return {
         ...options,
-        tools: openaiTools.length > 0 ? openaiTools : undefined
+        tools: chatTools.length > 0 ? chatTools : undefined
       };
     } catch (error) {
       console.warn('Failed to add available tools:', error);

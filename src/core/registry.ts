@@ -69,13 +69,7 @@ export class AgentRegistry {
     return this.getAllAgents();
   }
 
-  /**
-   * Dispose of resources
-   */
-  public dispose(): void {
-    // Implementation for disposing resources
-    // This is a placeholder - implement based on actual requirements
-  }
+
 
   /**
    * Get an agent by ID

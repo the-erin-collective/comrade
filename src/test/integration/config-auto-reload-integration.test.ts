@@ -304,9 +304,9 @@ suite('Configuration Auto-Reload Integration Tests', () => {
       const agentComponent = new TestReloadableComponent(ComponentType.AGENTS);
       const personalityComponent = new TestReloadableComponent(ComponentType.PERSONALITY);
       
-      contextComponent.onReload = () => reloadOrder.push(ComponentType.CONTEXT_SETTINGS);
-      agentComponent.onReload = () => reloadOrder.push(ComponentType.AGENTS);
-      personalityComponent.onReload = () => reloadOrder.push(ComponentType.PERSONALITY);
+      contextComponent.onReload = () => { reloadOrder.push(ComponentType.CONTEXT_SETTINGS); };
+      agentComponent.onReload = () => { reloadOrder.push(ComponentType.AGENTS); };
+      personalityComponent.onReload = () => { reloadOrder.push(ComponentType.PERSONALITY); };
       
       autoReloadManager.registerComponent(contextComponent);
       autoReloadManager.registerComponent(agentComponent);

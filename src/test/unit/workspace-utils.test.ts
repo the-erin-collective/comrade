@@ -64,7 +64,7 @@ describe('Workspace Utilities', () => {
     });
 
     it('should execute open workspace command when button is clicked', async () => {
-      showWarningMessageStub.resolves('Open Workspace');
+      showWarningMessageStub.resolves({ title: 'Open Workspace' });
       await handleNoWorkspace({} as any);
       assert(executeCommandStub.calledWith('workbench.action.openWorkspace'));
     });

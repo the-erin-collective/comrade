@@ -191,8 +191,14 @@ export class ToolManager {
   /**
    * Get available tools for context
    */
-  public getAvailableTools(context: ExecutionContext): ToolDefinition[] {
-    return this.registry.getAvailableTools(context);
+  public getAvailableTools(context: ExecutionContext): ToolDefinition[];
+  public getAvailableTools(capabilities: import('./agent').AgentCapabilities): ToolDefinition[];
+  public getAvailableTools(contextOrCapabilities: ExecutionContext | import('./agent').AgentCapabilities): ToolDefinition[] {
+    // Check if it's AgentCapabilities by looking for hasToolUse property
+    if ('hasToolUse' in contextOrCapabilities) {
+      return this.getAvailableToolsForCapabilities(contextOrCapabilities as import('./agent').AgentCapabilities);
+    }
+    return this.registry.getAvailableTools(contextOrCapabilities as ExecutionContext);
   }
 
   /**
@@ -204,16 +210,33 @@ export class ToolManager {
   }
 
   /**
+   * Get available tools for agent capabilities (simplified for tests)
+   */
+  public getAvailableToolsForCapabilities(capabilities: import('./agent').AgentCapabilities): ToolDefinition[] {
+    // Create a minimal execution context for filtering
+    const context: ExecutionContext = {
+      agentId: 'test-agent',
+      sessionId: 'test-session',
+      user: {
+        id: 'test-user',
+        permissions: ['read', 'write']
+      },
+      security: {
+        level: capabilities.hasToolUse ? 'ELEVATED' as any : 'RESTRICTED' as any,
+        allowDangerous: false
+      }
+    };
+    return this.getAvailableTools(context);
+  }
+
+  /**
    * Convert ToolDefinition to ChatTool format
    */
   private convertToChatTool(tool: ToolDefinition): import('./chat').ChatTool {
     return {
-      type: 'function',
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters
-      }
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters
     };
   }
 

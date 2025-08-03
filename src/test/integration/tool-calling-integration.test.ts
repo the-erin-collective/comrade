@@ -257,7 +257,7 @@ suite('Tool Calling Integration Tests', () => {
 
     // Mock user approval dialog
     const showWarningMessageStub = sandbox.stub(vscode.window, 'showWarningMessage');
-    showWarningMessageStub.resolves('Approve'); // User approves
+    showWarningMessageStub.resolves({ title: 'Approve' }); // User approves
 
     const toolAgent = agentRegistry.getAgents().find(a => a.capabilities.hasToolUse)!;
     const messages: ChatMessage[] = [
@@ -333,7 +333,7 @@ suite('Tool Calling Integration Tests', () => {
 
     // Mock user rejection
     const showWarningMessageStub = sandbox.stub(vscode.window, 'showWarningMessage');
-    showWarningMessageStub.resolves('Reject'); // User rejects
+    showWarningMessageStub.resolves({ title: 'Reject' }); // User rejects
 
     const toolAgent = agentRegistry.getAgents().find(a => a.capabilities.hasToolUse)!;
     const messages: ChatMessage[] = [
