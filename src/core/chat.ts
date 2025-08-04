@@ -1312,6 +1312,38 @@ export class ChatBridge implements IChatBridge {
     callback: StreamCallback,
     format: 'openai' | 'ollama' | 'anthropic'
   ): Promise<void> {
+    // Check if we're in web environment and should simulate streaming
+    if (WebCompatibility.isWeb()) {
+      try {
+        // Make a regular HTTP request and simulate streaming
+        const response = await this.makeHttpRequest(url, options);
+        const responseText = await response.text();
+        const parsedResponse = JSON.parse(responseText);
+        
+        // Extract content based on format
+        let content = '';
+        if (format === 'openai' && parsedResponse.choices?.[0]?.message?.content) {
+          content = parsedResponse.choices[0].message.content;
+        } else if (format === 'ollama' && parsedResponse.message?.content) {
+          content = parsedResponse.message.content;
+        } else if (format === 'anthropic' && parsedResponse.content?.[0]?.text) {
+          content = parsedResponse.content[0].text;
+        }
+        
+        // Simulate streaming with the content
+        await this.simulateStreaming(content, callback, {
+          chunkSize: 10,
+          delay: 50,
+          wordBoundary: true
+        });
+        
+        return;
+      } catch (error) {
+        // If simulation fails, fall back to regular streaming
+        console.warn('Streaming simulation failed, falling back to regular streaming:', error);
+      }
+    }
+
     // Initialize tracking variables
     let controller: AbortController | null = null;
     let timeoutId: NodeJS.Timeout | null = null;
@@ -1945,7 +1977,6 @@ export class ChatBridge implements IChatBridge {
    * This provides a streaming-like experience in web environments where real streaming isn't available
    */
   // Simulate streaming kept for future use
-  // @ts-ignore - TS6133: 'simulateStreaming' is declared but its value is never read
   private async simulateStreaming(
     content: string,
     callback: StreamCallback,

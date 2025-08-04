@@ -16,7 +16,7 @@ import { ToolRegistry, ExecutionContext, SecurityLevel } from '../../core/tools'
 describe('File System Tools Integration Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let toolManager: ToolManager;
-  let toolRegistry: ToolRegistry;
+
   let testWorkspaceUri: vscode.Uri;
   let testContext: ExecutionContext;
   let tempDir: string;  beforeEach(async () => {
@@ -26,7 +26,6 @@ describe('File System Tools Integration Tests', () => {
     ToolRegistry.resetInstance();
     ToolManager.resetInstance();
     
-    toolRegistry = ToolRegistry.getInstance();
     toolManager = ToolManager.getInstance();
     
     // Register built-in tools

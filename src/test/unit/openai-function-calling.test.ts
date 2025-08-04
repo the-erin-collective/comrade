@@ -5,7 +5,7 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
-import { ChatBridge, ChatMessage, ChatToolCall } from '../../core/chat';
+import { ChatBridge, ChatMessage } from '../../core/chat';
 import { IAgent, AgentConfig } from '../../core/agent';
 import { ToolManager, BuiltInTools } from '../../core/tool-manager';
 import { ToolRegistry, ToolDefinition } from '../../core/tools';
@@ -13,7 +13,6 @@ import { ToolRegistry, ToolDefinition } from '../../core/tools';
 describe('OpenAI Function Calling Integration Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let chatBridge: ChatBridge;
-  let toolManager: ToolManager;
   let toolRegistry: ToolRegistry;
   let mockAgent: IAgent;  beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -24,7 +23,6 @@ describe('OpenAI Function Calling Integration Tests', () => {
     
     // Create fresh instances
     toolRegistry = ToolRegistry.getInstance();
-    toolManager = ToolManager.getInstance();
     chatBridge = new ChatBridge();
 
     // Create mock agent with tool configuration

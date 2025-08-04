@@ -18,9 +18,9 @@ import {
 
 // Mock VS Code APIs
 const mockSecretStorage = {
-  store: async (key: string, value: string) => {},
-  get: async (key: string) => undefined,
-  delete: async (key: string) => {},
+  store: async (_key: string, _value: string) => {},
+  get: async (_key: string) => undefined,
+  delete: async (_key: string) => {},
   onDidChange: new vscode.EventEmitter<vscode.SecretStorageChangeEvent>().event
 } as vscode.SecretStorage;
 
@@ -30,8 +30,8 @@ const mockConfiguration = {
     const value = mockConfigData[key];
     return value !== undefined ? value : defaultValue;
   },
-  update: async (key: string, value: any, target?: vscode.ConfigurationTarget) => {
-    mockConfigData[key] = value;
+  update: async (_key: string, _value: any, _target?: vscode.ConfigurationTarget) => {
+    mockConfigData[_key] = _value;
     // Simulate configuration change event
     setTimeout(() => {
       const event = {
@@ -44,11 +44,11 @@ const mockConfiguration = {
       mockConfigurationChangeEmitter.fire(event);
     }, 10);
   },
-  has: (key: string) => mockConfigData.hasOwnProperty(key),
-  inspect: <T = any>(key: string) => ({
-    key,
+  has: (_key: string) => mockConfigData.hasOwnProperty(_key),
+  inspect: <T = any>(_key: string) => ({
+    key: _key,
     defaultValue: undefined as unknown as T | undefined,
-    globalValue: mockConfigData[key] as T | undefined,
+    globalValue: mockConfigData[_key] as T | undefined,
     workspaceValue: undefined as T | undefined,
     workspaceFolderValue: undefined as T | undefined,
     defaultLanguageValue: undefined as T | undefined,
@@ -65,7 +65,7 @@ const mockConfigurationChangeEmitter = new vscode.EventEmitter<vscode.Configurat
 // Mock vscode.workspace
 const originalGetConfiguration = vscode.workspace.getConfiguration;
 const originalOnDidChangeConfiguration = vscode.workspace.onDidChangeConfiguration;
-(vscode.workspace as any).getConfiguration = (section?: string) => mockConfiguration;
+(vscode.workspace as any).getConfiguration = (_section?: string) => mockConfiguration;
 (vscode.workspace as any).onDidChangeConfiguration = mockConfigurationChangeEmitter.event;
 
 describe('Configuration Auto-Reload Integration Tests', () => {
@@ -187,7 +187,7 @@ describe('Configuration Auto-Reload Integration Tests', () => {
       const initialReloadCount = testComponent.reloadCount;
       
       // Make multiple rapid changes
-      const promises = [];
+      const promises: Promise<void>[] = [];
       for (let i = 0; i < 5; i++) {
         promises.push(configManager.addAgent({
           id: `rapid-agent-${i}`,

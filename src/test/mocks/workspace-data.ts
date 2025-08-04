@@ -2,7 +2,7 @@
  * Mock workspace data for testing
  */
 
-import { WorkspaceContext, FileNode, DependencyInfo, ContextSummary, ActionList, Action, ActionType, ActionStatus } from '../../core/workspace';
+import { WorkspaceContext, FileNode, DependencyInfo, ContextSummary, ActionList, ActionType, ActionStatus } from '../../core/workspace';
 
 export const mockFileStructures: Record<string, FileNode[]> = {
   'react-typescript': [

@@ -15,9 +15,9 @@ class MockConfigurationManager extends ConfigurationManager {
 
   constructor() {
     const mockSecretStorage = {
-      store: async (key: string, value: string) => {},
-      get: async (key: string) => undefined,
-      delete: async (key: string) => {},
+      store: async (_key: string, _value: string) => {},
+      get: async (_key: string) => undefined,
+      delete: async (_key: string) => {},
       onDidChange: new vscode.EventEmitter<vscode.SecretStorageChangeEvent>().event
     } as vscode.SecretStorage;
     super(mockSecretStorage);

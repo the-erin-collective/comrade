@@ -12,24 +12,19 @@ import { ExecutionRunner } from '../../runners/execution';
 import { AgentRegistry } from '../../core/registry';
 import { ConfigurationManager } from '../../core/config';
 import { ChatBridge } from '../../core/chat';
-import { Session, SessionState, WorkflowMode } from '../../core/session';
+import { SessionState, WorkflowMode } from '../../core/session';
 import { 
   createMockSession, 
-  mockSessionScenarios, 
-  MockProgress 
 } from '../mocks/session-data';
 import { 
-  mockAgents, 
   mockAgentConfigurations, 
   createMockAgent 
 } from '../mocks/agents';
 import { 
-  createMockWorkspaceContext, 
   createMockActionList 
 } from '../mocks/workspace-data';
 import { 
-  getMockResponse, 
-  mockLLMResponses 
+  getMockResponse 
 } from '../mocks/llm-responses';
 
 describe('Workflow Integration Tests', () => {
@@ -37,7 +32,7 @@ describe('Workflow Integration Tests', () => {
   let mockSecretStorage: vscode.SecretStorage;
   let configManager: ConfigurationManager;
   let agentRegistry: AgentRegistry;
-  let chatBridge: ChatBridge;
+
   let workspaceUri: vscode.Uri;  beforeEach(async () => {
     sandbox = sinon.createSandbox();
     
@@ -55,7 +50,7 @@ describe('Workflow Integration Tests', () => {
     // Initialize core components
     configManager = ConfigurationManager.getInstance(mockSecretStorage);
     agentRegistry = AgentRegistry.getInstance(configManager);
-    chatBridge = new ChatBridge();
+
 
     // Mock agent configurations
     sandbox.stub(configManager, 'getAllAgents').resolves(
@@ -84,7 +79,7 @@ describe('Workflow Integration Tests', () => {
   });
 
   it('should complete full workflow: context → planning → execution', async () => {
-    const { session, progress } = createMockSession(
+    const { session, progress: _progress } = createMockSession(
       'integration-test-session',
       workspaceUri,
       'moderate',
@@ -177,7 +172,7 @@ describe('Workflow Integration Tests', () => {
       assert.strictEqual(executionResult.success, true, 'Execution should succeed in dry run mode');
 
       // Verify session state transitions
-      const progressReports = progress.getReports();
+      const progressReports = _progress.getReports();
       assert.ok(progressReports.length > 0, 'Should have progress reports');
       
       // Verify final state
@@ -192,7 +187,7 @@ describe('Workflow Integration Tests', () => {
   });
 
   it('should handle context generation failure gracefully', async () => {
-    const { session, progress } = createMockSession(
+    const { session, progress: _progress } = createMockSession(
       'context-error-test',
       workspaceUri,
       'simple',
@@ -224,7 +219,7 @@ describe('Workflow Integration Tests', () => {
   });
 
   it('should handle planning iteration and refinement', async () => {
-    const { session, progress } = createMockSession(
+    const { session, progress: _progress } = createMockSession(
       'planning-iteration-test',
       workspaceUri,
       'complex',
@@ -281,7 +276,7 @@ describe('Workflow Integration Tests', () => {
   });
 
   it('should handle execution with dependency resolution', async () => {
-    const { session, progress } = createMockSession(
+    const { session, progress: _progress } = createMockSession(
       'execution-dependencies-test',
       workspaceUri,
       'moderate',
@@ -338,7 +333,7 @@ describe('Workflow Integration Tests', () => {
   });
 
   it('should handle session cancellation during workflow', async () => {
-    const { session, progress } = createMockSession(
+    const { session, progress: _progress } = createMockSession(
       'cancellation-test',
       workspaceUri,
       'simple',
@@ -383,7 +378,7 @@ describe('Workflow Integration Tests', () => {
   });
 
   it('should handle agent assignment and switching', async () => {
-    const { session, progress } = createMockSession(
+    const { session, progress: _progress } = createMockSession(
       'agent-switching-test',
       workspaceUri,
       'complex',
@@ -422,7 +417,7 @@ describe('Workflow Integration Tests', () => {
   });
 
   it('should handle error recovery during execution', async () => {
-    const { session, progress } = createMockSession(
+    const { session, progress: _progress } = createMockSession(
       'error-recovery-test',
       workspaceUri,
       'moderate',
@@ -486,7 +481,7 @@ describe('Workflow Integration Tests', () => {
   });
 
   it('should validate workspace context integration', async () => {
-    const { session, progress } = createMockSession(
+    const { session, progress: _progress } = createMockSession(
       'workspace-context-test',
       workspaceUri,
       'moderate',
@@ -551,7 +546,7 @@ describe('Workflow Integration Tests', () => {
   });
 
   it('should handle MCP tool integration during execution', async () => {
-    const { session, progress } = createMockSession(
+    const { session, progress: _progress } = createMockSession(
       'mcp-integration-test',
       workspaceUri,
       'toolsRequired',
@@ -623,7 +618,7 @@ describe('Workflow Integration Tests', () => {
   });
 
   it('should handle multi-agent workflow with different capabilities', async () => {
-    const { session, progress } = createMockSession(
+    const { session, progress: _progress } = createMockSession(
       'multi-agent-test',
       workspaceUri,
       'complex',
@@ -716,7 +711,7 @@ describe('Workflow Integration Tests', () => {
   });
 
   it('should handle workflow state persistence and recovery', async () => {
-    const { session, progress } = createMockSession(
+    const { session, progress: _progress } = createMockSession(
       'persistence-test',
       workspaceUri,
       'moderate',
@@ -767,7 +762,7 @@ describe('Workflow Integration Tests', () => {
   });
 
   it('should handle complex error recovery scenarios', async () => {
-    const { session, progress } = createMockSession(
+    const { session, progress: _progress } = createMockSession(
       'complex-error-recovery-test',
       workspaceUri,
       'moderate',
@@ -830,8 +825,7 @@ describe('Workflow Integration Tests', () => {
       assert.ok(fetchStub.callCount >= 2, 'Should make multiple calls for recovery');
 
       // Verify recovery was attempted
-      const progressReports = progress.getReports();
-      const recoveryReports = progressReports.filter(report => 
+      const recoveryReports = _progress.getReports().filter((report: any) => 
         report.message?.includes('recovery') || report.message?.includes('retry')
       );
       assert.ok(recoveryReports.length > 0, 'Should report recovery attempts');

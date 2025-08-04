@@ -4,9 +4,9 @@
  */
 
 import * as assert from 'assert';
-import { ConfigurationValidator, ValidationResult, ValidationError, ValidationWarning } from '../../core/config-validator';
+import { ConfigurationValidator } from '../../core/config-validator';
 import { AgentConfigurationItem, MCPServerConfig, ComradeConfiguration } from '../../core/config';
-import { AgentCapabilities } from '../../core/agent';
+
 
 describe('Configuration Validation Engine Tests', () => {
 

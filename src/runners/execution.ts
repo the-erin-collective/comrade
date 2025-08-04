@@ -286,7 +286,7 @@ export class ExecutionRunner extends BaseRunner {
    * Check if action dependencies are satisfied
    */
   private areDependenciesSatisfied(action: Action): boolean {
-    if (!this.actionList || action.dependencies.length === 0) {
+    if (!this.actionList || !action.dependencies || action.dependencies.length === 0) {
       return true;
     }
 
@@ -704,7 +704,7 @@ ${currentContent}
   /**
    * Extract code content from agent response
    */
-  private extractCodeFromResponse(response: string, language?: string): string {
+  private extractCodeFromResponse(response: string, _language?: string): string {
     // Look for code blocks first
     const codeBlockRegex = /```(?:\w+)?\n?([\s\S]*?)```/;
     const match = response.match(codeBlockRegex);

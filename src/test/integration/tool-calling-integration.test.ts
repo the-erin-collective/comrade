@@ -8,7 +8,7 @@ import * as assert from 'assert';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { ChatBridge, ChatMessage, ChatToolCall } from '../../core/chat';
+import { ChatBridge, ChatMessage } from '../../core/chat';
 import { AgentRegistry } from '../../core/registry';
 import { ConfigurationManager } from '../../core/config';
 import { ToolManager } from '../../core/tool-manager';
@@ -528,7 +528,7 @@ describe('Tool Calling Integration Tests', () => {
         allowedInWeb: true,
         riskLevel: 'low'
       },
-      executor: async (params: any) => {
+      executor: async (_params: any) => {
         throw new Error('Tool execution failed');
       }
     });

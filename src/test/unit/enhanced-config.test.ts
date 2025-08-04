@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
 import { ConfigurationManager, AgentConfigurationItem } from '../../core/config';
-import { AgentCapabilities, LLMProvider } from '../../core/agent';
+import { LLMProvider } from '../../core/agent';
 import { mockAgentConfigurations } from '../mocks/agents';
 
 describe('Enhanced Configuration System Tests', () => {

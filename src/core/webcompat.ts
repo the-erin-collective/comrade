@@ -364,6 +364,11 @@ export class WebNetworkUtils {
   }> {
     const limitations = WebCompatibility.getNetworkLimitations();
     
+    // Ensure HTTPS in web environment (check this first)
+    if (limitations.requiresHttps && !url.startsWith('https://')) {
+      throw new Error('HTTPS is required for network requests in VS Code web environment');
+    }
+    
     // Check CORS restrictions in web environment
     if (limitations.hasCorsRestrictions) {
       const urlObj = new URL(url);
@@ -377,11 +382,6 @@ export class WebNetworkUtils {
           'This request may fail in VS Code web environment.'
         );
       }
-    }
-
-    // Ensure HTTPS in web environment
-    if (limitations.requiresHttps && !url.startsWith('https://')) {
-      throw new Error('HTTPS is required for network requests in VS Code web environment');
     }
 
     try {

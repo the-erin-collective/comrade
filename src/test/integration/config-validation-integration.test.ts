@@ -7,13 +7,13 @@ import * as assert from 'assert';
 import * as vscode from 'vscode';
 // Mocha globals are provided by the test environment
 import { ConfigurationManager, AgentConfigurationItem, MCPServerConfig } from '../../core/config';
-import { ConfigurationValidator } from '../../core/config-validator';
+
 
 // Mock VS Code APIs
 const mockSecretStorage = {
-  store: async (key: string, value: string) => {},
-  get: async (key: string) => undefined,
-  delete: async (key: string) => {},
+  store: async (_key: string, _value: string) => {},
+  get: async (_key: string) => undefined,
+  delete: async (_key: string) => {},
   onDidChange: new vscode.EventEmitter<vscode.SecretStorageChangeEvent>().event
 } as vscode.SecretStorage;
 
@@ -23,16 +23,16 @@ const mockConfiguration = {
     const value = mockConfigData[key];
     return value !== undefined ? value : defaultValue;
   },
-  update: async (key: string, value: any, target?: vscode.ConfigurationTarget) => {
+  update: async (key: string, value: any, _target?: vscode.ConfigurationTarget) => {
     mockConfigData[key] = value;
   },
   has: (key: string) => mockConfigData.hasOwnProperty(key),
-  inspect: (key: string) => undefined
+  inspect: (_key: string) => undefined
 } as vscode.WorkspaceConfiguration;
 
 // Mock vscode.workspace.getConfiguration
 const originalGetConfiguration = vscode.workspace.getConfiguration;
-(vscode.workspace as any).getConfiguration = (section?: string) => mockConfiguration;
+(vscode.workspace as any).getConfiguration = (_section?: string) => mockConfiguration;
 
 describe('Configuration Validation Integration Tests', () => {
   let configManager: ConfigurationManager;

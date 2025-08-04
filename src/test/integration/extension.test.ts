@@ -236,7 +236,7 @@ describe('VS Code Extension Integration Tests', () => {
     showQuickPickStub.resolves({ label: 'Test Agent' } as any);
     
     // Mock progress execution
-    withProgressStub.callsFake(async (options, task) => {
+    withProgressStub.callsFake(async (_options, task) => {
       const progress = { report: sandbox.stub() };
       const token = { 
         isCancellationRequested: false,
@@ -266,7 +266,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(personalityCall, 'Personality config command should be registered');
     
     // Mock VS Code APIs
-    const showTextDocumentStub = sandbox.stub(vscode.window, 'showTextDocument');
+    const _showTextDocumentStub = sandbox.stub(vscode.window, 'showTextDocument');
     const openTextDocumentStub = sandbox.stub(vscode.workspace, 'openTextDocument');
     
     // Mock document opening
@@ -307,10 +307,10 @@ describe('VS Code Extension Integration Tests', () => {
     
     // Mock VS Code APIs
     const withProgressStub = sandbox.stub(vscode.window, 'withProgress');
-    const showInformationMessageStub = sandbox.stub(vscode.window, 'showInformationMessage');
+    const _showInformationMessageStub = sandbox.stub(vscode.window, 'showInformationMessage');
     
     // Mock progress execution
-    withProgressStub.callsFake(async (options, task) => {
+    withProgressStub.callsFake(async (_options, task) => {
       const progress = { report: sandbox.stub() };
       const token = { 
         isCancellationRequested: false,
@@ -341,7 +341,7 @@ describe('VS Code Extension Integration Tests', () => {
     
     // Mock VS Code APIs
     const showQuickPickStub = sandbox.stub(vscode.window, 'showQuickPick');
-    const showInformationMessageStub = sandbox.stub(vscode.window, 'showInformationMessage');
+    const _showInformationMessageStub = sandbox.stub(vscode.window, 'showInformationMessage');
     
     // Mock user selecting recovery option
     showQuickPickStub.resolves({ 
@@ -592,7 +592,7 @@ describe('VS Code Extension Integration Tests', () => {
       dispose: sandbox.stub()
     };
 
-    const createStatusBarItemStub = sandbox.stub(vscode.window, 'createStatusBarItem')
+    const _createStatusBarItemStub = sandbox.stub(vscode.window, 'createStatusBarItem')
       .returns(mockStatusBarItem as any);
 
     // Trigger status bar creation (would be done during activation)
@@ -604,7 +604,7 @@ describe('VS Code Extension Integration Tests', () => {
     await activate(mockContext);
     
     const withProgressStub = sandbox.stub(vscode.window, 'withProgress');
-    withProgressStub.callsFake(async (options, task) => {
+    withProgressStub.callsFake(async (_options, task) => {
       const progress = { report: sandbox.stub() };
       const token = { 
         isCancellationRequested: false,

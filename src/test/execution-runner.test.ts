@@ -5,11 +5,19 @@
 import * as assert from 'assert';
 // Mocha globals are provided by the test environment
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { ExecutionRunner } from '../runners/execution';
-import { Session, SessionState, WorkflowMode } from '../core/session';
+import { Session, WorkflowMode } from '../core/session';
 import { PhaseType, PhaseAgentMapping, SessionRequirements, AgentCapabilities } from '../core/agent';
 import { ActionList, ActionType, ActionStatus } from '../core/workspace';
+
+// Mock progress reporter
+class MockProgress implements vscode.Progress<any> {
+  public reports: any[] = [];
+
+  report(value: any): void {
+    this.reports.push(value);
+  }
+}
 
 // Mock agent for testing
 const mockAgent = {
@@ -107,13 +115,17 @@ describe('ExecutionRunner Tests', () => {
   let workspaceUri: vscode.Uri;
   let session: Session;
   let executionRunner: ExecutionRunner;
+  let mockProgress: MockProgress;
 
   beforeEach(() => {
     // Create mock workspace URI
     workspaceUri = vscode.Uri.file('/test/workspace');
     
+    // Create mock progress
+    mockProgress = new MockProgress();
+    
     // Create session
-    session = new Session('test-session', workspaceUri, mockAgentMapping, mockRequirements, WorkflowMode.SPEED, {} as any);
+    session = new Session('test-session', workspaceUri, mockAgentMapping, mockRequirements, WorkflowMode.SPEED, mockProgress);
     
     // Create ExecutionRunner
     executionRunner = new ExecutionRunner(
@@ -174,20 +186,23 @@ describe('ExecutionRunner Tests', () => {
 
   it('should handle action dependencies correctly', () => {
     const runner = executionRunner as any;
-    runner.actionList = sampleActionList;
+    
+    // Create a copy of the sample action list to avoid modifying the original
+    const testActionList = JSON.parse(JSON.stringify(sampleActionList));
+    runner.actionList = testActionList;
 
     // Test action without dependencies
-    const action1 = sampleActionList.actions[0];
+    const action1 = testActionList.actions[0];
     const satisfied1 = runner.areDependenciesSatisfied(action1);
     assert.strictEqual(satisfied1, true);
 
     // Test action with unsatisfied dependencies
-    const action2 = sampleActionList.actions[1];
+    const action2 = testActionList.actions[1];
     const satisfied2 = runner.areDependenciesSatisfied(action2);
     assert.strictEqual(satisfied2, false);
 
     // Mark dependency as completed and test again
-    sampleActionList.actions[0].status = ActionStatus.COMPLETED;
+    testActionList.actions[0].status = ActionStatus.COMPLETED;
     const satisfied3 = runner.areDependenciesSatisfied(action2);
     assert.strictEqual(satisfied3, true);
   });
@@ -244,20 +259,15 @@ describe('ExecutionRunner Tests', () => {
   it('should handle cancellation correctly', () => {
     const runner = executionRunner as any;
     
-    // Mock cancellation token
-    const mockToken = {
-      isCancellationRequested: true,
-      onCancellationRequested: () => {}
-    };
-    
-    // Mock cancellation token - this is handled internally by Session
+    // Cancel the session to trigger cancellation
+    session.cancel();
     
     try {
       runner.checkCancellation();
       assert.fail('Should have thrown cancellation error');
     } catch (error) {
       assert.ok(error instanceof Error);
-      assert.ok(error.message.includes('cancelled'));
+      assert.ok(error.message.includes('cancelled') || error.message.includes('canceled'));
     }
   });
 

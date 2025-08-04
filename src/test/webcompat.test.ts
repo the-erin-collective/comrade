@@ -204,19 +204,27 @@ describe('Web Compatibility Tests', () => {
     it('should validate HTTPS requirement in web environment', async () => {
       // Mock web environment
       const originalIsWeb = WebCompatibility.isWeb;
+      const originalGetNetworkLimitations = WebCompatibility.getNetworkLimitations;
+      
       (WebCompatibility as any).isWeb = () => true;
+      (WebCompatibility as any).getNetworkLimitations = () => ({
+        hasCorsRestrictions: true,
+        requiresHttps: true,
+        allowedOrigins: ['https://api.openai.com', 'https://api.anthropic.com']
+      });
 
       try {
         try {
-          await WebNetworkUtils.makeRequest('http://api.example.com/test');
+          await WebNetworkUtils.makeRequest('http://insecure-api.example.com/test');
           assert.fail('Should have thrown HTTPS error');
         } catch (error) {
           assert.ok(error instanceof Error);
           assert.ok(error.message.includes('HTTPS is required'));
         }
       } finally {
-        // Restore original method
+        // Restore original methods
         (WebCompatibility as any).isWeb = originalIsWeb;
+        (WebCompatibility as any).getNetworkLimitations = originalGetNetworkLimitations;
       }
     });
   });

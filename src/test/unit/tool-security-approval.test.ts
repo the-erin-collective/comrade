@@ -322,7 +322,7 @@ describe('Tool Security and Approval System Tests', () => {
       };
 
       // Mock user denial
-      const showInfoStub = sandbox.stub(vscode.window, 'showInformationMessage').resolves('Deny' as any);
+      sandbox.stub(vscode.window, 'showInformationMessage').resolves('Deny' as any);
 
       try {
         await toolManager.executeTool('denial_tool', {}, context);
@@ -393,7 +393,7 @@ describe('Tool Security and Approval System Tests', () => {
       };
 
       // Mock approval
-      const showWarningStub = sandbox.stub(vscode.window, 'showWarningMessage').resolves('Allow' as any);
+      sandbox.stub(vscode.window, 'showWarningMessage').resolves('Allow' as any);
 
       await toolManager.executeTool('audit_tool', { param: 'value' }, context);
 
@@ -525,7 +525,7 @@ describe('Tool Security and Approval System Tests', () => {
       };
 
       // Mock approval
-      const showWarningStub = sandbox.stub(vscode.window, 'showWarningMessage').resolves('Allow' as any);
+      sandbox.stub(vscode.window, 'showWarningMessage').resolves('Allow' as any);
 
       await toolManager.executeTool('export_tool', {}, context);
 

@@ -3,44 +3,23 @@
  */
 
 import * as assert from 'assert';
-import * as vscode from 'vscode';
+
 import { ChatBridge, ChatMessage } from '../core/chat';
-import { IAgent, AgentCapabilities } from '../core/agent';
+
+
 
 describe('Personality Integration Tests', () => {
   let chatBridge: ChatBridge;
-  let mockAgent: IAgent;
+
 
   before(() => {
     chatBridge = new ChatBridge();
     
-    // Create a mock agent for testing
-    mockAgent = {
-      id: 'test-agent',
-      name: 'Test Agent',
-      provider: 'custom',
-      config: {
-        provider: 'custom',
-        model: 'test-model',
-        endpoint: 'http://localhost:3000/test'
-      },
-      capabilities: {
-        hasVision: false,
-        hasToolUse: false,
-        reasoningDepth: 'basic',
-        speed: 'fast',
-        costTier: 'low',
-        maxTokens: 1000,
-        supportedLanguages: ['en'],
-        specializations: ['test']
-      } as AgentCapabilities,
-      isEnabledForAssignment: true,
-      isAvailable: async () => false // Mock as unavailable to avoid actual API calls
-    };
+    // Mock agent setup removed as it was unused
   });
 
   it('should inject personality into messages', async () => {
-    const originalMessages: ChatMessage[] = [
+    const _originalMessages: ChatMessage[] = [
       { role: 'user', content: 'Hello, can you help me?' }
     ];
 

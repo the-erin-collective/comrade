@@ -17,7 +17,7 @@ interface Session {
   isCancelled(): boolean;
   // Add other required properties here
 }
-import { IAgent, PhaseType } from '../core/agent';
+import { IAgent } from '../core/agent';
 import { WorkspaceContext } from '../core/workspace';
 
 describe('ContextRunner Tests', () => {
@@ -197,7 +197,7 @@ describe('ContextRunner Tests', () => {
     });
 
   it('should load and convert basic gitignore patterns', async () => {
-      readWorkspaceFileStub.resolves(`
+      const gitignoreContent = `
         node_modules/
         *.log
         # Comment line
@@ -205,27 +205,35 @@ describe('ContextRunner Tests', () => {
         .env
         /build
         src/**/test
-      `);
+      `;
       
-      await (contextRunner as any).loadGitignorePatterns();
+      readWorkspaceFileStub.resolves(gitignoreContent);
       
-      const ignorePatterns = (contextRunner as any).ignorePatterns;
-      
-      // Verify patterns were converted correctly
-      assert.ok(ignorePatterns.includes('node_modules/**'));
-      assert.ok(ignorePatterns.includes('**/*.log'));
-      assert.ok(ignorePatterns.includes('dist/**'));
-      assert.ok(ignorePatterns.includes('**/.env'));
-      assert.ok(ignorePatterns.includes('build/**'));
-      assert.ok(ignorePatterns.includes('src/**/test'));
+      try {
+        await (contextRunner as any).loadGitignorePatterns();
+        
+        const ignorePatterns = (contextRunner as any).ignorePatterns;
+        
+        // Verify patterns were converted correctly
+        assert.ok(ignorePatterns.includes('node_modules/**'));
+        assert.ok(ignorePatterns.includes('**/*.log'));
+        assert.ok(ignorePatterns.includes('dist/**'));
+        assert.ok(ignorePatterns.includes('**/.env'));
+        assert.ok(ignorePatterns.includes('build/**'));
+        assert.ok(ignorePatterns.includes('src/**/test'));
+      } catch (error) {
+        console.log('Gitignore test error:', error);
+        throw error;
+      }
       
       // Verify comments and empty lines are filtered out
+      const ignorePatterns = (contextRunner as any).ignorePatterns;
       assert.ok(!ignorePatterns.some((p: string) => p.includes('#')));
       assert.ok(!ignorePatterns.some((p: string) => p.trim() === ''));
     });
 
   it('should handle malformed gitignore patterns', async () => {
-      readWorkspaceFileStub.resolves(`
+      const gitignoreContent = `
         # Invalid patterns that should be skipped
         **
         *
@@ -237,15 +245,24 @@ describe('ContextRunner Tests', () => {
         
         # More valid patterns
         *.tmp
-      `);
+      `;
       
-      await (contextRunner as any).loadGitignorePatterns();
+      readWorkspaceFileStub.resolves(gitignoreContent);
+      
+      try {
+        await (contextRunner as any).loadGitignorePatterns();
+        
+        const ignorePatterns = (contextRunner as any).ignorePatterns;
+        
+        // Verify only valid patterns are included
+        assert.ok(ignorePatterns.includes('**/.DS_Store'));
+        assert.ok(ignorePatterns.includes('node_modules/**'));
+      } catch (error) {
+        console.log('Malformed gitignore test error:', error);
+        throw error;
+      }
       
       const ignorePatterns = (contextRunner as any).ignorePatterns;
-      
-      // Verify only valid patterns are included
-      assert.ok(ignorePatterns.includes('**/.DS_Store'));
-      assert.ok(ignorePatterns.includes('node_modules/**'));
       assert.ok(ignorePatterns.includes('**/*.tmp'));
       
       // Verify invalid patterns are filtered out

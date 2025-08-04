@@ -10,10 +10,10 @@ import { ConfigurationManager } from '../../core/config';
 import { ChatBridge, ChatBridgeError } from '../../core/chat';
 import { PhaseType } from '../../core/agent';
 import { 
-  mockAgents, 
+ 
   mockAgentConfigurations, 
   createMockAgent,
-  mockAgentsByCapability 
+ 
 } from '../mocks/agents';
 
 describe('Enhanced AgentRegistry Tests', () => {
@@ -228,8 +228,7 @@ describe('Enhanced AgentRegistry Tests', () => {
 
   describe('Agent Filtering and Selection', () => {  it('should filter agents by multiple capabilities', () => {
       const visionAgents = agentRegistry.getVisionCapableAgents();
-      const toolAgents = agentRegistry.getToolCapableAgents();
-      const advancedAgents = agentRegistry.getAgentsByReasoningDepth('advanced');
+
       
       // Find agents that have all three capabilities
       const agents = visionAgents.filter(agent => 
@@ -247,8 +246,7 @@ describe('Enhanced AgentRegistry Tests', () => {
   it('should return empty array when no agents match criteria', () => {
       // Test for a combination that's unlikely to exist
       const visionAgents = agentRegistry.getVisionCapableAgents();
-      const fastAgents = agentRegistry.getAgentsBySpeed('fast');
-      const lowCostAgents = agentRegistry.getAgentsByCostTier('low');
+
       
       // Find agents that have all these characteristics
       const agents = visionAgents.filter(agent => 
@@ -391,7 +389,7 @@ describe('Enhanced AgentRegistry Tests', () => {
         
         // Test filtering performance
         const start = Date.now();
-        const visionAgents = registry.getVisionCapableAgents();
+        registry.getVisionCapableAgents();
         const end = Date.now();
         
         assert.ok(end - start < 100, 'Filtering should be performant even with large sets');
@@ -474,8 +472,7 @@ describe('Enhanced AgentRegistry Tests', () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       
       // Mock connection validation failure
-      const validateStub = sandbox.stub(chatBridge, 'validateConnection')
-        .rejects(new ChatBridgeError('Connection failed', 'NETWORK_ERROR', 'openai'));
+
       
       try {
         await chatBridge.validateConnection(agent);

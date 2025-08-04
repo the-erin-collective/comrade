@@ -24,7 +24,7 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
 
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
-    context: vscode.WebviewViewResolveContext,
+    _context: vscode.WebviewViewResolveContext,
   ) {
     this._view = webviewView;
 

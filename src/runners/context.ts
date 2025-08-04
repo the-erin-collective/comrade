@@ -192,7 +192,7 @@ export class ContextRunner extends BaseRunner {
   private validateAndConvertPattern(pattern: string): string | null {
     try {
       // Skip empty lines and comments
-      if (!pattern || pattern.startsWith('#')) {
+      if (!pattern || pattern.trim().startsWith('#')) {
         return null;
       }
 
@@ -202,17 +202,30 @@ export class ContextRunner extends BaseRunner {
         return null;
       }
 
-      // Handle special cases and escape special regex characters
-      let globPattern = cleanPattern
-        .replace(/\*\*\//g, '{*,**/}') // Handle **/ pattern
-        .replace(/([\]\[^$.+?(){}|])/g, '\\$1') // Escape special regex chars
-        .replace(/^\/|\/$/g, ''); // Remove leading/trailing slashes
-
       // Convert gitignore patterns to glob patterns
-      if (cleanPattern.endsWith('/')) {
-        globPattern = `${globPattern}**`; // Directory pattern
-      } else if (!cleanPattern.includes('/') && !cleanPattern.includes('*') && !cleanPattern.includes('?')) {
-        globPattern = `**/${globPattern}`; // Simple filename pattern
+      let globPattern = cleanPattern;
+
+      // Handle leading slash (root-relative patterns)
+      const isRootRelative = globPattern.startsWith('/');
+      if (isRootRelative) {
+        globPattern = globPattern.substring(1);
+      }
+
+      // Handle directory patterns (ending with /)
+      if (globPattern.endsWith('/')) {
+        globPattern = globPattern.slice(0, -1) + '/**';
+      }
+      // Handle simple filename patterns (no path separators)
+      else if (!globPattern.includes('/') && !globPattern.includes('*')) {
+        globPattern = isRootRelative ? `${globPattern}/**` : `**/${globPattern}`;
+      }
+      // Handle wildcard patterns
+      else if (globPattern.includes('*') && !globPattern.includes('/')) {
+        globPattern = `**/${globPattern}`;
+      }
+      // Handle root-relative patterns that aren't directories
+      else if (isRootRelative && !globPattern.includes('*')) {
+        globPattern = `${globPattern}/**`;
       }
 
       // Skip patterns that would match everything
@@ -229,7 +242,6 @@ export class ContextRunner extends BaseRunner {
 
   /**
    * Load .gitignore patterns from workspace with validation and deduplication
-   * @throws {vscode.FileSystemError} If there's an error reading the .gitignore file
    */
   private async loadGitignorePatterns(): Promise<void> {
     try {
@@ -255,10 +267,13 @@ export class ContextRunner extends BaseRunner {
       if (error instanceof vscode.FileSystemError && error.code === 'FileNotFound') {
         // .gitignore doesn't exist, use defaults
         console.debug('No .gitignore file found, using default ignore patterns');
+      } else if ((error as any).code === 'ENOENT') {
+        // Handle ENOENT error (file not found) gracefully
+        console.debug('No .gitignore file found, using default ignore patterns');
       } else {
         // Log other errors but don't fail the entire operation
         console.error('Error loading .gitignore patterns:', error);
-        throw error; // Rethrow to allow callers to handle the error
+        // Don't throw for read errors - just continue with default patterns
       }
     }
   }

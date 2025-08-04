@@ -10,22 +10,22 @@ import { AgentCapabilities } from '../core/agent';
 
 // Mock VS Code APIs
 const mockSecretStorage = {
-  store: async (key: string, value: string) => {},
-  get: async (key: string) => undefined,
-  delete: async (key: string) => {},
+  store: async (_key: string, _value: string) => {},
+  get: async (_key: string) => undefined,
+  delete: async (_key: string) => {},
   onDidChange: new vscode.EventEmitter<vscode.SecretStorageChangeEvent>().event
 } as vscode.SecretStorage;
 
 const mockConfiguration = {
-  get: <T>(key: string, defaultValue?: T) => defaultValue,
-  update: async (key: string, value: any, target?: vscode.ConfigurationTarget) => {},
-  has: (key: string) => false,
-  inspect: (key: string) => undefined
+  get: <T>(_key: string, defaultValue?: T) => defaultValue,
+  update: async (_key: string, _value: any, _target?: vscode.ConfigurationTarget) => {},
+  has: (_key: string) => false,
+  inspect: (_key: string) => undefined
 } as vscode.WorkspaceConfiguration;
 
 // Mock vscode.workspace.getConfiguration
 const originalGetConfiguration = vscode.workspace.getConfiguration;
-(vscode.workspace as any).getConfiguration = (section?: string) => mockConfiguration;
+(vscode.workspace as any).getConfiguration = (_section?: string) => mockConfiguration;
 
 describe('ConfigurationManager', () => {
   let configManager: ConfigurationManager;

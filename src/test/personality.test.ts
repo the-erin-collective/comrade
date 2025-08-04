@@ -5,7 +5,7 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { PersonalityManager, PersonalityConfig } from '../core/personality';
+import { PersonalityManager } from '../core/personality';
 
 describe('Personality Configuration Tests', () => {
   let personalityManager: PersonalityManager;

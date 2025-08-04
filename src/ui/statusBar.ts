@@ -181,7 +181,7 @@ export class ComradeStatusBarManager implements StatusBarManager {
   /**
    * Update workspace status
    */
-  public updateWorkspaceStatus(hasWorkspace: boolean): void {
+  public updateWorkspaceStatus(_hasWorkspace: boolean): void {
     // Implementation for updating workspace status
     // This is a placeholder - implement based on actual requirements
   }

@@ -6,11 +6,11 @@
 
 import * as assert from 'assert';
 import * as sinon from 'sinon';
-import { ChatBridge, ChatMessage, ChatResponse } from '../../core/chat';
+import { ChatBridge, ChatMessage } from '../../core/chat';
 import { AgentRegistry } from '../../core/registry';
 import { ConfigurationManager } from '../../core/config';
 import { mockAgentConfigurations, createMockAgent } from '../mocks/agents';
-import { getMockResponse } from '../mocks/llm-responses';
+
 
 describe('Anthropic Provider Integration Tests', () => {
   let sandbox: sinon.SinonSandbox;

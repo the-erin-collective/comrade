@@ -20,7 +20,7 @@ export function getFirstWorkspaceFolder(): vscode.WorkspaceFolder | undefined {
 /**
  * Shows a notification when no workspace is open and provides actions to the user
  */
-export function handleNoWorkspace(context: vscode.ExtensionContext): void {
+export function handleNoWorkspace(_context: vscode.ExtensionContext): void {
   if (hasWorkspace()) {
     return; // Workspace is available, nothing to do
   }

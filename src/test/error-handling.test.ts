@@ -6,9 +6,11 @@ import * as assert from 'assert';
 // Mocha globals are provided by the test environment
 import * as vscode from 'vscode';
 import * as sinon from 'sinon';
-import { BaseRunner, RunnerResult, RunnerError, OperationTimeout } from '../runners/base';
+import { BaseRunner, RunnerResult, OperationTimeout } from '../runners/base';
 import { Session, SessionState, WorkflowMode } from '../core/session';
 import { IAgent, AgentCapabilities, PhaseAgentMapping } from '../core/agent';
+
+// Mock progress reporter is defined inline in tests where needed
 
 // Mock agent for testing
 class MockAgent implements IAgent {

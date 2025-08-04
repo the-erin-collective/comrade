@@ -5,8 +5,8 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import { PlanningRunner } from '../runners/planning';
-import { Session, SessionState, WorkflowMode } from '../core/session';
-import { IAgent, AgentCapabilities, PhaseAgentMapping, SessionRequirements, PhaseType } from '../core/agent';
+import { Session, WorkflowMode } from '../core/session';
+import { IAgent, PhaseAgentMapping, SessionRequirements, PhaseType } from '../core/agent';
 import { WorkspaceContext, ActionType, ActionStatus } from '../core/workspace';
 
 // Mock agent for testing
