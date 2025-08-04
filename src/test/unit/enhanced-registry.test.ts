@@ -16,14 +16,12 @@ import {
   mockAgentsByCapability 
 } from '../mocks/agents';
 
-suite('Enhanced AgentRegistry Tests', () => {
+describe('Enhanced AgentRegistry Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let mockSecretStorage: vscode.SecretStorage;
   let mockConfigManager: ConfigurationManager;
   let agentRegistry: AgentRegistry;
-  let chatBridge: ChatBridge;
-
-  setup(async () => {
+  let chatBridge: ChatBridge;  beforeEach(async () => {
     // Reset singletons FIRST to ensure clean state
     AgentRegistry.resetInstance();
     ConfigurationManager.resetInstance();
@@ -53,16 +51,13 @@ suite('Enhanced AgentRegistry Tests', () => {
     chatBridge = new ChatBridge();
     
     await agentRegistry.initialize();
-  });
-
-  teardown(() => {
+  });  afterEach(() => {
     sandbox.restore();
     AgentRegistry.resetInstance();
     ConfigurationManager.resetInstance();
   });
 
-  suite('Agent Availability Testing', () => {
-    test('should handle agent availability check failures', async () => {
+  describe('Agent Availability Testing', () => {  it('should handle agent availability check failures', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       
       // Mock agent availability to throw error
@@ -72,7 +67,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       assert.strictEqual(isAvailable, false, 'Should return false when availability check fails');
     });
 
-    test('should handle concurrent availability checks', async () => {
+  it('should handle concurrent availability checks', async () => {
       const agentIds = ['openai-gpt4', 'openai-gpt35', 'anthropic-claude'];
       
       // Mock some agents as available, others not
@@ -94,7 +89,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       assert.strictEqual(results[2], true, 'Third agent should be available');
     });
 
-    test('should cache availability results temporarily', async () => {
+  it('should cache availability results temporarily', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       const isAvailableStub = sandbox.stub(agent, 'isAvailable').resolves(true);
       
@@ -109,7 +104,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       assert.strictEqual(isAvailableStub.callCount, 1, 'Should cache availability results');
     });
 
-    test('should respect cache TTL for availability checks', async () => {
+  it('should respect cache TTL for availability checks', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       const clock = sandbox.useFakeTimers();
       const isAvailableStub = sandbox.stub(agent, 'isAvailable').resolves(true);
@@ -135,7 +130,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       clock.restore();
     });
 
-    test('should handle multiple concurrent requests for the same agent', async () => {
+  it('should handle multiple concurrent requests for the same agent', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       let resolvePromise: (value: boolean) => void;
       const promise = new Promise<boolean>(resolve => {
@@ -171,7 +166,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       assert.strictEqual(isAvailableStub.callCount, 1, 'Should deduplicate concurrent checks');
     });
 
-    test('should handle agent becoming unavailable', async () => {
+  it('should handle agent becoming unavailable', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       let isAvailable = true;
       
@@ -193,13 +188,13 @@ suite('Enhanced AgentRegistry Tests', () => {
       assert.strictEqual(result, false, 'Agent should be unavailable after state change');
     });
 
-    test('should handle non-existent agent', async () => {
+  it('should handle non-existent agent', async () => {
       const nonExistentId = 'non-existent-agent';
       const isAvailable = await agentRegistry.isAgentAvailable(nonExistentId);
       assert.strictEqual(isAvailable, false, 'Should return false for non-existent agent');
     });
 
-    test('should get available agents', async () => {
+  it('should get available agents', async () => {
       // Mock some agents as available, others not
       const agents = [
         agentRegistry.getAgent('openai-gpt4'),
@@ -231,8 +226,7 @@ suite('Enhanced AgentRegistry Tests', () => {
     });
   });
 
-  suite('Agent Filtering and Selection', () => {
-    test('should filter agents by multiple capabilities', () => {
+  describe('Agent Filtering and Selection', () => {  it('should filter agents by multiple capabilities', () => {
       const visionAgents = agentRegistry.getVisionCapableAgents();
       const toolAgents = agentRegistry.getToolCapableAgents();
       const advancedAgents = agentRegistry.getAgentsByReasoningDepth('advanced');
@@ -250,7 +244,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       });
     });
 
-    test('should return empty array when no agents match criteria', () => {
+  it('should return empty array when no agents match criteria', () => {
       // Test for a combination that's unlikely to exist
       const visionAgents = agentRegistry.getVisionCapableAgents();
       const fastAgents = agentRegistry.getAgentsBySpeed('fast');
@@ -268,7 +262,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       assert.strictEqual(agents.length, 0, 'Should return empty array for impossible criteria');
     });
 
-    test('should handle phase-specific agent selection with fallbacks', () => {
+  it('should handle phase-specific agent selection with fallbacks', () => {
       // Test recovery phase which has strict requirements
       // Test recovery phase which has strict requirements
       const recoveryAgents = agentRegistry.getAgentsForPhase(PhaseType.RECOVERY);
@@ -287,7 +281,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       assert.ok(contextAgents.length > 0, 'Should find agents suitable for context phase');
     });
 
-    test('should prioritize agents by suitability score', () => {
+  it('should prioritize agents by suitability score', () => {
       const planningAgents = agentRegistry.getAgentsForPhase(PhaseType.PLANNING);
       
       if (planningAgents.length > 1) {
@@ -309,8 +303,7 @@ suite('Enhanced AgentRegistry Tests', () => {
     });
   });
 
-  suite('Error Handling and Edge Cases', () => {
-    test('should handle configuration loading errors', async () => {
+  describe('Error Handling and Edge Cases', () => {  it('should handle configuration loading errors', async () => {
       // Create new registry with failing config manager
       const failingConfigManager = ConfigurationManager.getInstance(mockSecretStorage);
       sandbox.stub(failingConfigManager, 'getAllAgents').rejects(new Error('Config load failed'));
@@ -327,7 +320,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       }
     });
 
-    test('should handle invalid agent configurations gracefully', async () => {
+  it('should handle invalid agent configurations gracefully', async () => {
       const invalidConfigs = [
         { ...mockAgentConfigurations[0], id: '' }, // Empty ID
         { ...mockAgentConfigurations[0], name: '' }, // Empty name
@@ -360,7 +353,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       });
     });
 
-    test('should handle agent registry corruption recovery', async () => {
+  it('should handle agent registry corruption recovery', async () => {
       // Initialize with valid agents
       await agentRegistry.initialize();
       const initialCount = agentRegistry.getAllAgents().length;
@@ -375,7 +368,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       assert.strictEqual(recoveredCount, initialCount, 'Should recover from corruption');
     });
 
-    test('should handle memory pressure during large agent sets', () => {
+  it('should handle memory pressure during large agent sets', () => {
       // Create a large number of mock agents
       const largeAgentSet = Array.from({ length: 1000 }, (_, i) => ({
         ...mockAgentConfigurations[0],
@@ -406,8 +399,7 @@ suite('Enhanced AgentRegistry Tests', () => {
     });
   });
 
-  suite('Registry Statistics and Monitoring', () => {
-    test('should provide detailed registry statistics', () => {
+  describe('Registry Statistics and Monitoring', () => {  it('should provide detailed registry statistics', () => {
       const stats = agentRegistry.getRegistryStats();
       
       assert.ok(typeof stats.totalAgents === 'number', 'Should provide total agent count');
@@ -427,7 +419,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       });
     });
 
-    test('should track agent usage patterns', async () => {
+  it('should track agent usage patterns', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       
       // Simulate agent usage
@@ -440,7 +432,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       assert.ok(stats, 'Should provide statistics for usage tracking');
     });
 
-    test('should monitor agent health status', async () => {
+  it('should monitor agent health status', async () => {
       const agents = agentRegistry.getAllAgents();
       
       // Check health of all agents
@@ -464,8 +456,7 @@ suite('Enhanced AgentRegistry Tests', () => {
     });
   });
 
-  suite('Agent Communication Integration', () => {
-    test('should integrate with ChatBridge for connectivity testing', async () => {
+  describe('Agent Communication Integration', () => {  it('should integrate with ChatBridge for connectivity testing', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       
       // Mock successful connection validation
@@ -479,7 +470,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       assert.ok(validateStub.calledWith(agent), 'Should call ChatBridge validation');
     });
 
-    test('should handle ChatBridge errors during connectivity testing', async () => {
+  it('should handle ChatBridge errors during connectivity testing', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       
       // Mock connection validation failure
@@ -494,7 +485,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       }
     });
 
-    test('should batch connectivity tests for multiple agents', async () => {
+  it('should batch connectivity tests for multiple agents', async () => {
       const agentIds = ['openai-gpt4', 'openai-gpt35', 'anthropic-claude'];
       
       // Mock validation responses
@@ -543,8 +534,7 @@ suite('Enhanced AgentRegistry Tests', () => {
     });
   });
 
-  suite('Configuration Change Handling', () => {
-    test('should reload agents when configuration changes', async () => {
+  describe('Configuration Change Handling', () => {  it('should reload agents when configuration changes', async () => {
       const initialCount = agentRegistry.getAllAgents().length;
       
       // Add new agent configuration
@@ -570,7 +560,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       assert.strictEqual(newAgent.name, 'New Test Agent', 'Should have correct agent name');
     });
 
-    test('should handle agent removal during configuration reload', async () => {
+  it('should handle agent removal during configuration reload', async () => {
       const initialAgents = agentRegistry.getAllAgents();
       const initialCount = initialAgents.length;
       
@@ -586,7 +576,7 @@ suite('Enhanced AgentRegistry Tests', () => {
       assert.strictEqual(newCount, initialCount - 1, 'Should remove agent from registry');
     });
 
-    test('should preserve agent state during configuration updates', async () => {
+  it('should preserve agent state during configuration updates', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       
       // Set some state on the agent (simulate usage)
@@ -606,3 +596,4 @@ suite('Enhanced AgentRegistry Tests', () => {
     });
   });
 });
+

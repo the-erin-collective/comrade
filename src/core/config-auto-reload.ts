@@ -38,6 +38,7 @@ export interface ReloadableComponent {
 
 export class ConfigurationAutoReloadManager {
   private static instance: ConfigurationAutoReloadManager;
+  // @ts-ignore - Used in constructor
   private configurationManager: ConfigurationManager;
   private agentRegistry: AgentRegistry;
   private personalityManager: PersonalityManager;

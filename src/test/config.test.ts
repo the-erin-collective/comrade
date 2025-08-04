@@ -4,7 +4,7 @@
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { describe, it, beforeEach, afterEach } from 'mocha';
+// Mocha globals are provided by the test environment
 import { ConfigurationManager, AgentConfigurationItem } from '../core/config';
 import { AgentCapabilities } from '../core/agent';
 
@@ -246,3 +246,4 @@ describe('Configuration Validation', () => {
     });
   });
 });
+

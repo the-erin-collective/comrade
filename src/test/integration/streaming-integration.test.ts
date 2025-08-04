@@ -10,14 +10,12 @@ import { AgentRegistry } from '../../core/registry';
 import { ConfigurationManager } from '../../core/config';
 import { mockAgentConfigurations, createMockAgent } from '../mocks/agents';
 
-suite('Streaming Integration Tests', () => {
+describe('Streaming Integration Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let chatBridge: ChatBridge;
   let agentRegistry: AgentRegistry;
   let configManager: ConfigurationManager;
-  let mockSecretStorage: any;
-
-  setup(async () => {
+  let mockSecretStorage: any;  beforeEach(async () => {
     sandbox = sinon.createSandbox();
     
     mockSecretStorage = {
@@ -37,15 +35,13 @@ suite('Streaming Integration Tests', () => {
     );
     
     await agentRegistry.initialize();
-  });
-
-  teardown(() => {
+  });  afterEach(() => {
     sandbox.restore();
     AgentRegistry.resetInstance();
     ConfigurationManager.resetInstance();
   });
 
-  test('should handle OpenAI streaming format', async () => {
+  it('should handle OpenAI streaming format', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock OpenAI streaming response
@@ -100,7 +96,7 @@ suite('Streaming Integration Tests', () => {
     assert.strictEqual(requestBody.model, 'gpt-4', 'Should use correct model');
   });
 
-  test('should handle Anthropic streaming format', async () => {
+  it('should handle Anthropic streaming format', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock Anthropic streaming response
@@ -150,7 +146,7 @@ suite('Streaming Integration Tests', () => {
     assert.strictEqual(streamedContent, 'Anthropic response', 'Should stream Anthropic content correctly');
   });
 
-  test('should handle Ollama streaming format', async () => {
+  it('should handle Ollama streaming format', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock Ollama streaming response (JSONL format)
@@ -200,7 +196,7 @@ suite('Streaming Integration Tests', () => {
     assert.strictEqual(streamedContent, 'Ollama streaming works', 'Should stream Ollama content correctly');
   });
 
-  test('should handle custom provider streaming format', async () => {
+  it('should handle custom provider streaming format', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock custom provider streaming (OpenAI-compatible format)
@@ -250,7 +246,7 @@ suite('Streaming Integration Tests', () => {
     assert.strictEqual(streamedContent, 'Custom provider streaming', 'Should stream custom provider content correctly');
   });
 
-  test('should handle streaming errors gracefully across providers', async () => {
+  it('should handle streaming errors gracefully across providers', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Test network error during streaming
@@ -289,7 +285,7 @@ suite('Streaming Integration Tests', () => {
     assert.strictEqual(streamedContent, 'Partial', 'Should preserve partial content before error');
   });
 
-  test('should handle streaming cancellation across providers', async () => {
+  it('should handle streaming cancellation across providers', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     let cancelled = false;
@@ -357,7 +353,7 @@ suite('Streaming Integration Tests', () => {
     }
   });
 
-  test('should handle web environment streaming fallback', async () => {
+  it('should handle web environment streaming fallback', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock CORS error for streaming
@@ -395,7 +391,7 @@ suite('Streaming Integration Tests', () => {
     assert.strictEqual(fetchStub.callCount, 2, 'Should attempt streaming then fallback');
   });
 
-  test('should handle streaming with large responses efficiently', async () => {
+  it('should handle streaming with large responses efficiently', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Generate large streaming response
@@ -450,7 +446,7 @@ suite('Streaming Integration Tests', () => {
     assert.ok(endTime - startTime < 5000, 'Should complete within reasonable time');
   });
 
-  test('should handle concurrent streaming requests', async () => {
+  it('should handle concurrent streaming requests', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock streaming responses for concurrent requests
@@ -510,7 +506,7 @@ suite('Streaming Integration Tests', () => {
     assert.strictEqual(fetchStub.callCount, 3, 'Should make 3 concurrent API calls');
   });
 
-  test('should handle streaming with different chunk sizes', async () => {
+  it('should handle streaming with different chunk sizes', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Test different chunk sizes
@@ -559,7 +555,7 @@ suite('Streaming Integration Tests', () => {
     }
   });
 
-  test('should handle streaming timeout scenarios', async () => {
+  it('should handle streaming timeout scenarios', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock slow streaming response
@@ -603,7 +599,7 @@ suite('Streaming Integration Tests', () => {
     assert.ok(response.error?.message.includes('timeout'), 'Should indicate timeout error');
   });
 
-  test('should handle streaming with malformed data', async () => {
+  it('should handle streaming with malformed data', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock streaming response with malformed JSON
@@ -654,7 +650,7 @@ suite('Streaming Integration Tests', () => {
     assert.strictEqual(streamedContent, 'Valid content', 'Should skip malformed chunks and continue');
   });
 
-  test('should handle provider-specific streaming headers', async () => {
+  it('should handle provider-specific streaming headers', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     const providers = [
@@ -709,3 +705,4 @@ suite('Streaming Integration Tests', () => {
     }
   });
 });
+

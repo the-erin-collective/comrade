@@ -8,23 +8,18 @@ import { ChatBridge, ChatBridgeError } from '../../core/chat';
 import { createMockAgent, mockAgentConfigurations } from '../mocks/agents';
 import { WebNetworkUtils } from '../../core/webcompat';
 
-suite('Connection Validation Tests', () => {
+describe('Connection Validation Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let chatBridge: ChatBridge;
-  let makeRequestStub: sinon.SinonStub;
-
-  setup(() => {
+  let makeRequestStub: sinon.SinonStub;  beforeEach(() => {
     sandbox = sinon.createSandbox();
     chatBridge = new ChatBridge();
     makeRequestStub = sandbox.stub(WebNetworkUtils, 'makeRequest');
-  });
-
-  teardown(() => {
+  });  afterEach(() => {
     sandbox.restore();
   });
 
-  suite('OpenAI Connection Validation', () => {
-    test('should validate successful OpenAI connection', async () => {
+  describe('OpenAI Connection Validation', () => {  it('should validate successful OpenAI connection', async () => {
       const agent = createMockAgent(mockAgentConfigurations.find(c => c.provider === 'openai')!);
       
       // Mock successful response
@@ -38,7 +33,7 @@ suite('Connection Validation Tests', () => {
       assert.strictEqual(isValid, true);
     });
 
-    test('should handle invalid OpenAI API key', async () => {
+  it('should handle invalid OpenAI API key', async () => {
       const agent = createMockAgent(mockAgentConfigurations.find(c => c.provider === 'openai')!);
       
       // Mock 401 response
@@ -71,7 +66,7 @@ suite('Connection Validation Tests', () => {
       }
     });
 
-    test('should handle OpenAI API timeouts', async () => {
+  it('should handle OpenAI API timeouts', async () => {
       const agent = createMockAgent(mockAgentConfigurations.find(c => c.provider === 'openai')!);
       
       // Mock timeout error
@@ -91,8 +86,7 @@ suite('Connection Validation Tests', () => {
     });
   });
 
-  suite('Anthropic Connection Validation', () => {
-    test('should validate successful Anthropic connection', async () => {
+  describe('Anthropic Connection Validation', () => {  it('should validate successful Anthropic connection', async () => {
       const agent = createMockAgent(mockAgentConfigurations.find(c => c.provider === 'anthropic')!);
       
       // Mock successful response
@@ -106,7 +100,7 @@ suite('Connection Validation Tests', () => {
       assert.strictEqual(isValid, true);
     });
 
-    test('should handle invalid Anthropic endpoint', async () => {
+  it('should handle invalid Anthropic endpoint', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations.find(c => c.provider === 'anthropic')!,
         endpoint: 'https://invalid.anthropic.com/v1/messages'
@@ -143,8 +137,7 @@ suite('Connection Validation Tests', () => {
     });
   });
 
-  suite('Ollama Connection Validation', () => {
-    test('should validate successful Ollama connection with matching model', async () => {
+  describe('Ollama Connection Validation', () => {  it('should validate successful Ollama connection with matching model', async () => {
       const agent = createMockAgent(mockAgentConfigurations.find(c => c.provider === 'ollama')!);
       
       // Mock successful response with models list
@@ -170,7 +163,7 @@ suite('Connection Validation Tests', () => {
       assert.strictEqual(isValid, true);
     });
 
-    test('should handle missing Ollama model', async () => {
+  it('should handle missing Ollama model', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations.find(c => c.provider === 'ollama')!,
         model: 'non-existent-model'
@@ -205,8 +198,7 @@ suite('Connection Validation Tests', () => {
     });
   });
 
-  suite('Custom Provider Validation', () => {
-    test('should validate successful custom provider connection', async () => {
+  describe('Custom Provider Validation', () => {  it('should validate successful custom provider connection', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations.find(c => c.provider === 'custom')!,
         endpoint: 'https://custom-llm.example.com/v1/chat'
@@ -226,7 +218,7 @@ suite('Connection Validation Tests', () => {
       }
     });
 
-    test('should handle missing endpoint for custom provider', async () => {
+  it('should handle missing endpoint for custom provider', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations.find(c => c.provider === 'custom')!,
         endpoint: ''
@@ -244,7 +236,7 @@ suite('Connection Validation Tests', () => {
     });
   });
 
-  test('should handle network errors with user-friendly messages', async () => {
+  it('should handle network errors with user-friendly messages', async () => {
     const agent = createMockAgent(mockAgentConfigurations.find(c => c.provider === 'openai')!);
     
     // Mock network error (e.g., DNS resolution failure)
@@ -263,3 +255,5 @@ suite('Connection Validation Tests', () => {
     }
   });
 });
+
+

@@ -666,8 +666,8 @@ export class SecurityValidator {
 
   private static validateParameterSecurity(
     parameters: any, 
-    toolName: string, 
-    errors: string[], 
+    _toolName: string, 
+    _errors: string[], // Prefix with _ to indicate unused parameter
     warnings: string[]
   ): void {
     if (typeof parameters === 'object' && parameters !== null) {
@@ -686,7 +686,7 @@ export class SecurityValidator {
       const paramString = JSON.stringify(parameters);
       for (const pattern of dangerousPatterns) {
         if (pattern.test(paramString)) {
-          warnings.push(`Potentially dangerous pattern detected in parameters for ${toolName}`);
+          warnings.push(`Potentially dangerous pattern detected in parameters for ${_toolName}`);
           break;
         }
       }

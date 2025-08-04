@@ -17,29 +17,24 @@ import {
   ToolExecutionError
 } from '../../core/tool-manager';
 
-suite('Tool Security and Approval System Tests', () => {
+describe('Tool Security and Approval System Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let toolRegistry: ToolRegistry;
-  let toolManager: ToolManager;
-
-  setup(() => {
+  let toolManager: ToolManager;  beforeEach(() => {
     sandbox = sinon.createSandbox();
     ToolRegistry.resetInstance();
     ToolManager.resetInstance();
     toolRegistry = ToolRegistry.getInstance();
     toolManager = ToolManager.getInstance();
     SecurityValidator.clearExecutionHistory();
-  });
-
-  teardown(() => {
+  });  afterEach(() => {
     sandbox.restore();
     ToolRegistry.resetInstance();
     ToolManager.resetInstance();
     SecurityValidator.clearExecutionHistory();
   });
 
-  suite('Enhanced Risk Assessment', () => {
-    test('should assess risk based on tool category', () => {
+  describe('Enhanced Risk Assessment', () => {  it('should assess risk based on tool category', () => {
       const lowRiskTool: ToolDefinition = {
         name: 'low_risk_tool',
         description: 'Low risk tool',
@@ -71,7 +66,7 @@ suite('Tool Security and Approval System Tests', () => {
       assert.ok(highRiskAssessment.riskScore >= 70); // Base high risk score
     });
 
-    test('should detect dangerous patterns in parameters', () => {
+  it('should detect dangerous patterns in parameters', () => {
       const testTool: ToolDefinition = {
         name: 'test_tool',
         description: 'Test tool',
@@ -98,7 +93,7 @@ suite('Tool Security and Approval System Tests', () => {
       assert.ok(dangerousAssessment.riskFactors.includes('Destructive file operations'));
     });
 
-    test('should assess file path risks', () => {
+  it('should assess file path risks', () => {
       const testTool: ToolDefinition = {
         name: 'file_tool',
         description: 'File tool',
@@ -128,7 +123,7 @@ suite('Tool Security and Approval System Tests', () => {
       assert.ok(sensitiveAssessment.warnings.some(w => w.includes('sensitive files')));
     });
 
-    test('should assess URL risks', () => {
+  it('should assess URL risks', () => {
       const testTool: ToolDefinition = {
         name: 'web_tool',
         description: 'Web tool',
@@ -161,7 +156,7 @@ suite('Tool Security and Approval System Tests', () => {
       assert.ok(localhostAssessment.warnings.some(w => w.includes('Local/private network')));
     });
 
-    test('should detect rapid successive executions', () => {
+  it('should detect rapid successive executions', () => {
       const testTool: ToolDefinition = {
         name: 'rapid_tool',
         description: 'Tool for rapid execution test',
@@ -191,7 +186,7 @@ suite('Tool Security and Approval System Tests', () => {
       assert.ok(rapidAssessment.riskFactors.includes('Rapid successive executions detected'));
     });
 
-    test('should block high-risk tools in restricted mode', () => {
+  it('should block high-risk tools in restricted mode', () => {
       const highRiskTool: ToolDefinition = {
         name: 'restricted_tool',
         description: 'High risk tool',
@@ -214,8 +209,7 @@ suite('Tool Security and Approval System Tests', () => {
     });
   });
 
-  suite('Enhanced Approval Workflow', () => {
-    test('should show different approval dialogs based on risk level', async () => {
+  describe('Enhanced Approval Workflow', () => {  it('should show different approval dialogs based on risk level', async () => {
       const lowRiskTool: ToolDefinition = {
         name: 'low_approval_tool',
         description: 'Low risk tool requiring approval',
@@ -271,7 +265,7 @@ suite('Tool Security and Approval System Tests', () => {
       assert.ok(showWarningStub.calledTwice); // Once for medium risk, once for high risk confirmation
     });
 
-    test('should handle session-level approvals', async () => {
+  it('should handle session-level approvals', async () => {
       const testTool: ToolDefinition = {
         name: 'session_approval_tool',
         description: 'Tool for session approval test',
@@ -309,7 +303,7 @@ suite('Tool Security and Approval System Tests', () => {
       assert.ok(showWarningStub.calledOnce);
     });
 
-    test('should handle user denial', async () => {
+  it('should handle user denial', async () => {
       const testTool: ToolDefinition = {
         name: 'denial_tool',
         description: 'Tool for denial test',
@@ -345,7 +339,7 @@ suite('Tool Security and Approval System Tests', () => {
       assert.strictEqual(approvalLog[0].toolName, 'denial_tool');
     });
 
-    test('should handle high-risk tool confirmation denial', async () => {
+  it('should handle high-risk tool confirmation denial', async () => {
       const highRiskTool: ToolDefinition = {
         name: 'high_risk_confirmation_tool',
         description: 'High risk tool for confirmation test',
@@ -380,8 +374,7 @@ suite('Tool Security and Approval System Tests', () => {
     });
   });
 
-  suite('Audit Logging', () => {
-    test('should log approval decisions', async () => {
+  describe('Audit Logging', () => {  it('should log approval decisions', async () => {
       const testTool: ToolDefinition = {
         name: 'audit_tool',
         description: 'Tool for audit test',
@@ -420,7 +413,7 @@ suite('Tool Security and Approval System Tests', () => {
       assert.ok(logEntry.timestamp instanceof Date);
     });
 
-    test('should provide approval log filtering', () => {
+  it('should provide approval log filtering', () => {
       // Create mock approval log entries
       const mockEntries = [
         {
@@ -467,7 +460,7 @@ suite('Tool Security and Approval System Tests', () => {
       assert.strictEqual(tool2Log[0].toolName, 'tool2');
     });
 
-    test('should provide security statistics', async () => {
+  it('should provide security statistics', async () => {
       const testTool: ToolDefinition = {
         name: 'stats_tool',
         description: 'Tool for stats test',
@@ -513,7 +506,7 @@ suite('Tool Security and Approval System Tests', () => {
       assert.strictEqual(stats.highRiskExecutions, 2); // Both were high risk
     });
 
-    test('should export comprehensive audit data', async () => {
+  it('should export comprehensive audit data', async () => {
       const testTool: ToolDefinition = {
         name: 'export_tool',
         description: 'Tool for export test',
@@ -550,8 +543,7 @@ suite('Tool Security and Approval System Tests', () => {
     });
   });
 
-  suite('Security Policy Enforcement', () => {
-    test('should enforce restricted mode policies', async () => {
+  describe('Security Policy Enforcement', () => {  it('should enforce restricted mode policies', async () => {
       const highRiskTool: ToolDefinition = {
         name: 'restricted_policy_tool',
         description: 'High risk tool for policy test',
@@ -578,7 +570,7 @@ suite('Tool Security and Approval System Tests', () => {
       }
     });
 
-    test('should validate permissions before execution', async () => {
+  it('should validate permissions before execution', async () => {
       const permissionTool: ToolDefinition = {
         name: 'permission_policy_tool',
         description: 'Tool requiring specific permissions',
@@ -623,8 +615,7 @@ suite('Tool Security and Approval System Tests', () => {
     });
   });
 
-  suite('Integration with Existing System', () => {
-    test('should maintain backward compatibility with existing approval system', async () => {
+  describe('Integration with Existing System', () => {  it('should maintain backward compatibility with existing approval system', async () => {
       const legacyTool: ToolDefinition = {
         name: 'legacy_tool',
         description: 'Legacy tool',
@@ -650,7 +641,7 @@ suite('Tool Security and Approval System Tests', () => {
       assert.ok(showInfoStub.calledOnce);
     });
 
-    test('should work with existing built-in tools', async () => {
+  it('should work with existing built-in tools', async () => {
       // Test that existing built-in tools still work with enhanced security
       const readFileTool = toolRegistry.getTool('read_file');
       if (readFileTool) {
@@ -670,3 +661,4 @@ suite('Tool Security and Approval System Tests', () => {
     });
   });
 });
+

@@ -1,0 +1,82 @@
+/**
+ * Test suite index - loads and runs all tests
+ */
+
+import * as path from 'path';
+import { glob } from 'glob';
+import Mocha from 'mocha';
+
+// Create the mocha test instance with options
+const mocha = new Mocha({
+  ui: 'bdd',
+  color: true,
+  timeout: 30000,
+  reporter: 'spec',
+  require: [
+    'source-map-support/register',
+    path.resolve(__dirname, '../test-setup.js')
+  ]
+});
+
+// Find all test files
+function findTests(): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const testDir = path.join(__dirname, '..');
+    const pattern = '**/*.test.js';
+    
+    glob(pattern, { cwd: testDir }, (err: Error | null, files: string[]) => {
+      if (err) {
+        return reject(err);
+      }
+      resolve(files);
+    });
+  });
+}
+
+// Main function to run tests
+async function runTests(): Promise<void> {
+  const testsRoot = path.resolve(__dirname, '..');
+  
+  try {
+    // Find all test files
+    const testFiles = await findTests();
+    
+    if (testFiles.length === 0) {
+      console.warn('⚠️  No test files found!');
+      return;
+    }
+    
+    console.log(`📁 Test root: ${testsRoot}`);
+    console.log(`🔍 Found ${testFiles.length} test file(s):`);
+    testFiles.forEach(f => console.log(`   - ${path.relative(testsRoot, f)}`));
+    
+    // Add each test file to mocha
+    testFiles.forEach(file => {
+      mocha.addFile(path.join(testsRoot, file));
+    });
+    
+    console.log('🚀 Starting test execution...');
+    
+    // Run the tests
+    return new Promise((resolve, reject) => {
+      mocha.run((failures) => {
+        if (failures > 0) {
+          console.error(`❌ ${failures} test(s) failed.`);
+          reject(new Error(`${failures} tests failed.`));
+        } else {
+          console.log('✅ All tests passed!');
+          resolve();
+        }
+      });
+    });
+  } catch (err) {
+    console.error('💥 Error running tests:', err);
+    process.exit(1);
+  }
+}
+
+// Export the run function for VS Code test runner
+export function run(): Promise<void> {
+  console.log('🧪 Starting Comrade test suite...');
+  return runTests();
+}

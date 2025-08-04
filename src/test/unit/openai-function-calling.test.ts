@@ -5,20 +5,17 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
-import { ChatBridge, ChatMessage, ChatResponse, ChatToolCall } from '../../core/chat';
+import { ChatBridge, ChatMessage, ChatToolCall } from '../../core/chat';
 import { IAgent, AgentConfig } from '../../core/agent';
-import { ToolManager, ToolExecutionError, BuiltInTools } from '../../core/tool-manager';
-import { ToolRegistry, ToolDefinition, ExecutionContext, SecurityLevel } from '../../core/tools';
-import { WebNetworkUtils } from '../../core/webcompat';
+import { ToolManager, BuiltInTools } from '../../core/tool-manager';
+import { ToolRegistry, ToolDefinition } from '../../core/tools';
 
-suite('OpenAI Function Calling Integration Tests', () => {
+describe('OpenAI Function Calling Integration Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let chatBridge: ChatBridge;
   let toolManager: ToolManager;
   let toolRegistry: ToolRegistry;
-  let mockAgent: IAgent;
-
-  setup(() => {
+  let mockAgent: IAgent;  beforeEach(() => {
     sandbox = sinon.createSandbox();
     
     // Reset singletons
@@ -65,16 +62,13 @@ suite('OpenAI Function Calling Integration Tests', () => {
       name: 'test-workspace',
       index: 0
     }]);
-  });
-
-  teardown(() => {
+  });  afterEach(() => {
     sandbox.restore();
     ToolRegistry.resetInstance();
     ToolManager.resetInstance();
   });
 
-  suite('Tool Integration', () => {
-    test('should add available tools to OpenAI request', async () => {
+  describe('Tool Integration', () => {  it('should add available tools to OpenAI request', async () => {
       // Register a test tool
       const testTool: ToolDefinition = {
         name: 'test_tool',
@@ -136,7 +130,7 @@ suite('OpenAI Function Calling Integration Tests', () => {
       assert.strictEqual(requestBody.tool_choice, 'auto');
     });
 
-    test('should handle OpenAI function calling response', async () => {
+  it('should handle OpenAI function calling response', async () => {
       // Register built-in tools
       BuiltInTools.registerAll();
 
@@ -209,7 +203,7 @@ suite('OpenAI Function Calling Integration Tests', () => {
       assert.strictEqual(makeHttpRequestStub.callCount, 2);
     });
 
-    test('should handle tool execution errors gracefully', async () => {
+  it('should handle tool execution errors gracefully', async () => {
       // Register a tool that will fail
       const failingTool: ToolDefinition = {
         name: 'failing_tool',
@@ -271,7 +265,7 @@ suite('OpenAI Function Calling Integration Tests', () => {
       }
     });
 
-    test('should respect tool configuration settings', async () => {
+  it('should respect tool configuration settings', async () => {
       // Create agent with restricted tool access
       const restrictedAgent: IAgent = {
         ...mockAgent,
@@ -321,7 +315,7 @@ suite('OpenAI Function Calling Integration Tests', () => {
       assert.ok(!toolNames.includes('write_file')); // Should be filtered out
     });
 
-    test('should handle disabled tools configuration', async () => {
+  it('should handle disabled tools configuration', async () => {
       // Create agent with tools disabled
       const noToolsAgent: IAgent = {
         ...mockAgent,
@@ -363,7 +357,7 @@ suite('OpenAI Function Calling Integration Tests', () => {
       assert.ok(!requestBody.tools);
     });
 
-    test('should validate tool calls before execution', async () => {
+  it('should validate tool calls before execution', async () => {
       // Register a tool with required parameters
       const strictTool: ToolDefinition = {
         name: 'strict_tool',
@@ -426,8 +420,7 @@ suite('OpenAI Function Calling Integration Tests', () => {
     });
   });
 
-  suite('Streaming with Function Calls', () => {
-    test('should handle function calls in streaming mode', async () => {
+  describe('Streaming with Function Calls', () => {  it('should handle function calls in streaming mode', async () => {
       // Register a simple tool
       const simpleTool: ToolDefinition = {
         name: 'simple_tool',
@@ -520,8 +513,7 @@ suite('OpenAI Function Calling Integration Tests', () => {
     });
   });
 
-  suite('Error Handling', () => {
-    test('should handle malformed tool call responses', async () => {
+  describe('Error Handling', () => {  it('should handle malformed tool call responses', async () => {
       // Mock OpenAI response with malformed tool call
       const mockResponse = {
         status: 200,
@@ -562,7 +554,7 @@ suite('OpenAI Function Calling Integration Tests', () => {
       }
     });
 
-    test('should handle network errors during tool execution', async () => {
+  it('should handle network errors during tool execution', async () => {
       // Register a tool
       const networkTool: ToolDefinition = {
         name: 'network_tool',
@@ -625,8 +617,7 @@ suite('OpenAI Function Calling Integration Tests', () => {
     });
   });
 
-  suite('Integration with Built-in Tools', () => {
-    test('should execute file system tools correctly', async () => {
+  describe('Integration with Built-in Tools', () => {  it('should execute file system tools correctly', async () => {
       // Register built-in tools
       BuiltInTools.registerAll();
 
@@ -689,7 +680,7 @@ suite('OpenAI Function Calling Integration Tests', () => {
       assert.strictEqual(response.metadata.toolResults[0].result.data.content, 'Test file content');
     });
 
-    test('should execute VS Code tools correctly', async () => {
+  it('should execute VS Code tools correctly', async () => {
       // Register built-in tools
       BuiltInTools.registerAll();
 
@@ -751,3 +742,4 @@ suite('OpenAI Function Calling Integration Tests', () => {
     });
   });
 });
+

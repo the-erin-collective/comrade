@@ -3,7 +3,7 @@
  */
 
 import * as assert from 'assert';
-import { describe, it } from 'mocha';
+// Mocha globals are provided by the test environment
 import { ConfigurationManager } from '../core/config';
 import { AgentRegistry } from '../core/registry';
 
@@ -60,3 +60,5 @@ describe('Basic Integration Tests', () => {
     });
   });
 });
+
+

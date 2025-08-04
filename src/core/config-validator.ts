@@ -3,8 +3,7 @@
  * Provides schema-based validation, default value application, and configuration filtering
  */
 
-import { AgentConfigurationItem, MCPServerConfig, ComradeConfiguration } from './config';
-import { LLMProvider, AgentCapabilities } from './agent';
+import { AgentConfigurationItem } from './config';
 
 export interface ValidationResult {
   isValid: boolean;
@@ -387,7 +386,8 @@ export class ConfigurationValidator {
     const seenIds = new Set<string>();
     const duplicateIds = new Set<string>();
 
-    agents.forEach((agent, index) => {
+    // Using forEach with index for validation
+    agents.forEach((agent) => {
       if (agent && typeof agent === 'object' && agent.id) {
         if (seenIds.has(agent.id)) {
           duplicateIds.add(agent.id);
@@ -396,10 +396,17 @@ export class ConfigurationValidator {
       }
     });
 
+    // Using forEach with index for validation
     agents.forEach((agent, index) => {
       const validation = this.validateAgentConfiguration(agent);
-      allErrors.push(...validation.errors.map(err => ({ ...err, path: `agents[${index}].${err.path}` })));
-      allWarnings.push(...validation.warnings.map(warn => ({ ...warn, path: `agents[${index}].${warn.path}` })));
+      allErrors.push(...validation.errors.map(err => ({
+        ...err,
+        path: `agents[${index}].${err.path}`
+      })));
+      allWarnings.push(...validation.warnings.map(warn => ({
+        ...warn,
+        path: `agents[${index}].${warn.path}`
+      })));
 
       if (validation.isValid && validation.filteredConfig) {
         const sanitizedAgent = validation.filteredConfig as AgentConfigurationItem;
@@ -534,7 +541,14 @@ export class ConfigurationValidator {
     }
   }
 
-  private static validateString(value: string, schema: ConfigurationSchema, path: string, errors: ValidationError[], warnings: ValidationWarning[]): void {
+  private static validateString(
+    value: string, 
+    schema: ConfigurationSchema, 
+    path: string, 
+    errors: ValidationError[], 
+    // @ts-ignore - TS6133: 'warnings' is declared but its value is never read
+    _warnings?: ValidationWarning[]
+  ): void {
     if (schema.minLength !== undefined && value.length < schema.minLength) {
       errors.push({
         path,
@@ -572,7 +586,14 @@ export class ConfigurationValidator {
    * - precision/scale (for decimal numbers)
    * - integer type checking
    */
-  private static validateNumber(value: number, schema: ConfigurationSchema, path: string, errors: ValidationError[], warnings: ValidationWarning[]): void {
+  private static validateNumber(
+    value: number, 
+    schema: ConfigurationSchema, 
+    path: string, 
+    errors: ValidationError[], 
+    // @ts-ignore - TS6133: 'warnings' is declared but its value is never read
+    _warnings?: ValidationWarning[]
+  ): void {
     // Check for non-finite numbers
     if (!Number.isFinite(value)) {
       errors.push({

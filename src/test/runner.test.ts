@@ -76,13 +76,13 @@ class MockProgress implements vscode.Progress<any> {
   }
 }
 
-suite('Session Tests', () => {
+describe('Session Tests', () => {
   let mockWorkspaceUri: vscode.Uri;
   let mockAgentMapping: PhaseAgentMapping;
   let mockRequirements: SessionRequirements;
   let mockProgress: MockProgress;
 
-  setup(() => {
+  beforeEach(() => {
     mockWorkspaceUri = vscode.Uri.file('/test/workspace');
     mockAgentMapping = {
       assignments: {
@@ -113,7 +113,7 @@ suite('Session Tests', () => {
     mockProgress = new MockProgress();
   });
 
-  test('Session creation', () => {
+  it('Session creation', () => {
     const session = new Session(
       'test-session',
       mockWorkspaceUri,
@@ -130,7 +130,7 @@ suite('Session Tests', () => {
     assert.strictEqual(session.isCancelled(), false);
   });
 
-  test('Session state management', () => {
+  it('Session state management', () => {
     const session = new Session(
       'test-session',
       mockWorkspaceUri,
@@ -146,7 +146,7 @@ suite('Session Tests', () => {
     assert.strictEqual(mockProgress.reports[0].message, 'Starting planning');
   });
 
-  test('Session phase management', () => {
+  it('Session phase management', () => {
     const session = new Session(
       'test-session',
       mockWorkspaceUri,
@@ -162,7 +162,7 @@ suite('Session Tests', () => {
     assert.strictEqual(mockProgress.reports[0].message, 'Starting planning phase');
   });
 
-  test('Session cancellation', () => {
+  it('Session cancellation', () => {
     const session = new Session(
       'test-session',
       mockWorkspaceUri,
@@ -177,7 +177,7 @@ suite('Session Tests', () => {
     assert.strictEqual(session.isCancelled(), true);
   });
 
-  test('Session completion', () => {
+  it('Session completion', () => {
     const session = new Session(
       'test-session',
       mockWorkspaceUri,
@@ -191,7 +191,7 @@ suite('Session Tests', () => {
     assert.strictEqual(session.state, SessionState.COMPLETED);
   });
 
-  test('Session error handling', () => {
+  it('Session error handling', () => {
     const session = new Session(
       'test-session',
       mockWorkspaceUri,
@@ -208,12 +208,12 @@ suite('Session Tests', () => {
   });
 });
 
-suite('BaseRunner Tests', () => {
+describe('BaseRunner Tests', () => {
   let mockSession: Session;
   let mockAgent: MockAgent;
   let mockProgress: MockProgress;
 
-  setup(() => {
+  beforeEach(() => {
     const mockWorkspaceUri = vscode.Uri.file('/test/workspace');
     const mockAgentMapping: PhaseAgentMapping = {
       assignments: {
@@ -255,7 +255,7 @@ suite('BaseRunner Tests', () => {
     mockAgent = new MockAgent();
   });
 
-  test('Successful runner execution', async () => {
+  it('Successful runner execution', async () => {
     const runner = new TestRunner(mockSession, mockAgent, 'test personality');
     const result = await runner.run();
 
@@ -264,7 +264,7 @@ suite('BaseRunner Tests', () => {
     assert.ok(mockProgress.reports.length >= 2); // Start and progress messages
   });
 
-  test('Runner execution with validation failure', async () => {
+  it('Runner execution with validation failure', async () => {
     const runner = new TestRunner(mockSession, mockAgent, 'test personality', false, false);
     const result = await runner.run();
 
@@ -273,7 +273,7 @@ suite('BaseRunner Tests', () => {
     assert.strictEqual(result.error.message, 'Input validation failed');
   });
 
-  test('Runner execution with execution failure', async () => {
+  it('Runner execution with execution failure', async () => {
     const runner = new TestRunner(mockSession, mockAgent, 'test personality', true, true);
     const result = await runner.run();
 
@@ -282,7 +282,7 @@ suite('BaseRunner Tests', () => {
     assert.strictEqual(result.error.message, 'Test execution failure');
   });
 
-  test('Runner execution with cancelled session', async () => {
+  it('Runner execution with cancelled session', async () => {
     mockSession.cancel();
     const runner = new TestRunner(mockSession, mockAgent, 'test personality');
     const result = await runner.run();
@@ -292,7 +292,7 @@ suite('BaseRunner Tests', () => {
     assert.strictEqual(result.error.message, 'Session was cancelled before execution');
   });
 
-  test('Runner error creation', () => {
+  it('Runner error creation', () => {
     const runner = new TestRunner(mockSession, mockAgent, 'test personality');
     
     const recoverableError = (runner as any).createRecoverableError('Test error', 'TEST_ERROR', { test: true });
@@ -307,7 +307,7 @@ suite('BaseRunner Tests', () => {
     assert.strictEqual(fatalError.recoverable, false);
   });
 
-  test('Runner workspace utilities', () => {
+  it('Runner workspace utilities', () => {
     const runner = new TestRunner(mockSession, mockAgent, 'test personality');
     
     const workspaceRoot = (runner as any).getWorkspaceRoot();
@@ -316,3 +316,4 @@ suite('BaseRunner Tests', () => {
     assert.strictEqual(workspaceRoot, expectedPath);
   });
 });
+

@@ -461,7 +461,7 @@ export class WebCompatibilityError extends Error {
 export function withWebCompatibility<T>(
   operation: () => Promise<T>,
   fallback: () => Promise<T>,
-  feature: string
+  _feature: string
 ): Promise<T> {
   if (WebCompatibility.isWeb()) {
     return fallback();

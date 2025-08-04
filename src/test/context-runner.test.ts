@@ -5,7 +5,7 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import * as sinon from 'sinon';
-import { describe, it, beforeEach, afterEach } from 'mocha';
+// Mocha globals are provided by the test environment
 import { ContextRunner } from '../runners/context';
 import { SessionState } from '../core/session';
 
@@ -59,7 +59,7 @@ describe('ContextRunner Tests', () => {
     sandbox.restore();
   });
 
-  test('should validate inputs correctly', async () => {
+  it('should validate inputs correctly', async () => {
     // Test with valid session
     const result = (contextRunner as any).validateInputs();
     assert.strictEqual(result, true);
@@ -71,7 +71,7 @@ describe('ContextRunner Tests', () => {
     assert.strictEqual(invalidResult, false);
   });
 
-  test('should detect programming languages correctly', () => {
+  it('should detect programming languages correctly', () => {
     const detectLanguage = (contextRunner as any).detectLanguage.bind(contextRunner);
     
     assert.strictEqual(detectLanguage('test.js'), 'javascript');
@@ -83,7 +83,7 @@ describe('ContextRunner Tests', () => {
     assert.strictEqual(detectLanguage('test.unknown'), undefined);
   });
 
-  test('should estimate token count correctly', () => {
+  it('should estimate token count correctly', () => {
     const estimateTokenCount = (contextRunner as any).estimateTokenCount.bind(contextRunner);
     
     const shortText = 'hello world';
@@ -94,7 +94,7 @@ describe('ContextRunner Tests', () => {
     assert.strictEqual(estimateTokenCount(''), 0);
   });
 
-  test('should assess file importance correctly', () => {
+  it('should assess file importance correctly', () => {
     const assessFileImportance = (contextRunner as any).assessFileImportance.bind(contextRunner);
     
     // Important files
@@ -108,12 +108,12 @@ describe('ContextRunner Tests', () => {
     assert.strictEqual(assessFileImportance('docs/guide.md', 'documentation', 'markdown'), false);
   });
 
-  test('should generate file summary correctly', () => {
+  it('should generate file summary correctly', () => {
     const generateFileSummary = (contextRunner as any).generateFileSummary.bind(contextRunner);
     
     // JavaScript/TypeScript content
     const jsContent = `
-      export function test() {}
+      export function  it() {}
       export class MyClass {}
       const arrow = () => {};
     `;
@@ -157,7 +157,7 @@ describe('ContextRunner Tests', () => {
     assert.ok(importantScore > regularScore);
   });
 
-  test('should detect frameworks correctly', () => {
+  it('should detect frameworks correctly', () => {
     const detectFrameworks = (contextRunner as any).detectFrameworks.bind(contextRunner);
     
     const analyses = [
@@ -196,7 +196,7 @@ describe('ContextRunner Tests', () => {
       (contextRunner as any).ignorePatterns = [...originalIgnorePatterns];
     });
 
-    test('should load and convert basic gitignore patterns', async () => {
+  it('should load and convert basic gitignore patterns', async () => {
       readWorkspaceFileStub.resolves(`
         node_modules/
         *.log
@@ -224,7 +224,7 @@ describe('ContextRunner Tests', () => {
       assert.ok(!ignorePatterns.some((p: string) => p.trim() === ''));
     });
 
-    test('should handle malformed gitignore patterns', async () => {
+  it('should handle malformed gitignore patterns', async () => {
       readWorkspaceFileStub.resolves(`
         # Invalid patterns that should be skipped
         **
@@ -253,7 +253,7 @@ describe('ContextRunner Tests', () => {
       assert.ok(!ignorePatterns.includes('*'));
     });
 
-    test('should handle special characters in patterns', async () => {
+  it('should handle special characters in patterns', async () => {
       readWorkspaceFileStub.resolves(`
         # Patterns with special characters
         file[0-9].txt
@@ -279,7 +279,7 @@ describe('ContextRunner Tests', () => {
       assert.ok(ignorePatterns.some((p: string) => p.includes('\!important.txt')));
     });
 
-    test('should handle missing .gitignore file', async () => {
+  it('should handle missing .gitignore file', async () => {
       const error = new Error('File not found') as any;
       error.code = 'FileNotFound';
       readWorkspaceFileStub.rejects(error);
@@ -320,7 +320,7 @@ describe('ContextRunner Tests', () => {
       console.error = originalError;
     });
 
-    test('should not add duplicate patterns', async () => {
+  it('should not add duplicate patterns', async () => {
       readWorkspaceFileStub.resolves(`
         node_modules/
         dist/
@@ -385,7 +385,7 @@ describe('ContextRunner Tests', () => {
     assert.ok(totalTokens <= 500); // Allows slight overage for important files
   });
 
-  test('should generate context summary correctly', () => {
+  it('should generate context summary correctly', () => {
     const generateContextSummary = (contextRunner as any).generateContextSummary.bind(contextRunner);
     
     const stats = {
@@ -418,7 +418,7 @@ describe('ContextRunner Tests', () => {
     assert.ok(summary.description.includes('React'));
   });
 
-  test('should handle errors gracefully', async () => {
+  it('should handle errors gracefully', async () => {
     // Mock file operations to throw errors
     sandbox.stub(vscode.workspace, 'findFiles').rejects(new Error('File system error'));
     
@@ -429,7 +429,7 @@ describe('ContextRunner Tests', () => {
     assert.ok(result.error.message.includes('Context generation failed'));
   });
 
-  test('should respect cancellation', async () => {
+  it('should respect cancellation', async () => {
     // Mock session as cancelled
     (mockSession.isCancelled as sinon.SinonStub).returns(true);
     
@@ -440,7 +440,7 @@ describe('ContextRunner Tests', () => {
     assert.ok(result.error.message.includes('cancelled'));
   });
 
-  test('should save context to workspace', async () => {
+  it('should save context to workspace', async () => {
     const writeWorkspaceFile = sandbox.stub(contextRunner as any, 'writeWorkspaceFile');
     const createWorkspaceDirectory = sandbox.stub(contextRunner as any, 'createWorkspaceDirectory');
     
@@ -469,3 +469,4 @@ describe('ContextRunner Tests', () => {
     assert.deepStrictEqual(parsedContext, context);
   });
 });
+

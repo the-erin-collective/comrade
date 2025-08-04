@@ -4,7 +4,7 @@ export default defineConfig({
   files: 'out/test/**/*.test.js',
   workspaceFolder: './test-workspace',
   mocha: {
-    ui: 'tdd',
+    ui: 'bdd',
     timeout: 20000
   }
 });

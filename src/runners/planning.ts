@@ -2,7 +2,6 @@
  * PlanningRunner for iterative plan generation
  */
 
-import * as vscode from 'vscode';
 import { BaseRunner, RunnerResult } from './base';
 import { WorkspaceContext, ActionList, Action, ActionType, ActionStatus, ActionMetadata } from '../core/workspace';
 import { ChatMessage, IChatBridge, ChatBridge } from '../core/chat';

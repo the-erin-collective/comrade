@@ -454,5 +454,8 @@ export function deactivate(): Thenable<void> | undefined {
                     console.error('Error during async cleanup:', error);
                 });
         }
+        
+        // Return undefined when there are no cleanup promises
+        return undefined;
     }
 }

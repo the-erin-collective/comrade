@@ -9,13 +9,11 @@ import { ConfigurationManager, AgentConfigurationItem } from '../../core/config'
 import { AgentCapabilities, LLMProvider } from '../../core/agent';
 import { mockAgentConfigurations } from '../mocks/agents';
 
-suite('Enhanced Configuration System Tests', () => {
+describe('Enhanced Configuration System Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let mockSecretStorage: vscode.SecretStorage;
   let mockConfiguration: vscode.WorkspaceConfiguration;
-  let configManager: ConfigurationManager;
-
-  setup(() => {
+  let configManager: ConfigurationManager;  beforeEach(() => {
     sandbox = sinon.createSandbox();
     
     // Mock secret storage
@@ -40,15 +38,12 @@ suite('Enhanced Configuration System Tests', () => {
     // Reset singleton and create new instance
     ConfigurationManager.resetInstance();
     configManager = ConfigurationManager.getInstance(mockSecretStorage);
-  });
-
-  teardown(() => {
+  });  afterEach(() => {
     sandbox.restore();
     ConfigurationManager.resetInstance();
   });
 
-  suite('Agent Configuration Validation', () => {
-    test('should validate complete agent configuration', async () => {
+  describe('Agent Configuration Validation', () => {  it('should validate complete agent configuration', async () => {
       const validConfig: AgentConfigurationItem = {
         id: 'test-agent',
         name: 'Test Agent',
@@ -79,7 +74,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.strictEqual(agent.isEnabledForAssignment, validConfig.isEnabledForAssignment);
     });
 
-    test('should apply default values for missing optional properties', async () => {
+  it('should apply default values for missing optional properties', async () => {
       const minimalConfig: Partial<AgentConfigurationItem> = {
         id: 'minimal-agent',
         name: 'Minimal Agent',
@@ -105,7 +100,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.strictEqual(agent.isEnabledForAssignment, true, 'Should default to enabled');
     });
 
-    test('should validate provider-specific requirements', async () => {
+  it('should validate provider-specific requirements', async () => {
       // Test custom provider without endpoint
       const customConfigWithoutEndpoint: AgentConfigurationItem = {
         ...mockAgentConfigurations[0],
@@ -132,7 +127,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.strictEqual(agent.config.endpoint, 'http://localhost:11434');
     });
 
-    test('should validate capability constraints', async () => {
+  it('should validate capability constraints', async () => {
       const invalidCapabilities = [
         { reasoningDepth: 'invalid' as any },
         { speed: 'invalid' as any },
@@ -157,7 +152,7 @@ suite('Enhanced Configuration System Tests', () => {
       }
     });
 
-    test('should validate numeric constraints', async () => {
+  it('should validate numeric constraints', async () => {
       const numericTests = [
         { property: 'temperature', invalid: [-0.1, 2.1, NaN], valid: [0, 0.5, 1.0, 2.0] },
         { property: 'maxTokens', invalid: [0, -1, NaN], valid: [1, 1000, 32000] },
@@ -194,8 +189,7 @@ suite('Enhanced Configuration System Tests', () => {
     });
   });
 
-  suite('API Key Management', () => {
-    test('should store and retrieve API keys securely', async () => {
+  describe('API Key Management', () => {  it('should store and retrieve API keys securely', async () => {
       const agentId = 'test-agent';
       const apiKey = 'sk-test-key-12345';
 
@@ -220,7 +214,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.ok(getStub.calledWith(`comrade.agent.${agentId}.apiKey`));
     });
 
-    test('should handle API key storage failures', async () => {
+  it('should handle API key storage failures', async () => {
       const agentId = 'test-agent';
       const apiKey = 'sk-test-key-12345';
 
@@ -237,7 +231,7 @@ suite('Enhanced Configuration System Tests', () => {
       }
     });
 
-    test('should handle missing API keys gracefully', async () => {
+  it('should handle missing API keys gracefully', async () => {
       const agentId = 'nonexistent-agent';
 
       // Mock undefined return
@@ -248,7 +242,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.strictEqual(retrievedKey, undefined);
     });
 
-    test('should remove API keys correctly', async () => {
+  it('should remove API keys correctly', async () => {
       const agentId = 'test-agent';
 
       // Mock deletion
@@ -261,7 +255,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.ok(deleteStub.calledWith(`comrade.agent.${agentId}.apiKey`));
     });
 
-    test('should handle concurrent API key operations', async () => {
+  it('should handle concurrent API key operations', async () => {
       const agentIds = ['agent1', 'agent2', 'agent3'];
       const apiKeys = ['key1', 'key2', 'key3'];
 
@@ -290,8 +284,7 @@ suite('Enhanced Configuration System Tests', () => {
     });
   });
 
-  suite('Configuration Loading and Persistence', () => {
-    test('should load agents from VS Code configuration', async () => {
+  describe('Configuration Loading and Persistence', () => {  it('should load agents from VS Code configuration', async () => {
       const mockAgents = mockAgentConfigurations.slice(0, 3);
       
       // Mock configuration get
@@ -307,7 +300,7 @@ suite('Enhanced Configuration System Tests', () => {
       });
     });
 
-    test('should handle empty configuration gracefully', async () => {
+  it('should handle empty configuration gracefully', async () => {
       // Mock empty configuration
       const getStub = mockConfiguration.get as sinon.SinonStub;
       getStub.withArgs('agents', []).returns([]);
@@ -316,7 +309,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.strictEqual(agents.length, 0);
     });
 
-    test('should filter out invalid configurations during loading', async () => {
+  it('should filter out invalid configurations during loading', async () => {
       const mixedConfigs = [
         mockAgentConfigurations[0], // Valid
         { ...mockAgentConfigurations[1], id: '' }, // Invalid - empty ID
@@ -335,7 +328,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.strictEqual(agents[1].id, mockAgentConfigurations[2].id);
     });
 
-    test('should save agent configuration to VS Code settings', async () => {
+  it('should save agent configuration to VS Code settings', async () => {
       const newAgent: AgentConfigurationItem = {
         id: 'new-agent',
         name: 'New Agent',
@@ -358,7 +351,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.ok(newAgent.name, 'Agent should have valid name');
     });
 
-    test('should update existing agent configuration', async () => {
+  it('should update existing agent configuration', async () => {
       const existingAgent = mockAgentConfigurations[0];
       const updatedAgent: AgentConfigurationItem = {
         ...existingAgent,
@@ -378,7 +371,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.strictEqual(updatedAgent.temperature, 0.9);
     });
 
-    test('should remove agent configuration', async () => {
+  it('should remove agent configuration', async () => {
       const agents = mockAgentConfigurations.slice(0, 3);
       const agentToRemove = agents[1].id;
 
@@ -396,8 +389,7 @@ suite('Enhanced Configuration System Tests', () => {
     });
   });
 
-  suite('MCP Server Configuration', () => {
-    test('should validate MCP server configuration', () => {
+  describe('MCP Server Configuration', () => {  it('should validate MCP server configuration', () => {
       const validMcpConfig = {
         id: 'test-mcp',
         name: 'Test MCP Server',
@@ -414,7 +406,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.ok(typeof validMcpConfig.timeout === 'number');
     });
 
-    test('should handle MCP server configuration loading', async () => {
+  it('should handle MCP server configuration loading', async () => {
       const mockMcpServers = [
         {
           id: 'mcp1',
@@ -439,7 +431,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.strictEqual(mockMcpServers[1].id, 'mcp2');
     });
 
-    test('should save MCP server configuration', async () => {
+  it('should save MCP server configuration', async () => {
       const newMcpServer = {
         id: 'new-mcp',
         name: 'New MCP Server',
@@ -461,8 +453,7 @@ suite('Enhanced Configuration System Tests', () => {
     });
   });
 
-  suite('Configuration Change Events', () => {
-    test('should handle configuration change events', async () => {
+  describe('Configuration Change Events', () => {  it('should handle configuration change events', async () => {
       // Mock configuration change event
       const configChangeEmitter = new vscode.EventEmitter<vscode.ConfigurationChangeEvent>();
       sandbox.stub(vscode.workspace, 'onDidChangeConfiguration').value(configChangeEmitter.event);
@@ -478,7 +469,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.ok(true, 'Should handle configuration change events without errors');
     });
 
-    test('should reload configuration when relevant settings change', async () => {
+  it('should reload configuration when relevant settings change', async () => {
       const initialAgents = mockAgentConfigurations.slice(0, 2);
       const updatedAgents = mockAgentConfigurations.slice(0, 3);
 
@@ -497,7 +488,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.strictEqual(agents.length, 3);
     });
 
-    test('should ignore non-relevant configuration changes', async () => {
+  it('should ignore non-relevant configuration changes', async () => {
       const configChangeEmitter = new vscode.EventEmitter<vscode.ConfigurationChangeEvent>();
       sandbox.stub(vscode.workspace, 'onDidChangeConfiguration').value(configChangeEmitter.event);
 
@@ -512,8 +503,7 @@ suite('Enhanced Configuration System Tests', () => {
     });
   });
 
-  suite('Error Handling and Recovery', () => {
-    test('should handle configuration corruption gracefully', async () => {
+  describe('Error Handling and Recovery', () => {  it('should handle configuration corruption gracefully', async () => {
       // Mock corrupted configuration data
       const getStub = mockConfiguration.get as sinon.SinonStub;
       getStub.withArgs('agents', []).returns('invalid-data');
@@ -524,7 +514,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.strictEqual(agents.length, 0);
     });
 
-    test('should handle VS Code API failures', async () => {
+  it('should handle VS Code API failures', async () => {
       // Mock VS Code API failure
       const getStub = mockConfiguration.get as sinon.SinonStub;
       getStub.throws(new Error('VS Code API error'));
@@ -538,7 +528,7 @@ suite('Enhanced Configuration System Tests', () => {
       }
     });
 
-    test('should recover from temporary failures', async () => {
+  it('should recover from temporary failures', async () => {
       const getStub = mockConfiguration.get as sinon.SinonStub;
       
       // First call fails
@@ -559,7 +549,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.strictEqual(agents.length, 1);
     });
 
-    test('should validate configuration on startup', async () => {
+  it('should validate configuration on startup', async () => {
       let validationCalled = false;
       
       // Mock validation method
@@ -573,8 +563,7 @@ suite('Enhanced Configuration System Tests', () => {
     });
   });
 
-  suite('Performance and Scalability', () => {
-    test('should handle large configuration sets efficiently', async () => {
+  describe('Performance and Scalability', () => {  it('should handle large configuration sets efficiently', async () => {
       // Create large configuration set
       const largeConfigSet = Array.from({ length: 100 }, (_, i) => ({
         ...mockAgentConfigurations[0],
@@ -593,7 +582,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.ok(endTime - startTime < 1000, 'Should handle large configurations efficiently');
     });
 
-    test('should cache configuration data appropriately', async () => {
+  it('should cache configuration data appropriately', async () => {
       const getStub = mockConfiguration.get as sinon.SinonStub;
       getStub.withArgs('agents', []).returns(mockAgentConfigurations.slice(0, 2));
 
@@ -606,7 +595,7 @@ suite('Enhanced Configuration System Tests', () => {
       assert.strictEqual(getStub.callCount, 1, 'Should cache configuration data');
     });
 
-    test('should handle concurrent configuration operations', async () => {
+  it('should handle concurrent configuration operations', async () => {
       const getStub = mockConfiguration.get as sinon.SinonStub;
       getStub.withArgs('agents', []).returns(mockAgentConfigurations);
 
@@ -624,3 +613,4 @@ suite('Enhanced Configuration System Tests', () => {
     });
   });
 });
+

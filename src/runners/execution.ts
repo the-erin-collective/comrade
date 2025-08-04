@@ -2,14 +2,14 @@
  * ExecutionRunner for sequential action list processing with recovery capabilities
  */
 
-import * as vscode from 'vscode';
 import * as path from 'path';
+import * as vscode from 'vscode';
 import { BaseRunner, RunnerResult, RunnerError } from './base';
 import { ActionList, Action, ActionType, ActionStatus, ActionResult } from '../core/workspace';
 import { ChatMessage, IChatBridge, ChatBridge } from '../core/chat';
 import { IAgent } from '../core/agent';
 import { ISession, SessionState } from '../core/session';
-import { WebShellExecutor, WebCompatibility } from '../core/webcompat';
+import { WebShellExecutor } from '../core/webcompat';
 
 interface ExecutionOptions {
   dryRun?: boolean;

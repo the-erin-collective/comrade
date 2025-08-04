@@ -4,7 +4,7 @@
 
 import * as assert from 'assert';
 import * as sinon from 'sinon';
-import { describe, it, beforeEach, afterEach } from 'mocha';
+// Mocha globals are provided by the test environment
 import { ChatBridge, ChatBridgeError, ChatMessage } from '../core/chat';
 import { IAgent, LLMProvider, AgentConfig, AgentCapabilities } from '../core/agent';
 
@@ -220,7 +220,7 @@ describe('ChatBridge', () => {
       }
     });
 
-    test('should handle different provider formats', async () => {
+  it('should handle different provider formats', async () => {
       // Test Ollama format
       const ollamaResponse = {
         message: { content: 'Ollama response content' },
@@ -524,3 +524,5 @@ describe('ChatBridge', () => {
     });
   });
 });
+
+

@@ -5,7 +5,7 @@
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { describe, it, beforeEach, afterEach } from 'mocha';
+// Mocha globals are provided by the test environment
 import { ConfigurationManager, AgentConfigurationItem, MCPServerConfig } from '../../core/config';
 import { ConfigurationValidator } from '../../core/config-validator';
 
@@ -49,9 +49,7 @@ describe('Configuration Validation Integration Tests', () => {
     (vscode.workspace as any).getConfiguration = originalGetConfiguration;
   });
 
-  describe('Agent Configuration Integration', () => {
-    
-    test('should validate and save valid agent configuration', async () => {
+  describe('Agent Configuration Integration', () => {  it('should validate and save valid agent configuration', async () => {
       const validAgent: AgentConfigurationItem = {
         id: 'test-agent',
         name: 'Test Agent',
@@ -83,7 +81,7 @@ describe('Configuration Validation Integration Tests', () => {
       assert.strictEqual(savedAgents[0].id, validAgent.id);
     });
 
-    test('should reject invalid agent configuration before save (Requirement 6.4)', async () => {
+  it('should reject invalid agent configuration before save (Requirement 6.4)', async () => {
       const invalidAgent = {
         // Missing required fields
         name: 'Invalid Agent',
@@ -103,7 +101,7 @@ describe('Configuration Validation Integration Tests', () => {
       assert.ok(!savedAgents || savedAgents.length === 0);
     });
 
-    test('should apply defaults when loading configuration (Requirement 6.1)', () => {
+  it('should apply defaults when loading configuration (Requirement 6.1)', () => {
       // Set up minimal agent configuration in mock data
       mockConfigData['agents'] = [{
         id: 'minimal-agent',
@@ -127,7 +125,7 @@ describe('Configuration Validation Integration Tests', () => {
       assert.deepStrictEqual(agent.capabilities.supportedLanguages, ['en']);
     });
 
-    test('should filter out invalid configurations when loading (Requirement 6.3)', () => {
+  it('should filter out invalid configurations when loading (Requirement 6.3)', () => {
       // Set up mixed valid/invalid configurations
       mockConfigData['agents'] = [
         {
@@ -161,7 +159,7 @@ describe('Configuration Validation Integration Tests', () => {
       assert.strictEqual(config.agents[1].id, 'another-valid');
     });
 
-    test('should handle corrupted configuration gracefully', () => {
+  it('should handle corrupted configuration gracefully', () => {
       // Set up corrupted configuration
       mockConfigData['agents'] = 'not-an-array';
       mockConfigData['assignment.defaultMode'] = 'invalid-mode';
@@ -175,7 +173,7 @@ describe('Configuration Validation Integration Tests', () => {
       assert.strictEqual(config.contextMaxTokens, 8000);
     });
 
-    test('should validate agent array updates', async () => {
+  it('should validate agent array updates', async () => {
       const agents: AgentConfigurationItem[] = [
         {
           id: 'agent-1',
@@ -223,7 +221,7 @@ describe('Configuration Validation Integration Tests', () => {
       assert.strictEqual(savedAgents[1].id, 'agent-2');
     });
 
-    test('should reject invalid agent array updates', async () => {
+  it('should reject invalid agent array updates', async () => {
       const invalidAgents = [
         {
           id: 'valid-agent',
@@ -249,9 +247,7 @@ describe('Configuration Validation Integration Tests', () => {
     });
   });
 
-  suite('MCP Server Configuration Integration', () => {
-    
-    test('should validate and save valid MCP server configuration', async () => {
+  describe('MCP Server Configuration Integration', () => {  it('should validate and save valid MCP server configuration', async () => {
       const validServer: MCPServerConfig = {
         id: 'test-mcp',
         name: 'Test MCP Server',
@@ -271,7 +267,7 @@ describe('Configuration Validation Integration Tests', () => {
       assert.strictEqual(savedServers[0].id, validServer.id);
     });
 
-    test('should reject invalid MCP server configuration before save', async () => {
+  it('should reject invalid MCP server configuration before save', async () => {
       const invalidServer = {
         // Missing required fields
         name: 'Invalid Server'
@@ -290,7 +286,7 @@ describe('Configuration Validation Integration Tests', () => {
       assert.ok(!savedServers || savedServers.length === 0);
     });
 
-    test('should apply defaults to MCP server configuration', async () => {
+  it('should apply defaults to MCP server configuration', async () => {
       const minimalServer = {
         id: 'minimal-mcp',
         name: 'Minimal MCP Server',
@@ -307,7 +303,7 @@ describe('Configuration Validation Integration Tests', () => {
       assert.strictEqual(server.timeout, 10000); // Default applied
     });
 
-    test('should filter invalid MCP servers when loading', () => {
+  it('should filter invalid MCP servers when loading', () => {
       // Set up mixed valid/invalid MCP server configurations
       mockConfigData['mcp.servers'] = [
         {
@@ -336,9 +332,7 @@ describe('Configuration Validation Integration Tests', () => {
     });
   });
 
-  suite('Configuration Reload and Change Detection', () => {
-    
-    test('should handle configuration changes', () => {
+  describe('Configuration Reload and Change Detection', () => {  it('should handle configuration changes', () => {
       // Initial configuration
       mockConfigData['agents'] = [{
         id: 'initial-agent',
@@ -366,7 +360,7 @@ describe('Configuration Validation Integration Tests', () => {
       assert.strictEqual(config.agents[0].id, 'updated-agent');
     });
 
-    test('should reload configuration explicitly', async () => {
+  it('should reload configuration explicitly', async () => {
       mockConfigData['agents'] = [{
         id: 'test-agent',
         name: 'Test Agent',
@@ -383,9 +377,7 @@ describe('Configuration Validation Integration Tests', () => {
     });
   });
 
-  suite('Error Handling and Recovery', () => {
-    
-    test('should handle validation errors gracefully during startup', async () => {
+  describe('Error Handling and Recovery', () => {  it('should handle validation errors gracefully during startup', async () => {
       // Set up configuration with validation issues
       mockConfigData['agents'] = [
         {
@@ -410,7 +402,7 @@ describe('Configuration Validation Integration Tests', () => {
       assert.strictEqual(config.agents[0].id, 'valid-agent');
     });
 
-    test('should provide meaningful error messages for validation failures', async () => {
+  it('should provide meaningful error messages for validation failures', async () => {
       const invalidAgent = {
         id: '', // Invalid empty ID
         name: 'Test Agent',
@@ -434,7 +426,7 @@ describe('Configuration Validation Integration Tests', () => {
       }
     });
 
-    test('should handle concurrent configuration updates', async () => {
+  it('should handle concurrent configuration updates', async () => {
       const agent1: AgentConfigurationItem = {
         id: 'agent-1',
         name: 'Agent 1',
@@ -485,3 +477,5 @@ describe('Configuration Validation Integration Tests', () => {
     });
   });
 });
+
+

@@ -6,7 +6,7 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
-import { describe, beforeEach, afterEach } from 'mocha';
+// Mocha globals are provided by the test environment
 import * as path from 'path';
 import { ToolDefinition } from '../../core/tools';
 
@@ -24,9 +24,7 @@ describe('Comprehensive Integration Tests', () => {
   let configManager: ConfigurationManager;
   let toolManager: ToolManager;
   let mockSecretStorage: any;
-  let workspaceUri: vscode.Uri;
-
-  setup(async () => {
+  let workspaceUri: vscode.Uri;  beforeEach(async () => {
     sandbox = sinon.createSandbox();
     
     // Create test workspace
@@ -69,16 +67,14 @@ describe('Comprehensive Integration Tests', () => {
         mtime: Date.now()
       })
     });
-  });
-
-  teardown(() => {
+  });  afterEach(() => {
     sandbox.restore();
     AgentRegistry.resetInstance();
     ConfigurationManager.resetInstance();
     ToolManager.resetInstance();
   });
 
-  test('should handle complete Anthropic workflow with streaming and tools', async () => {
+  it('should handle complete Anthropic workflow with streaming and tools', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock Anthropic streaming response with tool calls
@@ -162,7 +158,7 @@ describe('Comprehensive Integration Tests', () => {
     assert.ok(requestBody.tools, 'Should include tool definitions');
   });
 
-  test('should handle cross-provider streaming with fallback and caching', async () => {
+  it('should handle cross-provider streaming with fallback and caching', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock different providers with different behaviors
@@ -273,7 +269,7 @@ describe('Comprehensive Integration Tests', () => {
     });
   });
 
-  test('should handle complex tool calling workflow with security and concurrency', async () => {
+  it('should handle complex tool calling workflow with security and concurrency', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock complex tool calling response
@@ -463,7 +459,7 @@ describe('Comprehensive Integration Tests', () => {
     console.log(`Complex tool workflow completed in ${executionTime}ms with security approval`);
   });
 
-  test('should handle system-wide load and stress testing', async () => {
+  it('should handle system-wide load and stress testing', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock various response types and delays
@@ -611,7 +607,7 @@ describe('Comprehensive Integration Tests', () => {
     assert.ok(cacheEfficiency, 'Should demonstrate cache efficiency under load');
   });
 
-  test('should validate complete system integration and health', async () => {
+  it('should validate complete system integration and health', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock healthy responses for all providers
@@ -764,3 +760,5 @@ describe('Comprehensive Integration Tests', () => {
     console.log('✅ Complete system integration validation passed');
   });
 });
+
+

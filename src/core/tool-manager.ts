@@ -1058,6 +1058,40 @@ export class BuiltInTools {
   /**
    * Create git status tool definition
    */
+  /**
+   * Helper to convert git status to single character
+   */
+  private static getGitStatusChar(status: number): string {
+    // These status values come from the vscode.git extension
+    switch (status) {
+      case 1: return 'M'; // Modified
+      case 2: return 'A'; // Added
+      case 3: return 'D'; // Deleted
+      case 4: return 'R'; // Renamed
+      case 5: return 'C'; // Copied
+      case 6: return 'U'; // Updated but unmerged
+      default: return '?';
+    }
+  }
+
+  /**
+   * Helper to get status text
+   */
+  private static getGitStatusText(status: number): string {
+    switch (status) {
+      case 1: return 'modified';
+      case 2: return 'added';
+      case 3: return 'deleted';
+      case 4: return 'renamed';
+      case 5: return 'copied';
+      case 6: return 'unmerged';
+      default: return 'unknown';
+    }
+  }
+
+  /**
+   * Create git status tool definition
+   */
   private static createGitStatusToolDefinition(): ToolDefinition {
     return {
       name: 'git_status',
@@ -1107,29 +1141,60 @@ export class BuiltInTools {
             };
           }
 
-          const status = repository.state;
-          
+          const status = repository.state.workingTreeChanges;
+          const indexChanges = repository.state.indexChanges;
+          const currentBranch = repository.state.HEAD?.name || 'detached HEAD';
+          const ahead = repository.state.HEAD?.ahead || 0;
+          const behind = repository.state.HEAD?.behind || 0;
+
+          // Use porcelain format if requested
+          if (parameters.porcelain) {
+            const output: string[] = [];
+            
+            // Branch info
+            output.push(`# branch.oid ${repository.state.HEAD?.commit || 'N/A'}`);
+            output.push(`# branch.head ${currentBranch}`);
+            output.push(`# branch.upstream ${repository.state.HEAD?.upstream?.name || 'N/A'}`);
+            output.push(`# branch.ab +${ahead} -${behind}`);
+            
+            // Staged changes
+            for (const change of indexChanges) {
+              const status = this.getGitStatusChar(change.status);
+              output.push(`${status} ${change.uri.fsPath}`);
+            }
+            
+            // Unstaged changes
+            for (const change of status) {
+              const status = this.getGitStatusChar(change.status);
+              output.push(` ${status} ${change.uri.fsPath}`);
+            }
+            
+            return {
+              success: true,
+              data: output.join('\n'),
+              metadata: { format: 'porcelain', repository: workspaceUri.fsPath }
+            };
+          }
+
+          // Default detailed format
           return {
             success: true,
             data: {
-              branch: status.HEAD?.name || 'unknown',
-              changes: status.workingTreeChanges.length,
-              staged: status.indexChanges.length,
-              untracked: status.untrackedChanges?.length || 0,
-              ahead: status.HEAD?.ahead || 0,
-              behind: status.HEAD?.behind || 0,
-              files: parameters.porcelain ? {
-                working: status.workingTreeChanges.map((change: any) => ({
-                  path: change.uri.fsPath,
-                  status: change.status
-                })),
-                staged: status.indexChanges.map((change: any) => ({
-                  path: change.uri.fsPath,
-                  status: change.status
-                }))
-              } : undefined
+              branch: currentBranch,
+              ahead,
+              behind,
+              changes: status.map((change: { uri: { fsPath: string }; status: number }) => ({
+                path: change.uri.fsPath,
+                status: change.status,
+                statusText: this.getGitStatusText(change.status)
+              })),
+              staged: indexChanges.map((change: { uri: { fsPath: string }; status: number }) => ({
+                path: change.uri.fsPath,
+                status: change.status,
+                statusText: this.getGitStatusText(change.status)
+              }))
             },
-            metadata: { repository: workspaceUri.fsPath }
+            metadata: { format: 'detailed', repository: workspaceUri.fsPath }
           };
         } catch (error) {
           return {
@@ -1312,7 +1377,7 @@ export class BuiltInTools {
         allowedInWeb: true,
         riskLevel: 'low'
       },
-      executor: async (parameters: { message: string; type?: 'info' | 'warning' | 'error' }, context: ExecutionContext): Promise<ToolResult> => {
+      executor: async (parameters: { message: string; type?: 'info' | 'warning' | 'error' }): Promise<ToolResult> => {
         try {
           const messageType = parameters.type || 'info';
           

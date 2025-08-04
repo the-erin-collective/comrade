@@ -32,15 +32,13 @@ import {
   mockLLMResponses 
 } from '../mocks/llm-responses';
 
-suite('Workflow Integration Tests', () => {
+describe('Workflow Integration Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let mockSecretStorage: vscode.SecretStorage;
   let configManager: ConfigurationManager;
   let agentRegistry: AgentRegistry;
   let chatBridge: ChatBridge;
-  let workspaceUri: vscode.Uri;
-
-  setup(async () => {
+  let workspaceUri: vscode.Uri;  beforeEach(async () => {
     sandbox = sinon.createSandbox();
     
     // Create test workspace
@@ -79,15 +77,13 @@ suite('Workflow Integration Tests', () => {
       createDirectory: sandbox.stub().resolves(),
       stat: sandbox.stub().resolves({ type: vscode.FileType.File, size: 100 })
     });
-  });
-
-  teardown(() => {
+  });  afterEach(() => {
     sandbox.restore();
     AgentRegistry.resetInstance();
     ConfigurationManager.resetInstance();
   });
 
-  test('should complete full workflow: context → planning → execution', async () => {
+  it('should complete full workflow: context → planning → execution', async () => {
     const { session, progress } = createMockSession(
       'integration-test-session',
       workspaceUri,
@@ -195,7 +191,7 @@ suite('Workflow Integration Tests', () => {
     }
   });
 
-  test('should handle context generation failure gracefully', async () => {
+  it('should handle context generation failure gracefully', async () => {
     const { session, progress } = createMockSession(
       'context-error-test',
       workspaceUri,
@@ -227,7 +223,7 @@ suite('Workflow Integration Tests', () => {
     }
   });
 
-  test('should handle planning iteration and refinement', async () => {
+  it('should handle planning iteration and refinement', async () => {
     const { session, progress } = createMockSession(
       'planning-iteration-test',
       workspaceUri,
@@ -284,7 +280,7 @@ suite('Workflow Integration Tests', () => {
     }
   });
 
-  test('should handle execution with dependency resolution', async () => {
+  it('should handle execution with dependency resolution', async () => {
     const { session, progress } = createMockSession(
       'execution-dependencies-test',
       workspaceUri,
@@ -341,7 +337,7 @@ suite('Workflow Integration Tests', () => {
     }
   });
 
-  test('should handle session cancellation during workflow', async () => {
+  it('should handle session cancellation during workflow', async () => {
     const { session, progress } = createMockSession(
       'cancellation-test',
       workspaceUri,
@@ -386,7 +382,7 @@ suite('Workflow Integration Tests', () => {
     }
   });
 
-  test('should handle agent assignment and switching', async () => {
+  it('should handle agent assignment and switching', async () => {
     const { session, progress } = createMockSession(
       'agent-switching-test',
       workspaceUri,
@@ -425,7 +421,7 @@ suite('Workflow Integration Tests', () => {
     }
   });
 
-  test('should handle error recovery during execution', async () => {
+  it('should handle error recovery during execution', async () => {
     const { session, progress } = createMockSession(
       'error-recovery-test',
       workspaceUri,
@@ -489,7 +485,7 @@ suite('Workflow Integration Tests', () => {
     }
   });
 
-  test('should validate workspace context integration', async () => {
+  it('should validate workspace context integration', async () => {
     const { session, progress } = createMockSession(
       'workspace-context-test',
       workspaceUri,
@@ -554,7 +550,7 @@ suite('Workflow Integration Tests', () => {
     }
   });
 
-  test('should handle MCP tool integration during execution', async () => {
+  it('should handle MCP tool integration during execution', async () => {
     const { session, progress } = createMockSession(
       'mcp-integration-test',
       workspaceUri,
@@ -626,7 +622,7 @@ suite('Workflow Integration Tests', () => {
     }
   });
 
-  test('should handle multi-agent workflow with different capabilities', async () => {
+  it('should handle multi-agent workflow with different capabilities', async () => {
     const { session, progress } = createMockSession(
       'multi-agent-test',
       workspaceUri,
@@ -719,7 +715,7 @@ suite('Workflow Integration Tests', () => {
     }
   });
 
-  test('should handle workflow state persistence and recovery', async () => {
+  it('should handle workflow state persistence and recovery', async () => {
     const { session, progress } = createMockSession(
       'persistence-test',
       workspaceUri,
@@ -770,7 +766,7 @@ suite('Workflow Integration Tests', () => {
     }
   });
 
-  test('should handle complex error recovery scenarios', async () => {
+  it('should handle complex error recovery scenarios', async () => {
     const { session, progress } = createMockSession(
       'complex-error-recovery-test',
       workspaceUri,
@@ -845,3 +841,4 @@ suite('Workflow Integration Tests', () => {
     }
   });
 });
+

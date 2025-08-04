@@ -8,23 +8,18 @@ import { ChatBridge, ChatBridgeError, ChatMessage } from '../../core/chat';
 import { createMockAgent, mockAgentConfigurations } from '../mocks/agents';
 import { WebNetworkUtils } from '../../core/webcompat';
 
-suite('Enhanced ChatBridge Tests', () => {
+describe('Enhanced ChatBridge Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let chatBridge: ChatBridge;
-  let makeRequestStub: sinon.SinonStub;
-
-  setup(() => {
+  let makeRequestStub: sinon.SinonStub;  beforeEach(() => {
     sandbox = sinon.createSandbox();
     chatBridge = new ChatBridge();
     makeRequestStub = sandbox.stub(WebNetworkUtils, 'makeRequest');
-  });
-
-  teardown(() => {
+  });  afterEach(() => {
     sandbox.restore();
   });
 
-  suite('Provider-Specific Error Handling', () => {
-    test('should handle OpenAI rate limit errors with retry-after header', async () => {
+  describe('Provider-Specific Error Handling', () => {  it('should handle OpenAI rate limit errors with retry-after header', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]); // OpenAI agent
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
@@ -59,7 +54,7 @@ suite('Enhanced ChatBridge Tests', () => {
       }
     });
 
-    test('should handle OpenAI token limit errors', async () => {
+  it('should handle OpenAI token limit errors', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
@@ -86,7 +81,7 @@ suite('Enhanced ChatBridge Tests', () => {
       }
     });
 
-    test('should handle Anthropic-specific errors', async () => {
+  it('should handle Anthropic-specific errors', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[2], // Anthropic agent
         provider: 'anthropic'
@@ -118,7 +113,7 @@ suite('Enhanced ChatBridge Tests', () => {
       }
     });
 
-    test('should handle Ollama connection errors', async () => {
+  it('should handle Ollama connection errors', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[3], // Ollama agent
         provider: 'ollama'
@@ -138,7 +133,7 @@ suite('Enhanced ChatBridge Tests', () => {
       }
     });
 
-    test('should handle custom provider endpoint errors', async () => {
+  it('should handle custom provider endpoint errors', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[4], // Custom provider
         provider: 'custom'
@@ -172,8 +167,7 @@ suite('Enhanced ChatBridge Tests', () => {
     });
   });
 
-  suite('Retry and Recovery Mechanisms', () => {
-    test('should implement exponential backoff for retryable errors', async () => {
+  describe('Retry and Recovery Mechanisms', () => {  it('should implement exponential backoff for retryable errors', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
@@ -203,7 +197,7 @@ suite('Enhanced ChatBridge Tests', () => {
       assert.strictEqual(makeRequestStub.callCount, 3, 'Should retry failed requests');
     });
 
-    test('should not retry non-retryable errors', async () => {
+  it('should not retry non-retryable errors', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
@@ -230,7 +224,7 @@ suite('Enhanced ChatBridge Tests', () => {
       }
     });
 
-    test('should handle circuit breaker pattern for failing endpoints', async () => {
+  it('should handle circuit breaker pattern for failing endpoints', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
@@ -258,8 +252,7 @@ suite('Enhanced ChatBridge Tests', () => {
     });
   });
 
-  suite('Request/Response Validation', () => {
-    test('should validate message format before sending', async () => {
+  describe('Request/Response Validation', () => {  it('should validate message format before sending', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       
       // Test invalid message formats
@@ -281,7 +274,7 @@ suite('Enhanced ChatBridge Tests', () => {
       }
     });
 
-    test('should validate response format from providers', async () => {
+  it('should validate response format from providers', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
@@ -311,7 +304,7 @@ suite('Enhanced ChatBridge Tests', () => {
       }
     });
 
-    test('should handle malformed JSON responses', async () => {
+  it('should handle malformed JSON responses', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
@@ -332,8 +325,7 @@ suite('Enhanced ChatBridge Tests', () => {
     });
   });
 
-  suite('Streaming Support', () => {
-    test('should handle streaming responses correctly', async () => {
+  describe('Streaming Support', () => {  it('should handle streaming responses correctly', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test streaming' }];
       const chunks: string[] = [];
@@ -366,7 +358,7 @@ suite('Enhanced ChatBridge Tests', () => {
       assert.deepStrictEqual(chunks, ['Hello', ' world'], 'Should receive streaming chunks');
     });
 
-    test('should handle streaming errors gracefully', async () => {
+  it('should handle streaming errors gracefully', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test streaming error' }];
 
@@ -392,7 +384,7 @@ suite('Enhanced ChatBridge Tests', () => {
       }
     });
 
-    test('should handle streaming cancellation', async () => {
+  it('should handle streaming cancellation', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test cancellation' }];
       let cancelled = false;
@@ -435,8 +427,7 @@ suite('Enhanced ChatBridge Tests', () => {
     });
   });
 
-  suite('Performance and Resource Management', () => {
-    test('should handle concurrent requests efficiently', async () => {
+  describe('Performance and Resource Management', () => {  it('should handle concurrent requests efficiently', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Concurrent test' }];
 
@@ -471,7 +462,7 @@ suite('Enhanced ChatBridge Tests', () => {
       assert.strictEqual(makeRequestStub.callCount, 10, 'Should make all requests');
     });
 
-    test('should implement request timeout', async () => {
+  it('should implement request timeout', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Timeout test' }];
 
@@ -497,7 +488,7 @@ suite('Enhanced ChatBridge Tests', () => {
       }
     });
 
-    test('should manage memory usage for large responses', async () => {
+  it('should manage memory usage for large responses', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Large response test' }];
 
@@ -522,8 +513,7 @@ suite('Enhanced ChatBridge Tests', () => {
     });
   });
 
-  suite('Provider-Specific Features', () => {
-    test('should handle OpenAI function calling', async () => {
+  describe('Provider-Specific Features', () => {  it('should handle OpenAI function calling', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[0],
         capabilities: { ...mockAgentConfigurations[0].capabilities, hasToolUse: true }
@@ -566,7 +556,7 @@ suite('Enhanced ChatBridge Tests', () => {
       assert.strictEqual(result.toolCalls?.[0]?.name, 'get_weather');
     });
 
-    test('should handle Anthropic system messages correctly', async () => {
+  it('should handle Anthropic system messages correctly', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[2],
         provider: 'anthropic'
@@ -596,7 +586,7 @@ suite('Enhanced ChatBridge Tests', () => {
       assert.ok(requestBody.system, 'Should include system parameter for Anthropic');
     });
 
-    test('should handle Ollama model-specific parameters', async () => {
+  it('should handle Ollama model-specific parameters', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[3],
         provider: 'ollama'
@@ -629,3 +619,5 @@ suite('Enhanced ChatBridge Tests', () => {
     });
   });
 });
+
+

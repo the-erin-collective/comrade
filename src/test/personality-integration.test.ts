@@ -7,11 +7,11 @@ import * as vscode from 'vscode';
 import { ChatBridge, ChatMessage } from '../core/chat';
 import { IAgent, AgentCapabilities } from '../core/agent';
 
-suite('Personality Integration Tests', () => {
+describe('Personality Integration Tests', () => {
   let chatBridge: ChatBridge;
   let mockAgent: IAgent;
 
-  suiteSetup(() => {
+  before(() => {
     chatBridge = new ChatBridge();
     
     // Create a mock agent for testing
@@ -39,7 +39,7 @@ suite('Personality Integration Tests', () => {
     };
   });
 
-  test('should inject personality into messages', async () => {
+  it('should inject personality into messages', async () => {
     const originalMessages: ChatMessage[] = [
       { role: 'user', content: 'Hello, can you help me?' }
     ];
@@ -51,7 +51,7 @@ suite('Personality Integration Tests', () => {
       'ChatBridge should have injectPersonality method');
   });
 
-  test('should handle personality injection errors gracefully', async () => {
+  it('should handle personality injection errors gracefully', async () => {
     // Test that if personality injection fails, the original messages are returned
     const originalMessages: ChatMessage[] = [
       { role: 'user', content: 'Test message' }
@@ -74,7 +74,7 @@ suite('Personality Integration Tests', () => {
     }
   });
 
-  test('should preserve original message content when injecting personality', async () => {
+  it('should preserve original message content when injecting personality', async () => {
     const originalMessages: ChatMessage[] = [
       { role: 'system', content: 'You are a helpful assistant.' },
       { role: 'user', content: 'Hello world' }
@@ -98,3 +98,4 @@ suite('Personality Integration Tests', () => {
     }
   });
 });
+

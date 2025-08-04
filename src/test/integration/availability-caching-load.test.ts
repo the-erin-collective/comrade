@@ -9,13 +9,11 @@ import { AgentRegistry } from '../../core/registry';
 import { ConfigurationManager } from '../../core/config';
 import { mockAgentConfigurations, createMockAgent } from '../mocks/agents';
 
-suite('Availability Caching Load Tests', () => {
+describe('Availability Caching Load Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let agentRegistry: AgentRegistry;
   let configManager: ConfigurationManager;
-  let mockSecretStorage: any;
-
-  setup(async () => {
+  let mockSecretStorage: any;  beforeEach(async () => {
     sandbox = sinon.createSandbox();
     
     mockSecretStorage = {
@@ -34,15 +32,13 @@ suite('Availability Caching Load Tests', () => {
     );
     
     await agentRegistry.initialize();
-  });
-
-  teardown(() => {
+  });  afterEach(() => {
     sandbox.restore();
     AgentRegistry.resetInstance();
     ConfigurationManager.resetInstance();
   });
 
-  test('should handle high-frequency availability checks efficiently', async () => {
+  it('should handle high-frequency availability checks efficiently', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock successful availability response
@@ -86,7 +82,7 @@ suite('Availability Caching Load Tests', () => {
     console.log(`Completed ${checkCount} availability checks in ${executionTime}ms with ${fetchStub.callCount} API calls`);
   });
 
-  test('should handle concurrent availability checks from multiple agents', async () => {
+  it('should handle concurrent availability checks from multiple agents', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock different response times for different agents
@@ -142,7 +138,7 @@ suite('Availability Caching Load Tests', () => {
     console.log(`Completed ${totalChecks} concurrent checks across ${agents.length} agents in ${executionTime}ms with ${fetchStub.callCount} API calls`);
   });
 
-  test('should handle cache expiration and refresh under load', async () => {
+  it('should handle cache expiration and refresh under load', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     let callCount = 0;
@@ -199,7 +195,7 @@ suite('Availability Caching Load Tests', () => {
     }
   });
 
-  test('should handle cache memory usage efficiently', async () => {
+  it('should handle cache memory usage efficiently', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     fetchStub.resolves({
@@ -252,7 +248,7 @@ suite('Availability Caching Load Tests', () => {
     assert.ok(cacheStats.totalEntries >= manyAgents.length, 'Should cache entries for all agents');
   });
 
-  test('should handle cache invalidation under load', async () => {
+  it('should handle cache invalidation under load', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     let responseToggle = true;
@@ -279,7 +275,7 @@ suite('Availability Caching Load Tests', () => {
     const agent = agentRegistry.getAgent('openai-gpt4')!;
     
     // Perform checks that will alternate between success and failure
-    const results = [];
+    const results: boolean[] = [];
     for (let i = 0; i < 20; i++) {
       const result = await agent.isAvailable();
       results.push(result);
@@ -301,7 +297,7 @@ suite('Availability Caching Load Tests', () => {
     console.log(`Handled ${results.length} checks with cache invalidation: ${successCount} successes, ${failureCount} failures, ${fetchStub.callCount} API calls`);
   });
 
-  test('should handle cache performance under stress', async () => {
+  it('should handle cache performance under stress', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock slow API responses
@@ -363,7 +359,7 @@ suite('Availability Caching Load Tests', () => {
     assert.ok(cacheEfficiency > 0.8, `Cache should be highly efficient (${Math.round(cacheEfficiency * 100)}% cache hit rate)`);
   });
 
-  test('should handle cache cleanup and garbage collection', async () => {
+  it('should handle cache cleanup and garbage collection', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     fetchStub.resolves({
@@ -412,7 +408,7 @@ suite('Availability Caching Load Tests', () => {
     }
   });
 
-  test('should handle cache consistency across multiple registry instances', async () => {
+  it('should handle cache consistency across multiple registry instances', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     let callCount = 0;
@@ -457,7 +453,7 @@ suite('Availability Caching Load Tests', () => {
     console.log(`Cache consistency test: ${fetchStub.callCount} API calls for 2 registry instances`);
   });
 
-  test('should handle cache performance metrics and monitoring', async () => {
+  it('should handle cache performance metrics and monitoring', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     let apiCallCount = 0;
@@ -517,7 +513,7 @@ suite('Availability Caching Load Tests', () => {
     }
   });
 
-  test('should handle cache behavior during network failures', async () => {
+  it('should handle cache behavior during network failures', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     let networkFailure = false;
@@ -567,7 +563,7 @@ suite('Availability Caching Load Tests', () => {
     console.log(`Network failure test: ${fetchStub.callCount} API calls with network simulation`);
   });
 
-  test('should handle cache warming and preloading', async () => {
+  it('should handle cache warming and preloading', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     fetchStub.resolves({
@@ -611,3 +607,4 @@ suite('Availability Caching Load Tests', () => {
     assert.ok(testCalls === 0, 'Should use only cached results after warmup');
   });
 });
+

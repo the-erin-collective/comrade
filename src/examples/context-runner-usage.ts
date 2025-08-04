@@ -79,7 +79,7 @@ export async function runContextAnalysisExample(): Promise<void> {
     location: vscode.ProgressLocation.Notification,
     title: 'Analyzing workspace context...',
     cancellable: true
-  }, async (progress, token) => {
+  }, async (progress, _token) => {
     
     // Create session
     const session = new Session(

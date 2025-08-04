@@ -13,15 +13,13 @@ import * as os from 'os';
 import { ToolManager, BuiltInTools } from '../../core/tool-manager';
 import { ToolRegistry, ExecutionContext, SecurityLevel } from '../../core/tools';
 
-suite('File System Tools Integration Tests', () => {
+describe('File System Tools Integration Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let toolManager: ToolManager;
   let toolRegistry: ToolRegistry;
   let testWorkspaceUri: vscode.Uri;
   let testContext: ExecutionContext;
-  let tempDir: string;
-
-  setup(async () => {
+  let tempDir: string;  beforeEach(async () => {
     sandbox = sinon.createSandbox();
     
     // Reset singletons
@@ -57,9 +55,7 @@ suite('File System Tools Integration Tests', () => {
         allowDangerous: false
       }
     };
-  });
-
-  teardown(async () => {
+  });  afterEach(async () => {
     sandbox.restore();
     
     // Clean up temporary directory
@@ -74,8 +70,7 @@ suite('File System Tools Integration Tests', () => {
     ToolManager.resetInstance();
   });
 
-  suite('read_file tool', () => {
-    test('should read existing file successfully', async () => {
+  describe('read_file tool', () => {  it('should read existing file successfully', async () => {
       // Create test file
       const testFilePath = path.join(tempDir, 'test.txt');
       const testContent = 'Hello, World!\nThis is a test file.';
@@ -93,7 +88,7 @@ suite('File System Tools Integration Tests', () => {
       assert.strictEqual(result.metadata?.size, Buffer.byteLength(testContent));
     });
 
-    test('should read file with different encodings', async () => {
+  it('should read file with different encodings', async () => {
       // Create test file with binary content
       const testFilePath = path.join(tempDir, 'binary.txt');
       const testContent = 'Hello, World!';
@@ -122,7 +117,7 @@ suite('File System Tools Integration Tests', () => {
       assert.strictEqual(asciiResult.data?.encoding, 'ascii');
     });
 
-    test('should handle non-existent file gracefully', async () => {
+  it('should handle non-existent file gracefully', async () => {
       const result = await toolManager.executeTool('read_file', {
         path: 'nonexistent.txt'
       }, testContext);
@@ -131,7 +126,7 @@ suite('File System Tools Integration Tests', () => {
       assert.ok(result.error?.includes('Failed to read file'));
     });
 
-    test('should handle files in subdirectories', async () => {
+  it('should handle files in subdirectories', async () => {
       // Create subdirectory and file
       const subDir = path.join(tempDir, 'subdir');
       fs.mkdirSync(subDir);
@@ -148,7 +143,7 @@ suite('File System Tools Integration Tests', () => {
       assert.strictEqual(result.data?.path, 'subdir/nested.txt');
     });
 
-    test('should respect security permissions', async () => {
+  it('should respect security permissions', async () => {
       // Create context without read permissions
       const restrictedContext: ExecutionContext = {
         ...testContext,
@@ -174,8 +169,7 @@ suite('File System Tools Integration Tests', () => {
     });
   });
 
-  suite('write_file tool', () => {
-    test('should write file successfully', async () => {
+  describe('write_file tool', () => {  it('should write file successfully', async () => {
       // Mock user approval for write operation
       sandbox.stub(vscode.window, 'showWarningMessage').resolves('Allow' as any);
 
@@ -194,7 +188,7 @@ suite('File System Tools Integration Tests', () => {
       assert.strictEqual(writtenContent, testContent);
     });
 
-    test('should write file with different encodings', async () => {
+  it('should write file with different encodings', async () => {
       sandbox.stub(vscode.window, 'showWarningMessage').resolves('Allow' as any);
 
       const testContent = 'Hello, World!';
@@ -214,7 +208,7 @@ suite('File System Tools Integration Tests', () => {
       assert.strictEqual(writtenContent, testContent);
     });
 
-    test('should create directories when requested', async () => {
+  it('should create directories when requested', async () => {
       sandbox.stub(vscode.window, 'showWarningMessage').resolves('Allow' as any);
 
       const testContent = 'Content in nested directory';
@@ -233,7 +227,7 @@ suite('File System Tools Integration Tests', () => {
       assert.strictEqual(writtenContent, testContent);
     });
 
-    test('should handle user denial of write operation', async () => {
+  it('should handle user denial of write operation', async () => {
       // Mock user denying the operation
       sandbox.stub(vscode.window, 'showWarningMessage').resolves(undefined);
 
@@ -252,7 +246,7 @@ suite('File System Tools Integration Tests', () => {
       assert.ok(!fs.existsSync(filePath));
     });
 
-    test('should respect security permissions', async () => {
+  it('should respect security permissions', async () => {
       const restrictedContext: ExecutionContext = {
         ...testContext,
         user: {
@@ -274,8 +268,7 @@ suite('File System Tools Integration Tests', () => {
     });
   });
 
-  suite('list_files tool', () => {
-    setup(() => {
+  describe('list_files tool', () => {  beforeEach(() => {
       // Create test directory structure
       fs.mkdirSync(path.join(tempDir, 'subdir1'));
       fs.mkdirSync(path.join(tempDir, 'subdir2'));
@@ -288,7 +281,7 @@ suite('File System Tools Integration Tests', () => {
       fs.writeFileSync(path.join(tempDir, 'subdir1', 'nested', 'deep-file.json'), 'content4');
     });
 
-    test('should list files in root directory', async () => {
+  it('should list files in root directory', async () => {
       const result = await toolManager.executeTool('list_files', {}, testContext);
 
       assert.strictEqual(result.success, true);
@@ -310,7 +303,7 @@ suite('File System Tools Integration Tests', () => {
       assert.strictEqual(subdir1?.type, 'directory');
     });
 
-    test('should list files recursively', async () => {
+  it('should list files recursively', async () => {
       const result = await toolManager.executeTool('list_files', {
         recursive: true
       }, testContext);
@@ -327,7 +320,7 @@ suite('File System Tools Integration Tests', () => {
       assert.ok(filePaths.includes('subdir1/nested'));
     });
 
-    test('should filter files by pattern', async () => {
+  it('should filter files by pattern', async () => {
       const result = await toolManager.executeTool('list_files', {
         pattern: '*.txt'
       }, testContext);
@@ -342,7 +335,7 @@ suite('File System Tools Integration Tests', () => {
       assert.ok(!fileNames.includes('subdir1'));
     });
 
-    test('should respect security permissions', async () => {
+  it('should respect security permissions', async () => {
       const restrictedContext: ExecutionContext = {
         ...testContext,
         user: {
@@ -361,8 +354,7 @@ suite('File System Tools Integration Tests', () => {
     });
   });
 
-  suite('File System Tools Integration', () => {
-    test('should work together in file workflow', async () => {
+  describe('File System Tools Integration', () => {  it('should work together in file workflow', async () => {
       // Mock user approval for write operations
       sandbox.stub(vscode.window, 'showWarningMessage').resolves('Allow' as any);
 
@@ -411,7 +403,7 @@ suite('File System Tools Integration Tests', () => {
       assert.strictEqual(updatedReadResult.data?.content, newContent);
     });
 
-    test('should handle complex directory operations', async () => {
+  it('should handle complex directory operations', async () => {
       sandbox.stub(vscode.window, 'showWarningMessage').resolves('Allow' as any);
 
       // Create nested directory structure with files
@@ -458,8 +450,7 @@ suite('File System Tools Integration Tests', () => {
     });
   });
 
-  suite('Error Handling and Edge Cases', () => {
-    test('should handle missing workspace gracefully', async () => {
+  describe('Error Handling and Edge Cases', () => {  it('should handle missing workspace gracefully', async () => {
       const noWorkspaceContext: ExecutionContext = {
         ...testContext,
         workspaceUri: undefined
@@ -476,7 +467,7 @@ suite('File System Tools Integration Tests', () => {
       assert.ok(readResult.error?.includes('No workspace available'));
     });
 
-    test('should handle invalid file paths', async () => {
+  it('should handle invalid file paths', async () => {
       sandbox.stub(vscode.window, 'showWarningMessage').resolves('Allow' as any);
 
       // Test various invalid paths
@@ -502,3 +493,4 @@ suite('File System Tools Integration Tests', () => {
     });
   });
 });
+

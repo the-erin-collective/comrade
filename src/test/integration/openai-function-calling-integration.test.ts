@@ -11,12 +11,10 @@ import { IAgent, AgentConfig } from '../../core/agent';
 import { ToolManager, BuiltInTools } from '../../core/tool-manager';
 import { ToolRegistry } from '../../core/tools';
 
-suite('OpenAI Function Calling Integration Tests', () => {
+describe('OpenAI Function Calling Integration Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let chatBridge: ChatBridge;
-  let mockAgent: IAgent;
-
-  setup(() => {
+  let mockAgent: IAgent;  beforeEach(() => {
     sandbox = sinon.createSandbox();
     
     // Reset singletons
@@ -65,15 +63,13 @@ suite('OpenAI Function Calling Integration Tests', () => {
 
     // Register built-in tools
     BuiltInTools.registerAll();
-  });
-
-  teardown(() => {
+  });  afterEach(() => {
     sandbox.restore();
     ToolRegistry.resetInstance();
     ToolManager.resetInstance();
   });
 
-  test('should complete full workflow: request -> tool call -> execution -> response', async () => {
+  it('should complete full workflow: request -> tool call -> execution -> response', async () => {
     // Mock file system
     const testFileContent = Buffer.from('Hello, World!\nThis is a test file.', 'utf8');
     sandbox.stub(vscode.workspace.fs, 'readFile').resolves(testFileContent);
@@ -191,7 +187,7 @@ suite('OpenAI Function Calling Integration Tests', () => {
     ));
   });
 
-  test('should handle multiple tool calls in sequence', async () => {
+  it('should handle multiple tool calls in sequence', async () => {
     // Mock file system operations
     sandbox.stub(vscode.workspace.fs, 'readDirectory').resolves([
       ['file1.txt', vscode.FileType.File],
@@ -288,7 +284,7 @@ suite('OpenAI Function Calling Integration Tests', () => {
     assert.ok(response.content.includes('notification message'));
   });
 
-  test('should handle tool execution failure and continue gracefully', async () => {
+  it('should handle tool execution failure and continue gracefully', async () => {
     // Mock file system to throw an error
     sandbox.stub(vscode.workspace.fs, 'readFile').rejects(new Error('File not found'));
 
@@ -362,7 +358,7 @@ suite('OpenAI Function Calling Integration Tests', () => {
     assert.ok(response.metadata.toolResults[0].result.error?.includes('File not found'));
   });
 
-  test('should respect security settings and require approval for dangerous tools', async () => {
+  it('should respect security settings and require approval for dangerous tools', async () => {
     // Create agent that requires approval
     const secureAgent: IAgent = {
       ...mockAgent,
@@ -420,7 +416,7 @@ suite('OpenAI Function Calling Integration Tests', () => {
     }
   });
 
-  test('should handle streaming with function calls', async function() {
+  it('should handle streaming with function calls', async function() {
     // Skip this test in environments where fetch is not available
     if (typeof fetch === 'undefined') {
       this.skip();
@@ -509,3 +505,4 @@ suite('OpenAI Function Calling Integration Tests', () => {
     assert.ok(fullContent.includes('Message displayed successfully!'));
   });
 });
+

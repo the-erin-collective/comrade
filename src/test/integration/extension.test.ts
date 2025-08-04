@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as vscode from 'vscode';
 import * as sinon from 'sinon';
 import * as path from 'path';
-import { describe, it, beforeEach, afterEach } from 'mocha';
+// Mocha globals are provided by the test environment
 
 // Import extension components
 import { activate, deactivate, getStatusBarManager, getPersonalityManager, getAgentRegistry, getConfigurationManager } from '../../extension';
@@ -216,7 +216,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(showQuickPickStub.called, 'Should show quick pick for agent options');
   });
 
-  test('should handle agent connectivity testing', async () => {
+  it('should handle agent connectivity testing', async () => {
     await activate(mockContext);
     
     const registerCommandStub = vscode.commands.registerCommand as sinon.SinonStub;
@@ -253,7 +253,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(showQuickPickStub.called, 'Should show agent selection');
   });
 
-  test('should handle personality configuration', async () => {
+  it('should handle personality configuration', async () => {
     await activate(mockContext);
     
     const registerCommandStub = vscode.commands.registerCommand as sinon.SinonStub;
@@ -293,7 +293,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(openTextDocumentStub.called, 'Should open personality document');
   });
 
-  test('should handle context analysis command', async () => {
+  it('should handle context analysis command', async () => {
     await activate(mockContext);
     
     const registerCommandStub = vscode.commands.registerCommand as sinon.SinonStub;
@@ -327,7 +327,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(withProgressStub.called, 'Should show progress during context analysis');
   });
 
-  test('should handle error recovery command', async () => {
+  it('should handle error recovery command', async () => {
     await activate(mockContext);
     
     const registerCommandStub = vscode.commands.registerCommand as sinon.SinonStub;
@@ -356,7 +356,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(showQuickPickStub.called, 'Should show error recovery options');
   });
 
-  test('should handle workspace configuration changes', async () => {
+  it('should handle workspace configuration changes', async () => {
     await activate(mockContext);
     
     // Mock configuration change event
@@ -383,7 +383,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(true, 'Configuration change should be handled without errors');
   });
 
-  test('should register sidebar webview provider correctly', async () => {
+  it('should register sidebar webview provider correctly', async () => {
     await activate(mockContext);
     
     const registerWebviewStub = vscode.window.registerWebviewViewProvider as sinon.SinonStub;
@@ -398,7 +398,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(provider instanceof ComradeSidebarProvider, 'Should register ComradeSidebarProvider instance');
   });
 
-  test('should handle extension context disposal', async () => {
+  it('should handle extension context disposal', async () => {
     await activate(mockContext);
     
     // Verify subscriptions were added to context
@@ -422,7 +422,7 @@ describe('VS Code Extension Integration Tests', () => {
     });
   });
 
-  test('should handle missing workspace gracefully', async () => {
+  it('should handle missing workspace gracefully', async () => {
     // Mock no workspace folders
     sandbox.stub(vscode.workspace, 'workspaceFolders').value(undefined);
     
@@ -438,7 +438,7 @@ describe('VS Code Extension Integration Tests', () => {
     }
   });
 
-  test('should handle extension activation errors gracefully', async () => {
+  it('should handle extension activation errors gracefully', async () => {
     // Mock an error during initialization
     sandbox.stub(AgentRegistry, 'getInstance').throws(new Error('Initialization failed'));
     
@@ -455,7 +455,7 @@ describe('VS Code Extension Integration Tests', () => {
     }
   });
 
-  test('should handle webview message communication', async () => {
+  it('should handle webview message communication', async () => {
     await activate(mockContext);
     
     const registerWebviewStub = vscode.window.registerWebviewViewProvider as sinon.SinonStub;
@@ -489,7 +489,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(mockWebview.onDidReceiveMessage.called, 'Should register message handler');
   });
 
-  test('should handle webview message protocol', async () => {
+  it('should handle webview message protocol', async () => {
     await activate(mockContext);
     
     const registerWebviewStub = vscode.window.registerWebviewViewProvider as sinon.SinonStub;
@@ -533,7 +533,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(true, 'Should handle webview messages without errors');
   });
 
-  test('should handle command palette integration', async () => {
+  it('should handle command palette integration', async () => {
     await activate(mockContext);
     
     const registerCommandStub = vscode.commands.registerCommand as sinon.SinonStub;
@@ -579,7 +579,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(showInfoStub.called, 'Command should execute successfully');
   });
 
-  test('should handle status bar integration', async () => {
+  it('should handle status bar integration', async () => {
     await activate(mockContext);
     
     // Mock status bar item creation
@@ -600,7 +600,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(true, 'Should handle status bar integration');
   });
 
-  test('should handle progress reporting integration', async () => {
+  it('should handle progress reporting integration', async () => {
     await activate(mockContext);
     
     const withProgressStub = sandbox.stub(vscode.window, 'withProgress');
@@ -624,7 +624,7 @@ describe('VS Code Extension Integration Tests', () => {
     }
   });
 
-  test('should handle file system integration', async () => {
+  it('should handle file system integration', async () => {
     await activate(mockContext);
     
     // Mock file system operations
@@ -650,7 +650,7 @@ describe('VS Code Extension Integration Tests', () => {
     }
   });
 
-  test('should handle workspace folder changes', async () => {
+  it('should handle workspace folder changes', async () => {
     await activate(mockContext);
     
     // Mock workspace folder change event
@@ -667,7 +667,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(true, 'Should handle workspace folder changes');
   });
 
-  test('should handle text document changes', async () => {
+  it('should handle text document changes', async () => {
     await activate(mockContext);
     
     // Mock text document change event
@@ -704,7 +704,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(true, 'Should handle text document changes');
   });
 
-  test('should handle extension lifecycle events', async () => {
+  it('should handle extension lifecycle events', async () => {
     // Test activation
     await activate(mockContext);
     
@@ -718,7 +718,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(true, 'Should deactivate cleanly');
   });
 
-  test('should handle multi-root workspace scenarios', async () => {
+  it('should handle multi-root workspace scenarios', async () => {
     // Mock multi-root workspace
     const workspaceFolders = [
       { uri: vscode.Uri.file('/workspace1'), name: 'workspace1', index: 0 },
@@ -733,7 +733,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(true, 'Should handle multi-root workspace scenarios');
   });
 
-  test('should handle extension settings validation', async () => {
+  it('should handle extension settings validation', async () => {
     // Mock invalid settings
     const mockConfig = {
       get: sandbox.stub(),
@@ -755,7 +755,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(true, 'Should validate and handle invalid settings');
   });
 
-  test('should handle extension resource cleanup', async () => {
+  it('should handle extension resource cleanup', async () => {
     await activate(mockContext);
     
     // Verify all registered disposables have dispose methods
@@ -785,3 +785,5 @@ describe('VS Code Extension Integration Tests', () => {
     });
   });
 });
+
+

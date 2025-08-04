@@ -4,7 +4,7 @@
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { describe, it, beforeEach, afterEach } from 'mocha';
+// Mocha globals are provided by the test environment
 import { AgentRegistry } from '../core/registry';
 import { ConfigurationManager, AgentConfigurationItem } from '../core/config';
 import { IAgent, PhaseType, AgentCapabilities } from '../core/agent';
@@ -61,6 +61,12 @@ class MockConfigurationManager extends ConfigurationManager {
 describe('AgentRegistry', () => {
   let mockConfigManager: MockConfigurationManager;
   let agentRegistry: AgentRegistry;
+  
+  // Set up Mocha hooks
+  before(() => {
+    // Ensure we're in test environment
+    process.env.NODE_ENV = 'test';
+  });
 
   const createTestAgent = (
     id: string, 
@@ -240,7 +246,7 @@ describe('AgentRegistry', () => {
     ));
   });
 
-  test('should check agent availability', async () => {
+  it('should check agent availability', async () => {
     const testAgents = [
       createTestAgent('available-agent', 'Available Agent')
     ];
@@ -255,7 +261,7 @@ describe('AgentRegistry', () => {
     assert.strictEqual(isNonExistentAvailable, false);
   });
 
-  test('should generate registry statistics', async () => {
+  it('should generate registry statistics', async () => {
     const testAgents = [
       createTestAgent('openai-agent', 'OpenAI Agent', { hasVision: true }),
       createTestAgent('anthropic-agent', 'Anthropic Agent', { 
@@ -285,7 +291,7 @@ describe('AgentRegistry', () => {
     assert.strictEqual(stats.byProvider.ollama, 1);
   });
 
-  test('should handle empty agent list', async () => {
+  it('should handle empty agent list', async () => {
     mockConfigManager.setMockAgents([]);
     await agentRegistry.initialize();
 
@@ -300,3 +306,4 @@ describe('AgentRegistry', () => {
     assert.strictEqual(stats.enabledForAssignment, 0);
   });
 });
+

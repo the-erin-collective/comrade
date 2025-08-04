@@ -8,11 +8,9 @@ import { ConfigurationValidator, ValidationResult, ValidationError, ValidationWa
 import { AgentConfigurationItem, MCPServerConfig, ComradeConfiguration } from '../../core/config';
 import { AgentCapabilities } from '../../core/agent';
 
-suite('Configuration Validation Engine Tests', () => {
+describe('Configuration Validation Engine Tests', () => {
 
-  suite('Agent Configuration Validation', () => {
-    
-    test('should validate complete valid agent configuration', () => {
+  describe('Agent Configuration Validation', () => {  it('should validate complete valid agent configuration', () => {
       const validAgent: AgentConfigurationItem = {
         id: 'test-agent',
         name: 'Test Agent',
@@ -42,7 +40,7 @@ suite('Configuration Validation Engine Tests', () => {
       assert.strictEqual(result.filteredConfig.id, validAgent.id);
     });
 
-    test('should apply default values for missing optional properties (Requirement 6.1)', () => {
+  it('should apply default values for missing optional properties (Requirement 6.1)', () => {
       const minimalAgent = {
         id: 'minimal-agent',
         name: 'Minimal Agent',
@@ -65,7 +63,7 @@ suite('Configuration Validation Engine Tests', () => {
       assert.deepStrictEqual(config.capabilities.supportedLanguages, ['en']); // Default applied
     });
 
-    test('should validate required fields and format validity (Requirement 6.2)', () => {
+  it('should validate required fields and format validity (Requirement 6.2)', () => {
       const invalidAgent = {
         // Missing required 'id' field
         name: 'Test Agent',
@@ -92,7 +90,7 @@ suite('Configuration Validation Engine Tests', () => {
       assert.ok(errorCodes.includes('NUMBER_TOO_SMALL')); // Negative maxTokens
     });
 
-    test('should filter out invalid configurations and log warnings (Requirement 6.3)', () => {
+  it('should filter out invalid configurations and log warnings (Requirement 6.3)', () => {
       const mixedAgents = [
         {
           id: 'valid-agent',
@@ -125,7 +123,7 @@ suite('Configuration Validation Engine Tests', () => {
       assert.strictEqual(result.valid[1].id, 'another-valid');
     });
 
-    test('should detect duplicate agent IDs', () => {
+  it('should detect duplicate agent IDs', () => {
       const agentsWithDuplicates = [
         {
           id: 'duplicate-id',
@@ -149,7 +147,7 @@ suite('Configuration Validation Engine Tests', () => {
       assert.ok(result.warnings.some(w => w.code === 'DUPLICATE_ID'));
     });
 
-    test('should validate string patterns and lengths', () => {
+  it('should validate string patterns and lengths', () => {
       const agentWithInvalidStrings = {
         id: 'invalid@id!', // Invalid pattern
         name: '', // Too short
@@ -168,7 +166,7 @@ suite('Configuration Validation Engine Tests', () => {
       assert.ok(errorCodes.includes('STRING_TOO_LONG')); // Model too long
     });
 
-    test('should validate numeric ranges', () => {
+  it('should validate numeric ranges', () => {
       const agentWithInvalidNumbers = {
         id: 'test-agent',
         name: 'Test Agent',
@@ -191,9 +189,7 @@ suite('Configuration Validation Engine Tests', () => {
     });
   });
 
-  suite('MCP Server Configuration Validation', () => {
-    
-    test('should validate complete valid MCP server configuration', () => {
+  describe('MCP Server Configuration Validation', () => {  it('should validate complete valid MCP server configuration', () => {
       const validServer: MCPServerConfig = {
         id: 'test-mcp',
         name: 'Test MCP Server',
@@ -210,7 +206,7 @@ suite('Configuration Validation Engine Tests', () => {
       assert.ok(result.filteredConfig);
     });
 
-    test('should apply default values for MCP server configuration', () => {
+  it('should apply default values for MCP server configuration', () => {
       const minimalServer = {
         id: 'minimal-mcp',
         name: 'Minimal MCP Server',
@@ -227,7 +223,7 @@ suite('Configuration Validation Engine Tests', () => {
       assert.strictEqual(config.timeout, 10000); // Default applied
     });
 
-    test('should validate required MCP server fields', () => {
+  it('should validate required MCP server fields', () => {
       const invalidServer = {
         // Missing required 'id' field
         name: 'Test Server',
@@ -244,7 +240,7 @@ suite('Configuration Validation Engine Tests', () => {
       assert.ok(errorCodes.includes('STRING_TOO_SHORT'));
     });
 
-    test('should filter valid MCP server configurations', () => {
+  it('should filter valid MCP server configurations', () => {
       const mixedServers = [
         {
           id: 'valid-server',
@@ -274,9 +270,7 @@ suite('Configuration Validation Engine Tests', () => {
     });
   });
 
-  suite('Complete Configuration Validation', () => {
-    
-    test('should validate complete configuration with defaults', () => {
+  describe('Complete Configuration Validation', () => {  it('should validate complete configuration with defaults', () => {
       const config = {
         agents: [
           {
@@ -302,7 +296,7 @@ suite('Configuration Validation Engine Tests', () => {
       assert.strictEqual(validatedConfig.contextMaxTokens, 8000); // Default applied
     });
 
-    test('should validate configuration enum values', () => {
+  it('should validate configuration enum values', () => {
       const configWithInvalidEnums = {
         agents: [],
         assignmentDefaultMode: 'invalid-mode', // Invalid enum
@@ -319,7 +313,7 @@ suite('Configuration Validation Engine Tests', () => {
       assert.ok(errorCodes.includes('NUMBER_TOO_SMALL'));
     });
 
-    test('should handle unknown properties with warnings', () => {
+  it('should handle unknown properties with warnings', () => {
       const configWithUnknownProps = {
         agents: [],
         assignmentDefaultMode: 'speed',
@@ -336,9 +330,7 @@ suite('Configuration Validation Engine Tests', () => {
     });
   });
 
-  suite('Validation Before Save (Requirement 6.4)', () => {
-    
-    test('should validate agent configuration before save', () => {
+  describe('Validation Before Save (Requirement 6.4)', () => {  it('should validate agent configuration before save', () => {
       const invalidAgent = {
         name: 'Test Agent',
         provider: 'invalid-provider'
@@ -351,7 +343,7 @@ suite('Configuration Validation Engine Tests', () => {
       assert.ok(result.errors.length > 0);
     });
 
-    test('should validate MCP server configuration before save', () => {
+  it('should validate MCP server configuration before save', () => {
       const invalidServer = {
         name: 'Test Server'
         // Missing required fields
@@ -363,7 +355,7 @@ suite('Configuration Validation Engine Tests', () => {
       assert.ok(result.errors.length > 0);
     });
 
-    test('should validate complete configuration before save', () => {
+  it('should validate complete configuration before save', () => {
       const invalidConfig = {
         agents: 'not-an-array', // Invalid type
         assignmentDefaultMode: 'invalid-mode'
@@ -375,7 +367,7 @@ suite('Configuration Validation Engine Tests', () => {
       assert.ok(result.errors.length > 0);
     });
 
-    test('should handle unknown configuration type', () => {
+  it('should handle unknown configuration type', () => {
       const result = ConfigurationValidator.validateBeforeSave({}, 'unknown' as any);
       
       assert.strictEqual(result.isValid, false);
@@ -383,9 +375,7 @@ suite('Configuration Validation Engine Tests', () => {
     });
   });
 
-  suite('Utility Functions', () => {
-    
-    test('should generate unique IDs', () => {
+  describe('Utility Functions', () => {  it('should generate unique IDs', () => {
       const id1 = ConfigurationValidator.generateUniqueId('test');
       const id2 = ConfigurationValidator.generateUniqueId('test');
       
@@ -394,7 +384,7 @@ suite('Configuration Validation Engine Tests', () => {
       assert.notStrictEqual(id1, id2);
     });
 
-    test('should apply defaults recursively', () => {
+  it('should apply defaults recursively', () => {
       const schema = {
         type: 'object' as const,
         properties: {
@@ -424,7 +414,7 @@ suite('Configuration Validation Engine Tests', () => {
       assert.deepStrictEqual(result.array, ['default-item']);
     });
 
-    test('should handle null and undefined values', () => {
+  it('should handle null and undefined values', () => {
       const schema = {
         type: 'object' as const,
         default: { defaultProp: 'value' }
@@ -438,9 +428,7 @@ suite('Configuration Validation Engine Tests', () => {
     });
   });
 
-  suite('Error and Warning Handling', () => {
-    
-    test('should provide detailed error information', () => {
+  describe('Error and Warning Handling', () => {  it('should provide detailed error information', () => {
       const invalidAgent = {
         id: '',
         name: 'Test Agent',
@@ -462,7 +450,7 @@ suite('Configuration Validation Engine Tests', () => {
       });
     });
 
-    test('should provide warning information for non-critical issues', () => {
+  it('should provide warning information for non-critical issues', () => {
       const configWithUnknownProps = {
         id: 'test-agent',
         name: 'Test Agent',
@@ -480,3 +468,4 @@ suite('Configuration Validation Engine Tests', () => {
     });
   });
 });
+

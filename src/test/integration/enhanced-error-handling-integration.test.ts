@@ -9,23 +9,18 @@ import { createMockAgent } from '../mocks/agents';
 import { mockAgentConfigurations } from '../mocks/agents';
 import { WebNetworkUtils } from '../../core/webcompat';
 
-suite('Enhanced Error Handling Integration Tests', () => {
+describe('Enhanced Error Handling Integration Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let chatBridge: ChatBridge;
-  let makeRequestStub: sinon.SinonStub;
-
-  setup(() => {
+  let makeRequestStub: sinon.SinonStub;  beforeEach(() => {
     sandbox = sinon.createSandbox();
     chatBridge = new ChatBridge();
     makeRequestStub = sandbox.stub(WebNetworkUtils, 'makeRequest');
-  });
-
-  teardown(() => {
+  });  afterEach(() => {
     sandbox.restore();
   });
 
-  suite('OpenAI Provider Error Handling', () => {
-    test('should handle rate limit with retry-after header and exponential backoff', async () => {
+  describe('OpenAI Provider Error Handling', () => {  it('should handle rate limit with retry-after header and exponential backoff', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]); // OpenAI agent
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
@@ -65,7 +60,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
       assert.strictEqual(makeRequestStub.callCount, 2);
     });
 
-    test('should handle context length exceeded with detailed suggestions', async () => {
+  it('should handle context length exceeded with detailed suggestions', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Very long message...' }];
 
@@ -95,7 +90,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
       }
     });
 
-    test('should handle authentication error without retry', async () => {
+  it('should handle authentication error without retry', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
@@ -123,7 +118,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
       }
     });
 
-    test('should handle server error with retry', async () => {
+  it('should handle server error with retry', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
@@ -172,7 +167,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
       assert.strictEqual(makeRequestStub.callCount, 3);
     });
 
-    test('should handle quota exceeded error', async () => {
+  it('should handle quota exceeded error', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
@@ -200,7 +195,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
       }
     });
 
-    test('should handle model not found error', async () => {
+  it('should handle model not found error', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[0],
         model: 'gpt-5-nonexistent'
@@ -232,8 +227,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
     });
   });
 
-  suite('Anthropic Provider Error Handling', () => {
-    test('should handle Anthropic rate limit with retry-after', async () => {
+  describe('Anthropic Provider Error Handling', () => {  it('should handle Anthropic rate limit with retry-after', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[1], // Anthropic agent
         provider: 'anthropic'
@@ -274,7 +268,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
       assert.strictEqual(makeRequestStub.callCount, 2);
     });
 
-    test('should handle Anthropic authentication error', async () => {
+  it('should handle Anthropic authentication error', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[1],
         provider: 'anthropic'
@@ -304,7 +298,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
       }
     });
 
-    test('should handle Anthropic context length with Claude-specific suggestions', async () => {
+  it('should handle Anthropic context length with Claude-specific suggestions', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[1],
         provider: 'anthropic'
@@ -334,7 +328,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
       }
     });
 
-    test('should handle Anthropic overloaded error with retry', async () => {
+  it('should handle Anthropic overloaded error with retry', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[1],
         provider: 'anthropic'
@@ -373,8 +367,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
     });
   });
 
-  suite('Ollama Provider Error Handling', () => {
-    test('should handle Ollama connection refused error', async () => {
+  describe('Ollama Provider Error Handling', () => {  it('should handle Ollama connection refused error', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[3], // Ollama agent
         provider: 'ollama'
@@ -395,7 +388,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
       }
     });
 
-    test('should handle Ollama model not found error', async () => {
+  it('should handle Ollama model not found error', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[3],
         provider: 'ollama',
@@ -423,7 +416,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
       }
     });
 
-    test('should handle Ollama out of memory error', async () => {
+  it('should handle Ollama out of memory error', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[3],
         provider: 'ollama'
@@ -452,8 +445,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
     });
   });
 
-  suite('Custom Provider Error Handling', () => {
-    test('should handle custom provider using OpenAI-compatible format', async () => {
+  describe('Custom Provider Error Handling', () => {  it('should handle custom provider using OpenAI-compatible format', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[4], // Custom provider
         provider: 'custom'
@@ -485,8 +477,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
     });
   });
 
-  suite('Network Error Handling', () => {
-    test('should handle network timeout with retry', async () => {
+  describe('Network Error Handling', () => {  it('should handle network timeout with retry', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
@@ -514,7 +505,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
       assert.strictEqual(makeRequestStub.callCount, 3);
     });
 
-    test('should handle DNS resolution failure', async () => {
+  it('should handle DNS resolution failure', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[4],
         endpoint: 'https://nonexistent-domain.invalid/api'
@@ -534,8 +525,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
     });
   });
 
-  suite('Response Parsing Error Handling', () => {
-    test('should handle invalid JSON response', async () => {
+  describe('Response Parsing Error Handling', () => {  it('should handle invalid JSON response', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
@@ -557,7 +547,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
       }
     });
 
-    test('should handle missing choices in OpenAI response', async () => {
+  it('should handle missing choices in OpenAI response', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
@@ -583,8 +573,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
     });
   });
 
-  suite('Retry Logic Integration', () => {
-    test('should implement exponential backoff with jitter', async () => {
+  describe('Retry Logic Integration', () => {  it('should implement exponential backoff with jitter', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
@@ -632,7 +621,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
       assert.ok(endTime - startTime >= 3000, 'Should implement exponential backoff delays');
     });
 
-    test('should not retry non-retryable errors', async () => {
+  it('should not retry non-retryable errors', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
@@ -658,7 +647,7 @@ suite('Enhanced Error Handling Integration Tests', () => {
       }
     });
 
-    test('should allow extra retries for rate limit errors', async () => {
+  it('should allow extra retries for rate limit errors', async () => {
       const agent = createMockAgent(mockAgentConfigurations[0]);
       const messages: ChatMessage[] = [{ role: 'user', content: 'Test message' }];
 
@@ -698,3 +687,4 @@ suite('Enhanced Error Handling Integration Tests', () => {
     });
   });
 });
+

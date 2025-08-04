@@ -12,10 +12,10 @@ import {
   WebCompatibilityError 
 } from '../core/webcompat';
 
-suite('Web Compatibility Tests', () => {
+describe('Web Compatibility Tests', () => {
   
-  suite('WebCompatibility', () => {
-    test('should detect environment correctly', () => {
+  describe('WebCompatibility', () => {
+    it('should detect environment correctly', () => {
       // Note: In test environment, this will likely return false (desktop)
       // but we test the logic
       const isWeb = WebCompatibility.isWeb();
@@ -24,7 +24,7 @@ suite('Web Compatibility Tests', () => {
       assert.strictEqual(isWeb, !isDesktop);
     });
 
-    test('should provide shell information for desktop', () => {
+    it('should provide shell information for desktop', () => {
       if (WebCompatibility.isDesktop()) {
         const shell = WebCompatibility.getShell();
         assert.ok(shell.shell);
@@ -32,7 +32,7 @@ suite('Web Compatibility Tests', () => {
       }
     });
 
-    test('should throw error for shell in web environment', () => {
+    it('should throw error for shell in web environment', () => {
       // Mock web environment
       const originalIsWeb = WebCompatibility.isWeb;
       (WebCompatibility as any).isWeb = () => true;
@@ -47,15 +47,15 @@ suite('Web Compatibility Tests', () => {
       }
     });
 
-    test('should support file system operations', () => {
+    it('should support file system operations', () => {
       assert.strictEqual(WebCompatibility.supportsFileSystem(), true);
     });
 
-    test('should support network requests', () => {
+    it('should support network requests', () => {
       assert.strictEqual(WebCompatibility.supportsNetworkRequests(), true);
     });
 
-    test('should provide network limitations for web', () => {
+    it('should provide network limitations for web', () => {
       // Mock web environment
       const originalIsWeb = WebCompatibility.isWeb;
       (WebCompatibility as any).isWeb = () => true;
@@ -71,7 +71,7 @@ suite('Web Compatibility Tests', () => {
       }
     });
 
-    test('should provide network limitations for desktop', () => {
+    it('should provide network limitations for desktop', () => {
       // Mock desktop environment
       const originalIsWeb = WebCompatibility.isWeb;
       (WebCompatibility as any).isWeb = () => false;
@@ -87,21 +87,21 @@ suite('Web Compatibility Tests', () => {
     });
   });
 
-  suite('WebFileSystem', () => {
+  describe('WebFileSystem', () => {
     let testWorkspaceUri: vscode.Uri;
 
-    setup(() => {
+    beforeEach(() => {
       // Create a test workspace URI
       testWorkspaceUri = vscode.Uri.file('/tmp/test-workspace');
     });
 
-    test('should handle file existence check', async () => {
+    it('should handle file existence check', async () => {
       const testFile = vscode.Uri.joinPath(testWorkspaceUri, 'nonexistent.txt');
       const exists = await WebFileSystem.exists(testFile);
       assert.strictEqual(exists, false);
     });
 
-    test('should handle file operations gracefully', async () => {
+    it('should handle file operations gracefully', async () => {
       const testFile = vscode.Uri.joinPath(testWorkspaceUri, 'test.txt');
       const testContent = 'Hello, web compatibility!';
 
@@ -119,13 +119,13 @@ suite('Web Compatibility Tests', () => {
       }
     });
 
-    test('should handle directory operations', async () => {
+    it('should handle directory operations', async () => {
       const testDir = vscode.Uri.joinPath(testWorkspaceUri, 'test-dir');
 
       try {
         await WebFileSystem.createDirectory(testDir);
-        const exists = await WebFileSystem.exists(testDir);
-        // In a real workspace, this would be true
+        // Check if directory exists (result not used as this is just a test of the API)
+        await WebFileSystem.exists(testDir);
       } catch (error) {
         // Expected in test environment
         assert.ok(error instanceof Error);
@@ -133,8 +133,8 @@ suite('Web Compatibility Tests', () => {
     });
   });
 
-  suite('WebShellExecutor', () => {
-    test('should execute commands in desktop environment', async () => {
+  describe('WebShellExecutor', () => {
+    it('should execute commands in desktop environment', async () => {
       if (WebCompatibility.isDesktop()) {
         const result = await WebShellExecutor.executeCommand('echo "test"', process.cwd(), {
           showWarning: false
@@ -145,7 +145,7 @@ suite('Web Compatibility Tests', () => {
       }
     });
 
-    test('should return mock result in web environment', async () => {
+    it('should return mock result in web environment', async () => {
       // Mock web environment
       const originalIsWeb = WebCompatibility.isWeb;
       (WebCompatibility as any).isWeb = () => true;
@@ -164,7 +164,7 @@ suite('Web Compatibility Tests', () => {
       }
     });
 
-    test('should identify web-safe commands', () => {
+    it('should identify web-safe commands', () => {
       assert.strictEqual(WebShellExecutor.isWebSafeCommand('echo hello'), true);
       assert.strictEqual(WebShellExecutor.isWebSafeCommand('cat file.txt'), true);
       assert.strictEqual(WebShellExecutor.isWebSafeCommand('ls -la'), true);
@@ -173,8 +173,8 @@ suite('Web Compatibility Tests', () => {
     });
   });
 
-  suite('WebNetworkUtils', () => {
-    test('should check web accessibility', () => {
+  describe('WebNetworkUtils', () => {
+    it('should check web accessibility', () => {
       // Mock web environment for this test
       const originalIsWeb = WebCompatibility.isWeb;
       (WebCompatibility as any).isWeb = () => true;
@@ -189,7 +189,7 @@ suite('Web Compatibility Tests', () => {
       }
     });
 
-    test('should make HTTP requests with proper error handling', async () => {
+    it('should make HTTP requests with proper error handling', async () => {
       // Test with a URL that should fail
       try {
         await WebNetworkUtils.makeRequest('https://nonexistent-domain-12345.com/api', {
@@ -201,7 +201,7 @@ suite('Web Compatibility Tests', () => {
       }
     });
 
-    test('should validate HTTPS requirement in web environment', async () => {
+    it('should validate HTTPS requirement in web environment', async () => {
       // Mock web environment
       const originalIsWeb = WebCompatibility.isWeb;
       (WebCompatibility as any).isWeb = () => true;
@@ -221,8 +221,8 @@ suite('Web Compatibility Tests', () => {
     });
   });
 
-  suite('WebCompatibilityError', () => {
-    test('should create error with feature and fallback info', () => {
+  describe('WebCompatibilityError', () => {
+    it('should create error with feature and fallback info', () => {
       const error = new WebCompatibilityError(
         'Feature not supported',
         'shell-commands',
@@ -235,8 +235,8 @@ suite('Web Compatibility Tests', () => {
     });
   });
 
-  suite('Streaming Simulation', () => {
-    test('should provide streaming simulation configuration', () => {
+  describe('Streaming Simulation', () => {
+    it('should provide streaming simulation configuration', () => {
       const config = WebCompatibility.getStreamingSimulationConfig();
       
       assert.strictEqual(typeof config.enabled, 'boolean');
@@ -247,7 +247,7 @@ suite('Web Compatibility Tests', () => {
       assert.ok(config.delay >= 0);
     });
 
-    test('should enable streaming simulation in web environment', () => {
+    it('should enable streaming simulation in web environment', () => {
       // Mock web environment
       const originalIsWeb = WebCompatibility.isWeb;
       (WebCompatibility as any).isWeb = () => true;
@@ -261,7 +261,7 @@ suite('Web Compatibility Tests', () => {
       }
     });
 
-    test('should disable streaming simulation in desktop environment', () => {
+    it('should disable streaming simulation in desktop environment', () => {
       // Mock desktop environment
       const originalIsWeb = WebCompatibility.isWeb;
       (WebCompatibility as any).isWeb = () => false;
@@ -276,8 +276,8 @@ suite('Web Compatibility Tests', () => {
     });
   });
 
-  suite('Integration Tests', () => {
-    test('should handle mixed web/desktop operations', async () => {
+  describe('Integration Tests', () => {
+    it('should handle mixed web/desktop operations', async () => {
       // Test that the system gracefully handles operations in both environments
       const isWeb = WebCompatibility.isWeb();
       
@@ -302,7 +302,7 @@ suite('Web Compatibility Tests', () => {
       }
     });
 
-    test('should provide consistent file system interface', async () => {
+    it('should provide consistent file system interface', async () => {
       // File system operations should work consistently across environments
       assert.strictEqual(WebCompatibility.supportsFileSystem(), true);
       
@@ -315,3 +315,4 @@ suite('Web Compatibility Tests', () => {
     });
   });
 });
+

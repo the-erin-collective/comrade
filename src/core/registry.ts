@@ -231,7 +231,7 @@ export class AgentRegistry {
     }
     
     // Create a promise for this availability check and cache it
-    const availabilityPromise = this._checkAgentAvailability(agent, agentId);
+    const availabilityPromise = agent.isAvailable();
     this._pendingAvailabilityChecks.set(agentId, availabilityPromise);
 
     try {
@@ -252,10 +252,6 @@ export class AgentRegistry {
   /**
    * Internal method to check agent availability
    */
-  private async _checkAgentAvailability(agent: IAgent, agentId: string): Promise<boolean> {
-    return await agent.isAvailable();
-  }
-
   /**
    * Get available agents (those that are connected and configured)
    */
@@ -655,8 +651,12 @@ export class AgentRegistry {
     const caps = agent.capabilities;
 
     // Required capabilities
-    if (requirements.needsVision && !caps.hasVision) return 0;
-    if (requirements.needsTools && !caps.hasToolUse) return 0;
+    if (requirements.needsVision && !caps.hasVision) {
+      return 0;
+    }
+    if (requirements.needsTools && !caps.hasToolUse) {
+      return 0;
+    }
 
     // Reasoning depth scoring
     if (requirements.complexityLevel) {
@@ -692,8 +692,12 @@ export class AgentRegistry {
     }
 
     // Capability bonuses
-    if (caps.hasVision) score += 5;
-    if (caps.hasToolUse) score += 5;
+    if (caps.hasVision) {
+      score += 5;
+    }
+    if (caps.hasToolUse) {
+      score += 5;
+    }
 
     return score;
   }

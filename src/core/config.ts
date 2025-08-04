@@ -4,7 +4,7 @@
 
 import * as vscode from 'vscode';
 import { AgentConfig, AgentCapabilities, LLMProvider, IAgent } from './agent';
-import { ConfigurationValidator, ValidationResult } from './config-validator';
+import { ConfigurationValidator } from './config-validator';
 
 export interface AgentConfigurationItem {
   id: string;
@@ -588,23 +588,6 @@ export class ConfigurationManager {
   }
 
   /**
-   * Validate and apply defaults to a single agent configuration
-   * @deprecated Use ConfigurationValidator.validateAgentConfiguration instead
-   */
-  private validateAgentConfiguration(agent: AgentConfigurationItem): AgentConfigurationItem {
-    // Use the new validation engine for consistency
-    const validation = ConfigurationValidator.validateAgentConfiguration(agent);
-    
-    if (!validation.isValid) {
-      console.warn('Agent configuration validation failed:', validation.errors);
-      // Apply legacy fallback logic for backward compatibility
-      const defaultCapabilities: AgentCapabilities = {
-        hasVision: false,
-        hasToolUse: false,
-        reasoningDepth: 'intermediate',
-        speed: 'medium',
-        costTier: 'medium',
-        maxTokens: 4000,
         supportedLanguages: ['en'],
         specializations: ['code']
       };
@@ -631,51 +614,38 @@ export class ConfigurationManager {
   }
 
   /**
-   * Validate MCP server configurations
-   */
-  private validateMCPServerConfigurations(servers: MCPServerConfig[] | undefined): MCPServerConfig[] {
-    try {
-      if (!servers || !Array.isArray(servers)) {
-        return [];
-      }
-      
-      // Use the new validation engine (Requirements 6.1, 6.2, 6.3)
-      const validServers = ConfigurationValidator.filterValidConfigurations<MCPServerConfig>(
-        servers, 
-        ConfigurationValidator.MCP_SERVER_SCHEMA
-      );
-
-      // Apply additional business logic filtering
-      return validServers.filter(server => {
-        if (!server.command || server.command.length === 0) {
-          console.warn('Filtering out MCP server with empty command:', server);
-          return false;
-        }
-        return true;
-      });
-    } catch (error) {
-      console.error('Error validating MCP server configurations:', error);
-      return []; // Return empty array on any validation error
-    }
-  }
-
-  /**
-   * Generate a unique agent ID
-   */
-  private generateAgentId(): string {
-    return ConfigurationValidator.generateUniqueId('agent');
-  }
-
-  /**
    * Generate a unique MCP server ID
+   * @internal
    */
   private generateMCPServerId(): string {
     return ConfigurationValidator.generateUniqueId('mcp');
   }
 
   /**
-   * Get all configured agents as agent instances
+   * Validate MCP server configurations
+   * @param servers Array of MCP server configurations to validate
+   * @returns Validated array of MCP server configurations
    */
+  private validateMCPServerConfigurations(servers: MCPServerConfig[]): MCPServerConfig[] {
+    if (!Array.isArray(servers)) {
+      return [];
+    }
+
+    return servers.map(server => {
+      // Ensure required fields have default values if missing
+      const validatedServer: MCPServerConfig = {
+        id: server.id || this.generateMCPServerId(),
+        name: server.name || 'Unnamed MCP Server',
+        command: server.command || '',
+        args: Array.isArray(server.args) ? server.args : [],
+        env: server.env || {},
+        timeout: typeof server.timeout === 'number' ? server.timeout : 30000 // Default 30s timeout
+      };
+
+      return validatedServer;
+    });
+  }
+
   /**
    * Get all configured agents as agent instances
    * @throws {Error} When there's a failure to load configuration from VS Code API

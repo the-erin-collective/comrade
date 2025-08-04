@@ -12,14 +12,12 @@ import { ConfigurationManager } from '../../core/config';
 import { mockAgentConfigurations, createMockAgent } from '../mocks/agents';
 import { getMockResponse } from '../mocks/llm-responses';
 
-suite('Anthropic Provider Integration Tests', () => {
+describe('Anthropic Provider Integration Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let chatBridge: ChatBridge;
   let agentRegistry: AgentRegistry;
   let configManager: ConfigurationManager;
-  let mockSecretStorage: any;
-
-  setup(async () => {
+  let mockSecretStorage: any;  beforeEach(async () => {
     sandbox = sinon.createSandbox();
     
     // Mock secret storage
@@ -40,15 +38,13 @@ suite('Anthropic Provider Integration Tests', () => {
     sandbox.stub(configManager, 'getAllAgents').resolves([createMockAgent(anthropicConfig)]);
     
     await agentRegistry.initialize();
-  });
-
-  teardown(() => {
+  });  afterEach(() => {
     sandbox.restore();
     AgentRegistry.resetInstance();
     ConfigurationManager.resetInstance();
   });
 
-  test('should format Anthropic API requests correctly', async () => {
+  it('should format Anthropic API requests correctly', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock successful Anthropic response
@@ -103,7 +99,7 @@ suite('Anthropic Provider Integration Tests', () => {
     assert.strictEqual(response.finishReason, 'stop', 'Should map stop_reason to finishReason');
   });
 
-  test('should handle Anthropic system message conversion', async () => {
+  it('should handle Anthropic system message conversion', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     fetchStub.resolves({
@@ -144,7 +140,7 @@ suite('Anthropic Provider Integration Tests', () => {
     assert.strictEqual(requestBody.messages[2].role, 'user', 'Third message should be user');
   });
 
-  test('should handle Anthropic streaming responses', async () => {
+  it('should handle Anthropic streaming responses', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock streaming response
@@ -199,7 +195,7 @@ suite('Anthropic Provider Integration Tests', () => {
     assert.strictEqual(requestBody.stream, true, 'Should request streaming');
   });
 
-  test('should handle Anthropic-specific error codes', async () => {
+  it('should handle Anthropic-specific error codes', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Test rate limit error
@@ -246,7 +242,7 @@ suite('Anthropic Provider Integration Tests', () => {
     assert.strictEqual(response2.error?.code, 'invalid_api_key', 'Should map auth error code');
   });
 
-  test('should validate Anthropic connection', async () => {
+  it('should validate Anthropic connection', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock successful validation response
@@ -273,7 +269,7 @@ suite('Anthropic Provider Integration Tests', () => {
     assert.strictEqual(requestBody.max_tokens, 10, 'Should use minimal tokens for validation');
   });
 
-  test('should handle Anthropic model variants', async () => {
+  it('should handle Anthropic model variants', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Test different Claude models
@@ -318,7 +314,7 @@ suite('Anthropic Provider Integration Tests', () => {
     }
   });
 
-  test('should handle Anthropic context length limits', async () => {
+  it('should handle Anthropic context length limits', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock context length exceeded error
@@ -347,7 +343,7 @@ suite('Anthropic Provider Integration Tests', () => {
     assert.ok(response.error?.message.includes('context length'), 'Should mention context length in error');
   });
 
-  test('should handle Anthropic tool use capabilities', async () => {
+  it('should handle Anthropic tool use capabilities', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock tool use response
@@ -406,7 +402,7 @@ suite('Anthropic Provider Integration Tests', () => {
     assert.strictEqual(requestBody.tools[0].name, 'create_file', 'Should include tool definition');
   });
 
-  test('should handle Anthropic streaming cancellation', async () => {
+  it('should handle Anthropic streaming cancellation', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     let readerCancelled = false;
@@ -462,7 +458,7 @@ suite('Anthropic Provider Integration Tests', () => {
     assert.ok(response.success || response.error?.code === 'cancelled', 'Should handle cancellation');
   });
 
-  test('should handle Anthropic retry logic with exponential backoff', async () => {
+  it('should handle Anthropic retry logic with exponential backoff', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // First call fails with rate limit
@@ -510,7 +506,7 @@ suite('Anthropic Provider Integration Tests', () => {
     assert.strictEqual(fetchStub.callCount, 2, 'Should make two API calls');
   });
 
-  test('should handle Anthropic batch requests efficiently', async () => {
+  it('should handle Anthropic batch requests efficiently', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock responses for multiple requests
@@ -546,7 +542,7 @@ suite('Anthropic Provider Integration Tests', () => {
     assert.strictEqual(fetchStub.callCount, 5, 'Should make 5 API calls');
   });
 
-  test('should handle Anthropic response metadata correctly', async () => {
+  it('should handle Anthropic response metadata correctly', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     fetchStub.resolves({
@@ -585,3 +581,4 @@ suite('Anthropic Provider Integration Tests', () => {
     assert.ok(response.metadata!.messageId, 'Should include message ID');
   });
 });
+

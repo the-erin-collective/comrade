@@ -6,10 +6,9 @@ import * as assert from 'assert';
 import { ErrorMapper, ErrorRecovery, EnhancedError, ErrorContext } from '../../core/error-handler';
 import { LLMProvider } from '../../core/agent';
 
-suite('Enhanced Error Handling Tests', () => {
+describe('Enhanced Error Handling Tests', () => {
   
-  suite('ErrorMapper - OpenAI Provider', () => {
-    test('should map OpenAI rate limit error with retry-after header', () => {
+  describe('ErrorMapper - OpenAI Provider', () => {  it('should map OpenAI rate limit error with retry-after header', () => {
       const error = {
         status: 429,
         statusText: 'Too Many Requests',
@@ -38,7 +37,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.ok(result.suggestedFix?.includes('upgrading your OPENAI plan'));
     });
 
-    test('should map OpenAI context length exceeded error with suggestions', () => {
+  it('should map OpenAI context length exceeded error with suggestions', () => {
       const error = {
         status: 400,
         error: {
@@ -57,7 +56,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.ok(result.suggestedFix?.includes('Shortening your message'));
     });
 
-    test('should map OpenAI authentication error', () => {
+  it('should map OpenAI authentication error', () => {
       const error = {
         status: 401,
         error: {
@@ -74,7 +73,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.ok(result.suggestedFix?.includes('valid and has the necessary permissions'));
     });
 
-    test('should map OpenAI quota exceeded error', () => {
+  it('should map OpenAI quota exceeded error', () => {
       const error = {
         status: 429,
         error: {
@@ -91,7 +90,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.ok(result.suggestedFix?.includes('billing settings'));
     });
 
-    test('should map OpenAI model not found error', () => {
+  it('should map OpenAI model not found error', () => {
       const error = {
         status: 404,
         error: {
@@ -108,7 +107,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.ok(result.suggestedFix?.includes('supported by OPENAI'));
     });
 
-    test('should map OpenAI server error as retryable', () => {
+  it('should map OpenAI server error as retryable', () => {
       const error = {
         status: 500,
         error: {
@@ -125,7 +124,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.ok(result.suggestedFix?.includes('try again in a few moments'));
     });
 
-    test('should handle OpenAI error without structured error code', () => {
+  it('should handle OpenAI error without structured error code', () => {
       const error = {
         status: 400,
         message: 'This model\'s maximum context length is exceeded'
@@ -138,8 +137,7 @@ suite('Enhanced Error Handling Tests', () => {
     });
   });
 
-  suite('ErrorMapper - Anthropic Provider', () => {
-    test('should map Anthropic rate limit error', () => {
+  describe('ErrorMapper - Anthropic Provider', () => {  it('should map Anthropic rate limit error', () => {
       const error = {
         status: 429,
         headers: { 'retry-after': '30' },
@@ -158,7 +156,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.ok(result.suggestedFix?.includes('Wait 30 seconds'));
     });
 
-    test('should map Anthropic authentication error', () => {
+  it('should map Anthropic authentication error', () => {
       const error = {
         status: 401,
         error: {
@@ -174,7 +172,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.ok(result.suggestedFix?.includes('ANTHROPIC API key'));
     });
 
-    test('should map Anthropic context length error with Claude-specific suggestions', () => {
+  it('should map Anthropic context length error with Claude-specific suggestions', () => {
       const error = {
         status: 400,
         error: {
@@ -191,7 +189,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.ok(result.suggestedFix?.includes('200K tokens'));
     });
 
-    test('should map Anthropic overloaded error as retryable', () => {
+  it('should map Anthropic overloaded error as retryable', () => {
       const error = {
         status: 503,
         error: {
@@ -206,7 +204,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.strictEqual(result.retryable, true);
     });
 
-    test('should handle Anthropic error without type field', () => {
+  it('should handle Anthropic error without type field', () => {
       const error = {
         status: 403,
         message: 'Forbidden'
@@ -219,8 +217,7 @@ suite('Enhanced Error Handling Tests', () => {
     });
   });
 
-  suite('ErrorMapper - Ollama Provider', () => {
-    test('should map Ollama model not found error', () => {
+  describe('ErrorMapper - Ollama Provider', () => {  it('should map Ollama model not found error', () => {
       const error = {
         status: 404,
         error: 'model "nonexistent-model" not found'
@@ -233,7 +230,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.ok(result.suggestedFix?.includes('model name'));
     });
 
-    test('should map Ollama connection refused error', () => {
+  it('should map Ollama connection refused error', () => {
       const error = {
         message: 'Connection refused to localhost:11434'
       };
@@ -246,7 +243,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.ok(result.suggestedFix?.includes('ollama serve'));
     });
 
-    test('should map Ollama out of memory error', () => {
+  it('should map Ollama out of memory error', () => {
       const error = {
         error: 'Out of memory: failed to allocate tensor'
       };
@@ -259,7 +256,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.ok(result.suggestedFix?.includes('smaller model'));
     });
 
-    test('should map Ollama timeout error', () => {
+  it('should map Ollama timeout error', () => {
       const error = {
         message: 'Request timeout after 30 seconds'
       };
@@ -271,7 +268,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.ok(result.suggestedFix?.includes('timed out'));
     });
 
-    test('should map Ollama context length error with suggestions', () => {
+  it('should map Ollama context length error with suggestions', () => {
       const error = {
         error: 'Context length exceeded: 4096 tokens'
       };
@@ -284,8 +281,7 @@ suite('Enhanced Error Handling Tests', () => {
     });
   });
 
-  suite('ErrorMapper - Custom Provider', () => {
-    test('should map custom provider error using OpenAI format', () => {
+  describe('ErrorMapper - Custom Provider', () => {  it('should map custom provider error using OpenAI format', () => {
       const error = {
         status: 429,
         headers: { 'retry-after': '45' },
@@ -304,7 +300,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.ok(result.suggestedFix?.includes('CUSTOM plan'));
     });
 
-    test('should handle custom provider with unknown error format', () => {
+  it('should handle custom provider with unknown error format', () => {
       const error = {
         status: 500,
         message: 'Unknown custom error'
@@ -317,8 +313,7 @@ suite('Enhanced Error Handling Tests', () => {
     });
   });
 
-  suite('ErrorMapper - Generic Errors', () => {
-    test('should handle unknown provider', () => {
+  describe('ErrorMapper - Generic Errors', () => {  it('should handle unknown provider', () => {
       const error = {
         message: 'Unknown error'
       };
@@ -331,7 +326,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.ok(result.suggestedFix?.includes('provider documentation'));
     });
 
-    test('should extract retry-after from various header formats', () => {
+  it('should extract retry-after from various header formats', () => {
       const testCases = [
         { headers: { 'retry-after': '60' }, expected: 60 },
         { headers: { 'Retry-After': '30' }, expected: 30 },
@@ -353,8 +348,7 @@ suite('Enhanced Error Handling Tests', () => {
     });
   });
 
-  suite('ErrorRecovery', () => {
-    test('should identify retryable errors correctly', () => {
+  describe('ErrorRecovery', () => {  it('should identify retryable errors correctly', () => {
       const retryableError: EnhancedError = {
         code: 'rate_limit_exceeded',
         message: 'Rate limit exceeded',
@@ -373,7 +367,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.strictEqual(ErrorRecovery.isRetryable(nonRetryableError), false);
     });
 
-    test('should calculate exponential backoff with jitter', () => {
+  it('should calculate exponential backoff with jitter', () => {
       const baseDelay = 1000;
       const maxDelay = 30000;
 
@@ -392,7 +386,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.ok(delayLarge <= maxDelay * 1.25); // Allow for jitter
     });
 
-    test('should respect retry-after header', () => {
+  it('should respect retry-after header', () => {
       const retryAfter = 60; // seconds
       const delay = ErrorRecovery.getRetryDelayWithHeader(0, retryAfter);
 
@@ -400,7 +394,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.ok(delay >= 60000 && delay <= 60200);
     });
 
-    test('should determine retry eligibility correctly', () => {
+  it('should determine retry eligibility correctly', () => {
       const retryableError: EnhancedError = {
         code: 'server_error',
         message: 'Server error',
@@ -437,8 +431,7 @@ suite('Enhanced Error Handling Tests', () => {
     });
   });
 
-  suite('Context Length Error Suggestions', () => {
-    test('should provide specific suggestions for different providers', () => {
+  describe('Context Length Error Suggestions', () => {  it('should provide specific suggestions for different providers', () => {
       const contextError = {
         status: 400,
         error: {
@@ -470,7 +463,7 @@ suite('Enhanced Error Handling Tests', () => {
       });
     });
 
-    test('should extract token information from error messages', () => {
+  it('should extract token information from error messages', () => {
       const testCases = [
         {
           message: 'Maximum context length is 4097 tokens. Current: 5000 tokens.',
@@ -505,8 +498,7 @@ suite('Enhanced Error Handling Tests', () => {
     });
   });
 
-  suite('Error Context Handling', () => {
-    test('should preserve error context information', () => {
+  describe('Error Context Handling', () => {  it('should preserve error context information', () => {
       const context: ErrorContext = {
         provider: 'openai',
         operation: 'send_message',
@@ -529,7 +521,7 @@ suite('Enhanced Error Handling Tests', () => {
       assert.deepStrictEqual(result.context?.timestamp, new Date('2024-01-01T12:00:00Z'));
     });
 
-    test('should handle missing context gracefully', () => {
+  it('should handle missing context gracefully', () => {
       const error = {
         status: 429,
         error: { message: 'Rate limit', code: 'rate_limit_exceeded' }
@@ -543,3 +535,4 @@ suite('Enhanced Error Handling Tests', () => {
     });
   });
 });
+

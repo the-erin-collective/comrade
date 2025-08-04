@@ -7,18 +7,17 @@ import * as sinon from 'sinon';
 import * as vscode from 'vscode';
 import { ChatBridge, ChatBridgeError } from '../../core/chat';
 import { AgentRegistry } from '../../core/registry';
-import { describe, it, beforeEach, afterEach } from 'mocha';
+// Mocha globals are provided by the test environment
 import { ConfigurationManager } from '../../core/config';
-import { Session, SessionState } from '../../core/session';
+// Session and SessionState are not used in this file
 import { ContextRunner } from '../../runners/context';
 import { PlanningRunner } from '../../runners/planning';
 import { ExecutionRunner } from '../../runners/execution';
 import { 
-  createMockSession, 
-  MockProgress 
+  createMockSession 
 } from '../mocks/session-data';
+import { SessionState } from '../../core/session';
 import { 
-  mockAgents, 
   mockAgentConfigurations, 
   createMockAgent 
 } from '../mocks/agents';
@@ -60,8 +59,7 @@ describe('Comprehensive Error Scenarios Tests', () => {
     ConfigurationManager.resetInstance();
   });
 
-  describe('Network Error Scenarios', () => {
-    test('should handle network timeouts with exponential backoff', async () => {
+  describe('Network Error Scenarios', () => {  it('should handle network timeouts with exponential backoff', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       const messages = [{ role: 'user' as const, content: 'Test message' }];
 
@@ -92,7 +90,7 @@ describe('Comprehensive Error Scenarios Tests', () => {
       assert.strictEqual(fetchStub.callCount, 3);
     });
 
-    test('should handle DNS resolution failures', async () => {
+  it('should handle DNS resolution failures', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[4], // Custom provider
         endpoint: 'https://nonexistent-domain.invalid/api'
@@ -112,7 +110,7 @@ describe('Comprehensive Error Scenarios Tests', () => {
       }
     });
 
-    test('should handle connection refused errors', async () => {
+  it('should handle connection refused errors', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[3], // Ollama agent
         endpoint: 'http://localhost:11434'
@@ -132,7 +130,7 @@ describe('Comprehensive Error Scenarios Tests', () => {
       }
     });
 
-    test('should handle SSL certificate errors', async () => {
+  it('should handle SSL certificate errors', async () => {
       const agent = createMockAgent({
         ...mockAgentConfigurations[4], // Custom provider
         endpoint: 'https://self-signed.badssl.com/api'
@@ -191,7 +189,7 @@ describe('Comprehensive Error Scenarios Tests', () => {
       assert.strictEqual(fetchStub.callCount, 2);
     });
 
-    test('should handle authentication errors without retry', async () => {
+  it('should handle authentication errors without retry', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       const messages = [{ role: 'user' as const, content: 'Test message' }];
 
@@ -214,7 +212,7 @@ describe('Comprehensive Error Scenarios Tests', () => {
       }
     });
 
-    test('should handle token limit exceeded errors', async () => {
+  it('should handle token limit exceeded errors', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       const messages = [{ role: 'user' as const, content: 'Very long message that exceeds token limit...' }];
 
@@ -239,7 +237,7 @@ describe('Comprehensive Error Scenarios Tests', () => {
       }
     });
 
-    test('should handle quota exceeded errors', async () => {
+  it('should handle quota exceeded errors', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       const messages = [{ role: 'user' as const, content: 'Test message' }];
 
@@ -265,7 +263,7 @@ describe('Comprehensive Error Scenarios Tests', () => {
       }
     });
 
-    test('should handle model overloaded errors with retry', async () => {
+  it('should handle model overloaded errors with retry', async () => {
       const agent = agentRegistry.getAgent('openai-gpt4')!;
       const messages = [{ role: 'user' as const, content: 'Test message' }];
 
@@ -302,7 +300,7 @@ describe('Comprehensive Error Scenarios Tests', () => {
 
   describe('Runner Error Scenarios', () => {
     it('should handle context generation failures with recovery', async () => {
-      const { session, progress } = createMockSession(
+      const { session } = createMockSession(
         'context-error-test',
         vscode.Uri.file('/test/workspace'),
         'simple',
@@ -339,8 +337,8 @@ describe('Comprehensive Error Scenarios Tests', () => {
       }
     });
 
-    test('should handle planning failures with iterative recovery', async () => {
-      const { session, progress } = createMockSession(
+  it('should handle planning failures with iterative recovery', async () => {
+      const { session } = createMockSession(
         'planning-error-test',
         vscode.Uri.file('/test/workspace'),
         'moderate',
@@ -393,7 +391,7 @@ describe('Comprehensive Error Scenarios Tests', () => {
       }
     });
 
-    test('should handle execution failures with rollback', async () => {
+  it('should handle execution failures with rollback', async () => {
       const { session, progress } = createMockSession(
         'execution-error-test',
         vscode.Uri.file('/test/workspace'),
@@ -462,8 +460,8 @@ describe('Comprehensive Error Scenarios Tests', () => {
       }
     });
 
-    test('should handle workspace access errors', async () => {
-      const { session, progress } = createMockSession(
+  it('should handle workspace access errors', async () => {
+      const { session } = createMockSession(
         'workspace-access-error-test',
         vscode.Uri.file('/nonexistent/workspace'),
         'simple',
@@ -488,8 +486,8 @@ describe('Comprehensive Error Scenarios Tests', () => {
       }
     });
 
-    test('should handle file system permission errors', async () => {
-      const { session, progress } = createMockSession(
+  it('should handle file system permission errors', async () => {
+      const { session } = createMockSession(
         'permission-error-test',
         vscode.Uri.file('/test/workspace'),
         'moderate',
@@ -544,9 +542,8 @@ describe('Comprehensive Error Scenarios Tests', () => {
     });
   });
 
-  suite('Session Error Scenarios', () => {
-    test('should handle session cancellation gracefully', async () => {
-      const { session, progress } = createMockSession(
+  describe('Session Error Scenarios', () => {  it('should handle session cancellation gracefully', async () => {
+      const { session } = createMockSession(
         'cancellation-test',
         vscode.Uri.file('/test/workspace'),
         'simple',
@@ -588,8 +585,8 @@ describe('Comprehensive Error Scenarios Tests', () => {
       }
     });
 
-    test('should handle session timeout', async () => {
-      const { session, progress } = createMockSession(
+  it('should handle session timeout', async () => {
+      const { session } = createMockSession(
         'timeout-test',
         vscode.Uri.file('/test/workspace'),
         'simple',
@@ -628,8 +625,8 @@ describe('Comprehensive Error Scenarios Tests', () => {
       }
     });
 
-    test('should handle memory pressure during large operations', async () => {
-      const { session, progress } = createMockSession(
+  it('should handle memory pressure during large operations', async () => {
+      const { session } = createMockSession(
         'memory-pressure-test',
         vscode.Uri.file('/test/workspace'),
         'complex',
@@ -695,8 +692,8 @@ describe('Comprehensive Error Scenarios Tests', () => {
       assert.ok(fetchStub.callCount <= 5, 'Circuit breaker should limit calls');
     });
 
-    test('should implement graceful degradation', async () => {
-      const { session, progress } = createMockSession(
+  it('should implement graceful degradation', async () => {
+      const { session } = createMockSession(
         'degradation-test',
         vscode.Uri.file('/test/workspace'),
         'complex',
@@ -736,8 +733,8 @@ describe('Comprehensive Error Scenarios Tests', () => {
       }
     });
 
-    test('should handle cascading failure recovery', async () => {
-      const { session, progress } = createMockSession(
+  it('should handle cascading failure recovery', async () => {
+      const { session } = createMockSession(
         'cascading-failure-test',
         vscode.Uri.file('/test/workspace'),
         'complex',
@@ -839,7 +836,7 @@ describe('Comprehensive Error Scenarios Tests', () => {
       }
     });
 
-    test('should provide actionable error messages', async () => {
+  it('should provide actionable error messages', async () => {
       const testCases = [
         {
           error: { code: 'invalid_api_key', status: 401 },
@@ -891,7 +888,7 @@ describe('Comprehensive Error Scenarios Tests', () => {
       }
     });
 
-    test('should track error patterns for monitoring', async () => {
+  it('should track error patterns for monitoring', async () => {
       const errorTracker = {
         errors: [] as any[],
         track: function(error: any) { this.errors.push(error); }
@@ -931,3 +928,5 @@ describe('Comprehensive Error Scenarios Tests', () => {
     });
   });
 });
+
+

@@ -3,7 +3,7 @@
  */
 
 import * as assert from 'assert';
-import { describe, it, beforeEach, afterEach } from 'mocha';
+// Mocha globals are provided by the test environment
 import * as vscode from 'vscode';
 import * as sinon from 'sinon';
 import { BaseRunner, RunnerResult, RunnerError, OperationTimeout } from '../runners/base';
@@ -218,7 +218,7 @@ describe('Error Handling and Cancellation', () => {
     assert.ok(result.error.message.includes('timed out'));
   });
 
-  test('should handle timeout with extension option', async () => {
+  it('should handle timeout with extension option', async () => {
     const runner = new MockRunner(mockSession, mockAgent, 'test personality');
     
     const timeout: OperationTimeout = {
@@ -239,7 +239,7 @@ describe('Error Handling and Cancellation', () => {
     assert.ok(showWarningMessageStub.called);
   });
 
-  test('should create recoverable error with suggested fix', async () => {
+  it('should create recoverable error with suggested fix', async () => {
     const runner = new MockRunner(mockSession, mockAgent, 'test personality');
     
     const error = (runner as any).createRecoverableError(
@@ -258,7 +258,7 @@ describe('Error Handling and Cancellation', () => {
     assert.deepStrictEqual(error.context, { context: 'test' });
   });
 
-  test('should create fatal error', async () => {
+  it('should create fatal error', async () => {
     const runner = new MockRunner(mockSession, mockAgent, 'test personality');
     
     const error = (runner as any).createFatalError(
@@ -272,7 +272,7 @@ describe('Error Handling and Cancellation', () => {
     assert.strictEqual(error.recoverable, false);
   });
 
-  test('should handle network error with specific recovery options', async () => {
+  it('should handle network error with specific recovery options', async () => {
     const runner = new MockRunner(mockSession, mockAgent, 'test personality');
     
     // Mock network error
@@ -289,7 +289,7 @@ describe('Error Handling and Cancellation', () => {
     assert.ok(callArgs.includes('Configure'));
   });
 
-  test('should handle authentication error with configuration link', async () => {
+  it('should handle authentication error with configuration link', async () => {
     const runner = new MockRunner(mockSession, mockAgent, 'test personality');
     
     // Mock auth error
@@ -306,7 +306,7 @@ describe('Error Handling and Cancellation', () => {
     assert.ok(callArgs.includes('Configure'));
   });
 
-  test('should handle rate limit error with retry suggestion', async () => {
+  it('should handle rate limit error with retry suggestion', async () => {
     const runner = new MockRunner(mockSession, mockAgent, 'test personality');
     
     // Mock rate limit error
@@ -323,7 +323,7 @@ describe('Error Handling and Cancellation', () => {
     assert.ok(callArgs[0].includes('Wait 60 seconds'));
   });
 
-  test('should track session error state', () => {
+  it('should track session error state', () => {
     const errorMessage = 'Test session error';
     const errorDetails = {
       code: 'TEST_ERROR',
@@ -343,7 +343,7 @@ describe('Error Handling and Cancellation', () => {
     assert.strictEqual(lastError.suggestedFix, 'Try this fix');
   });
 
-  test('should clear session error state', () => {
+  it('should clear session error state', () => {
     mockSession.error('Test error');
     assert.ok(mockSession.getLastError());
     
@@ -351,7 +351,7 @@ describe('Error Handling and Cancellation', () => {
     assert.strictEqual(mockSession.getLastError(), null);
   });
 
-  test('should report progress with cancellation options', () => {
+  it('should report progress with cancellation options', () => {
     const reportStub = mockProgress.report as sinon.SinonStub;
     
     mockSession.reportProgress('Test progress', 50, { 
@@ -367,3 +367,4 @@ describe('Error Handling and Cancellation', () => {
     assert.strictEqual(callArgs.showInStatusBar, true);
   });
 });
+

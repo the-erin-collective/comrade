@@ -3,27 +3,32 @@
  */
 
 import * as path from 'path';
-import { runTests, downloadAndUnzipVSCode, resolveCliPathFromVSCodeExecutablePath } from '@vscode/test-electron';
+import { runTests, downloadAndUnzipVSCode } from '@vscode/test-electron';
 
 async function main() {
   try {
+    console.log('🔍 Starting test runner...');
+    
     // The folder containing the Extension Manifest package.json
     const extensionDevelopmentPath = path.resolve(__dirname, '../../');
     const extensionTestsPath = path.resolve(__dirname, './suite/index');
     
-    // Get the path to the VS Code executable
+    console.log(`📁 Extension development path: ${extensionDevelopmentPath}`);
+    console.log(`📁 Extension tests path: ${extensionTestsPath}`);
+    
+    // Download and unzip VS Code
+    console.log('⬇️  Downloading VS Code...');
     const vscodeExecutablePath = await downloadAndUnzipVSCode('stable');
-    const cliPath = resolveCliPathFromVSCodeExecutablePath(vscodeExecutablePath);
+    console.log(`✅ VS Code downloaded to: ${vscodeExecutablePath}`);
 
-    // Run integration tests with specific configuration
+    // Run the extension test
+    console.log('🚀 Starting test run...');
     await runTests({
+      vscodeExecutablePath,
       extensionDevelopmentPath,
       extensionTestsPath,
-      version: 'stable',
-      // Combine all environment variables into a single object
       extensionTestsEnv: {
         ...process.env,
-        // Test environment variables
         NODE_ENV: 'test',
         TEST_TYPE: 'integration',
         VSCODE_EXTENSION_DEVELOPMENT_PATH: extensionDevelopmentPath,
@@ -39,8 +44,10 @@ async function main() {
         '--disable-renderer-backgrounding', // Prevent background throttling
         '--disable-gpu', // Disable GPU hardware acceleration
         '--no-cached-data', // Don't use cached data
-        '--user-data-dir', path.join(extensionDevelopmentPath, '.vscode-test', 'user-data-dir'),
-        '--log', 'debug' // Enable debug logging
+        '--user-data-dir', 
+        path.join(extensionDevelopmentPath, '.vscode-test', 'user-data-dir'),
+        '--log', 
+        'debug' // Enable debug logging
       ]
     });
   } catch (err) {

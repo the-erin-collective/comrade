@@ -7,27 +7,27 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { PersonalityManager, PersonalityConfig } from '../core/personality';
 
-suite('Personality Configuration Tests', () => {
+describe('Personality Configuration Tests', () => {
   let personalityManager: PersonalityManager;
   let testWorkspaceUri: vscode.Uri;
 
-  suiteSetup(async () => {
+  before(async () => {
     // Create a test workspace URI
     testWorkspaceUri = vscode.Uri.file(path.join(__dirname, '..', '..', 'test-workspace'));
     personalityManager = PersonalityManager.getInstance();
   });
 
-  suiteTeardown(() => {
+  after(() => {
     personalityManager.dispose();
   });
 
-  test('should create singleton instance', () => {
+  it('should create singleton instance', () => {
     const instance1 = PersonalityManager.getInstance();
     const instance2 = PersonalityManager.getInstance();
     assert.strictEqual(instance1, instance2, 'PersonalityManager should be a singleton');
   });
 
-  test('should return personality configuration', async () => {
+  it('should return personality configuration', async () => {
     const personality = await personalityManager.getPersonality();
     
     assert.ok(personality, 'Should return a personality config');
@@ -36,7 +36,7 @@ suite('Personality Configuration Tests', () => {
     assert.ok(personality.content.length > 0, 'Should have non-empty content');
   });
 
-  test('should generate personality content for prompt injection', async () => {
+  it('should generate personality content for prompt injection', async () => {
     const promptContent = await personalityManager.getPersonalityForPrompt();
     
     assert.ok(promptContent, 'Should return prompt content');
@@ -44,14 +44,14 @@ suite('Personality Configuration Tests', () => {
     assert.ok(promptContent.includes('Please follow these personality guidelines'), 'Should include instruction');
   });
 
-  test('should handle missing workspace gracefully', async () => {
+  it('should handle missing workspace gracefully', async () => {
     const personality = await personalityManager.getPersonality();
     
     assert.ok(personality, 'Should return personality even without workspace');
     assert.ok(['file', 'default'].includes(personality.source), 'Should use valid source');
   });
 
-  test('should create default personality file', async () => {
+  it('should create default personality file', async () => {
     try {
       await personalityManager.createDefaultPersonalityFile(testWorkspaceUri);
       
@@ -67,7 +67,7 @@ suite('Personality Configuration Tests', () => {
     }
   });
 
-  test('should validate personality config structure', async () => {
+  it('should validate personality config structure', async () => {
     const personality = await personalityManager.getPersonality();
     
     assert.ok(personality.content, 'Should have content property');
@@ -75,7 +75,7 @@ suite('Personality Configuration Tests', () => {
     assert.ok(['file', 'default'].includes(personality.source), 'Should have valid source');
   });
 
-  test('should handle initialization without errors', async () => {
+  it('should handle initialization without errors', async () => {
     try {
       await personalityManager.initialize(testWorkspaceUri);
       // If we get here, initialization succeeded
@@ -87,15 +87,15 @@ suite('Personality Configuration Tests', () => {
   });
 });
 
-suite('Personality Integration Tests', () => {
-  test('should export utility functions', async () => {
+describe('Personality Integration Tests', () => {
+  it('should export utility functions', async () => {
     const { getPersonalityForPrompt, initializePersonality } = await import('../core/personality');
     
     assert.ok(typeof getPersonalityForPrompt === 'function', 'Should export getPersonalityForPrompt');
     assert.ok(typeof initializePersonality === 'function', 'Should export initializePersonality');
   });
 
-  test('utility functions should work without workspace', async () => {
+  it('utility functions should work without workspace', async () => {
     const { getPersonalityForPrompt } = await import('../core/personality');
     
     const promptContent = await getPersonalityForPrompt();
@@ -103,3 +103,4 @@ suite('Personality Integration Tests', () => {
     assert.ok(promptContent.includes('Personality Guidelines'), 'Should include guidelines');
   });
 });
+

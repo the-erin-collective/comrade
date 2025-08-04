@@ -20,27 +20,22 @@ import {
   BuiltInTools
 } from '../../core/tool-manager';
 
-suite('Tool Definition Framework Tests', () => {
+describe('Tool Definition Framework Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let toolRegistry: ToolRegistry;
-  let toolManager: ToolManager;
-
-  setup(() => {
+  let toolManager: ToolManager;  beforeEach(() => {
     sandbox = sinon.createSandbox();
     ToolRegistry.resetInstance();
     ToolManager.resetInstance();
     toolRegistry = ToolRegistry.getInstance();
     toolManager = ToolManager.getInstance();
-  });
-
-  teardown(() => {
+  });  afterEach(() => {
     sandbox.restore();
     ToolRegistry.resetInstance();
     ToolManager.resetInstance();
   });
 
-  suite('ToolRegistry', () => {
-    test('should register and retrieve tools', () => {
+  describe('ToolRegistry', () => {  it('should register and retrieve tools', () => {
       const testTool: ToolDefinition = {
         name: 'test_tool',
         description: 'A test tool',
@@ -66,7 +61,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.strictEqual(retrieved?.description, 'A test tool');
     });
 
-    test('should prevent duplicate tool registration', () => {
+  it('should prevent duplicate tool registration', () => {
       const testTool: ToolDefinition = {
         name: 'duplicate_tool',
         description: 'A duplicate tool',
@@ -82,7 +77,7 @@ suite('Tool Definition Framework Tests', () => {
       }, /already registered/);
     });
 
-    test('should filter tools by security context', () => {
+  it('should filter tools by security context', () => {
       const lowRiskTool: ToolDefinition = {
         name: 'low_risk',
         description: 'Low risk tool',
@@ -115,7 +110,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.strictEqual(availableTools[0].name, 'low_risk');
     });
 
-    test('should filter tools by web environment', () => {
+  it('should filter tools by web environment', () => {
       // Mock window object to simulate web environment
       (global as any).window = {};
 
@@ -154,7 +149,7 @@ suite('Tool Definition Framework Tests', () => {
       delete (global as any).window;
     });
 
-    test('should get tools by category', () => {
+  it('should get tools by category', () => {
       const fsTool: ToolDefinition = {
         name: 'fs_tool',
         description: 'File system tool',
@@ -185,7 +180,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.strictEqual(vsTools[0].name, 'vs_tool');
     });
 
-    test('should validate tool calls', () => {
+  it('should validate tool calls', () => {
       const testTool: ToolDefinition = {
         name: 'validate_call_test',
         description: 'Test tool call validation',
@@ -261,8 +256,7 @@ suite('Tool Definition Framework Tests', () => {
     });
   });
 
-  suite('ParameterValidator', () => {
-    test('should validate required parameters', () => {
+  describe('ParameterValidator', () => {  it('should validate required parameters', () => {
       const schema: JSONSchema = {
         type: 'object',
         properties: {
@@ -283,7 +277,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.ok(invalidResult.errors.some(error => error.includes('Missing required property')));
     });
 
-    test('should validate parameter types', () => {
+  it('should validate parameter types', () => {
       const schema: JSONSchema = {
         type: 'object',
         properties: {
@@ -304,7 +298,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.strictEqual(invalidResult.errors.length, 3);
     });
 
-    test('should validate string constraints', () => {
+  it('should validate string constraints', () => {
       const schema: JSONSchema = {
         type: 'object',
         properties: {
@@ -325,7 +319,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.ok(invalidResult.errors.some(error => error.includes('must be one of')));
     });
 
-    test('should validate array parameters', () => {
+  it('should validate array parameters', () => {
       const schema: JSONSchema = {
         type: 'object',
         properties: {
@@ -346,7 +340,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.strictEqual(invalidResult.valid, false);
     });
 
-    test('should validate number constraints', () => {
+  it('should validate number constraints', () => {
       const schema: JSONSchema = {
         type: 'object',
         properties: {
@@ -370,8 +364,7 @@ suite('Tool Definition Framework Tests', () => {
     });
   });
 
-  suite('SecurityValidator', () => {
-    test('should validate security levels', async () => {
+  describe('SecurityValidator', () => {  it('should validate security levels', async () => {
       const highRiskTool: ToolDefinition = {
         name: 'high_risk_tool',
         description: 'High risk tool',
@@ -399,7 +392,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.strictEqual(elevatedResult.valid, true);
     });
 
-    test('should validate permissions', async () => {
+  it('should validate permissions', async () => {
       const permissionTool: ToolDefinition = {
         name: 'permission_tool',
         description: 'Tool requiring permissions',
@@ -433,7 +426,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.strictEqual(withPermResult.valid, true);
     });
 
-    test('should detect dangerous patterns', async () => {
+  it('should detect dangerous patterns', async () => {
       const safeTool: ToolDefinition = {
         name: 'safe_tool',
         description: 'Safe tool',
@@ -460,7 +453,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.ok(dangerousResult.warnings && dangerousResult.warnings.length > 0);
     });
 
-    test('should validate web environment restrictions', async () => {
+  it('should validate web environment restrictions', async () => {
       // Mock window object to simulate web environment
       (global as any).window = {};
 
@@ -489,8 +482,7 @@ suite('Tool Definition Framework Tests', () => {
     });
   });
 
-  suite('ToolManager', () => {
-    test('should execute tools with validation', async () => {
+  describe('ToolManager', () => {  it('should execute tools with validation', async () => {
       const testTool: ToolDefinition = {
         name: 'test_execution',
         description: 'Test execution tool',
@@ -523,7 +515,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.strictEqual(result.data?.echo, 'hello');
     });
 
-    test('should handle parameter validation errors', async () => {
+  it('should handle parameter validation errors', async () => {
       const testTool: ToolDefinition = {
         name: 'validation_test',
         description: 'Validation test tool',
@@ -556,7 +548,7 @@ suite('Tool Definition Framework Tests', () => {
       }
     });
 
-    test('should handle security validation errors', async () => {
+  it('should handle security validation errors', async () => {
       const highRiskTool: ToolDefinition = {
         name: 'security_test',
         description: 'Security test tool',
@@ -583,7 +575,7 @@ suite('Tool Definition Framework Tests', () => {
       }
     });
 
-    test('should handle tool not found errors', async () => {
+  it('should handle tool not found errors', async () => {
       const context: ExecutionContext = {
         agentId: 'test-agent',
         sessionId: 'test-session',
@@ -600,7 +592,7 @@ suite('Tool Definition Framework Tests', () => {
       }
     });
 
-    test('should track execution statistics', async () => {
+  it('should track execution statistics', async () => {
       const testTool: ToolDefinition = {
         name: 'stats_test',
         description: 'Statistics test tool',
@@ -631,7 +623,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.strictEqual(stats.toolUsage['stats_test'], 2);
     });
 
-    test('should handle user approval for dangerous tools', async () => {
+  it('should handle user approval for dangerous tools', async () => {
       const dangerousTool: ToolDefinition = {
         name: 'dangerous_tool',
         description: 'Dangerous tool requiring approval',
@@ -664,8 +656,7 @@ suite('Tool Definition Framework Tests', () => {
     });
   });
 
-  suite('BuiltInTools', () => {
-    test('should register all built-in tools', () => {
+  describe('BuiltInTools', () => {  it('should register all built-in tools', () => {
       BuiltInTools.registerAll();
       
       const allTools = toolRegistry.getAllTools();
@@ -677,7 +668,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.ok(toolNames.includes('show_message'));
     });
 
-    test('should categorize tools correctly', () => {
+  it('should categorize tools correctly', () => {
       BuiltInTools.registerAll();
       
       const filesystemTools = toolRegistry.getToolsByCategory('filesystem');
@@ -687,7 +678,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.ok(vscodeTools.length >= 1); // show_message
     });
 
-    test('read_file tool should have correct security settings', () => {
+  it('read_file tool should have correct security settings', () => {
       BuiltInTools.registerAll();
       
       const readFileTool = toolRegistry.getTool('read_file');
@@ -698,7 +689,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.ok(readFileTool.security.permissions?.includes('filesystem.read'));
     });
 
-    test('write_file tool should have correct security settings', () => {
+  it('write_file tool should have correct security settings', () => {
       BuiltInTools.registerAll();
       
       const writeFileTool = toolRegistry.getTool('write_file');
@@ -709,7 +700,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.ok(writeFileTool.security.permissions?.includes('filesystem.write'));
     });
 
-    test('should register git and web tools', () => {
+  it('should register git and web tools', () => {
       BuiltInTools.registerAll();
       
       const gitTool = toolRegistry.getTool('git_status');
@@ -726,8 +717,7 @@ suite('Tool Definition Framework Tests', () => {
     });
   });
 
-  suite('Enhanced ToolManager Features', () => {
-    test('should validate tool calls', () => {
+  describe('Enhanced ToolManager Features', () => {  it('should validate tool calls', () => {
       const testTool: ToolDefinition = {
         name: 'validation_test',
         description: 'Test validation',
@@ -764,7 +754,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.ok(invalidResult.errors.some(error => error.includes('Missing required property')));
     });
 
-    test('should validate multiple tool calls in batch', () => {
+  it('should validate multiple tool calls in batch', () => {
       const testTool: ToolDefinition = {
         name: 'batch_test',
         description: 'Test batch validation',
@@ -795,7 +785,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.ok(result.errors.some(error => error.includes('Tool call 3')));
     });
 
-    test('should execute multiple tool calls in sequence', async () => {
+  it('should execute multiple tool calls in sequence', async () => {
       const testTool: ToolDefinition = {
         name: 'sequence_test',
         description: 'Test sequence execution',
@@ -833,7 +823,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.strictEqual(results[1].result.data?.echo, 'second');
     });
 
-    test('should maintain audit log', async () => {
+  it('should maintain audit log', async () => {
       const testTool: ToolDefinition = {
         name: 'audit_test',
         description: 'Test audit logging',
@@ -861,7 +851,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.ok(auditLog[0].timestamp instanceof Date);
     });
 
-    test('should get audit log for specific tool', async () => {
+  it('should get audit log for specific tool', async () => {
       const tool1: ToolDefinition = {
         name: 'audit_tool_1',
         description: 'First audit tool',
@@ -902,7 +892,7 @@ suite('Tool Definition Framework Tests', () => {
       assert.ok(tool2Log.every(entry => entry.toolName === 'audit_tool_2'));
     });
 
-    test('should handle audit log size limit', async () => {
+  it('should handle audit log size limit', async () => {
       const testTool: ToolDefinition = {
         name: 'size_test',
         description: 'Test size limit',
@@ -931,3 +921,4 @@ suite('Tool Definition Framework Tests', () => {
     });
   });
 });
+

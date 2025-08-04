@@ -14,16 +14,14 @@ import { ConfigurationManager } from '../../core/config';
 import { ToolManager } from '../../core/tool-manager';
 import { mockAgentConfigurations, createMockAgent } from '../mocks/agents';
 
-suite('Tool Calling Integration Tests', () => {
+describe('Tool Calling Integration Tests', () => {
   let sandbox: sinon.SinonSandbox;
   let chatBridge: ChatBridge;
   let agentRegistry: AgentRegistry;
   let configManager: ConfigurationManager;
   let toolManager: ToolManager;
   let mockSecretStorage: any;
-  let workspaceUri: vscode.Uri;
-
-  setup(async () => {
+  let workspaceUri: vscode.Uri;  beforeEach(async () => {
     sandbox = sinon.createSandbox();
     
     // Create test workspace
@@ -73,16 +71,14 @@ suite('Tool Calling Integration Tests', () => {
       vscode.Uri.file(path.join(workspaceUri.fsPath, 'src/index.ts')),
       vscode.Uri.file(path.join(workspaceUri.fsPath, 'package.json'))
     ]);
-  });
-
-  teardown(() => {
+  });  afterEach(() => {
     sandbox.restore();
     AgentRegistry.resetInstance();
     ConfigurationManager.resetInstance();
     ToolManager.resetInstance();
   });
 
-  test('should register and execute file system tools', async () => {
+  it('should register and execute file system tools', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock OpenAI function calling response
@@ -155,7 +151,7 @@ suite('Tool Calling Integration Tests', () => {
     assert.ok(fsReadStub.called, 'Should execute file read operation');
   });
 
-  test('should handle tool execution with parameter validation', async () => {
+  it('should handle tool execution with parameter validation', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock tool call with invalid parameters
@@ -227,7 +223,7 @@ suite('Tool Calling Integration Tests', () => {
     assert.ok(response.toolResults![0].error?.includes('required'), 'Should indicate missing required parameter');
   });
 
-  test('should handle tool security approval workflow', async () => {
+  it('should handle tool security approval workflow', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock dangerous tool call
@@ -304,7 +300,7 @@ suite('Tool Calling Integration Tests', () => {
     assert.ok(fsDeleteStub.called, 'Should execute file deletion after approval');
   });
 
-  test('should handle tool security rejection', async () => {
+  it('should handle tool security rejection', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     fetchStub.resolves({
@@ -376,7 +372,7 @@ suite('Tool Calling Integration Tests', () => {
     assert.ok(response.toolResults![0].error?.includes('rejected'), 'Should indicate user rejection');
   });
 
-  test('should handle multiple tool calls in sequence', async () => {
+  it('should handle multiple tool calls in sequence', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock multiple tool calls
@@ -486,7 +482,7 @@ suite('Tool Calling Integration Tests', () => {
     assert.strictEqual(response.toolResults![1].success, true, 'Second tool should succeed');
   });
 
-  test('should handle tool execution errors gracefully', async () => {
+  it('should handle tool execution errors gracefully', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     fetchStub.resolves({
@@ -547,7 +543,7 @@ suite('Tool Calling Integration Tests', () => {
     assert.ok(response.toolResults![0].error?.includes('execution failed'), 'Should include error message');
   });
 
-  test('should handle Anthropic tool calling format', async () => {
+  it('should handle Anthropic tool calling format', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock Anthropic tool use response
@@ -637,7 +633,7 @@ suite('Tool Calling Integration Tests', () => {
     assert.strictEqual(requestBody.tools[0].name, 'search_files', 'Should include tool definition');
   });
 
-  test('should handle tool calling with streaming responses', async () => {
+  it('should handle tool calling with streaming responses', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock streaming response with tool calls
@@ -715,7 +711,7 @@ suite('Tool Calling Integration Tests', () => {
     assert.strictEqual(response.toolCalls![0].name, 'get_time', 'Should parse tool call from stream');
   });
 
-  test('should handle tool calling with concurrent execution', async () => {
+  it('should handle tool calling with concurrent execution', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     // Mock multiple concurrent tool calls
@@ -811,7 +807,7 @@ suite('Tool Calling Integration Tests', () => {
     assert.ok(executionTime < 300, `Should execute concurrently (took ${executionTime}ms)`);
   });
 
-  test('should handle tool calling audit logging', async () => {
+  it('should handle tool calling audit logging', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     fetchStub.resolves({
@@ -901,7 +897,7 @@ suite('Tool Calling Integration Tests', () => {
     }
   });
 
-  test('should handle tool calling with custom execution context', async () => {
+  it('should handle tool calling with custom execution context', async () => {
     const fetchStub = sandbox.stub(global, 'fetch' as any);
     
     fetchStub.resolves({
@@ -968,3 +964,4 @@ suite('Tool Calling Integration Tests', () => {
     assert.ok(response.toolResults![0].result.includes(workspaceUri.fsPath), 'Should use execution context');
   });
 });
+

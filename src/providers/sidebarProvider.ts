@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 
 export interface WebviewMessage {
   type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout';
@@ -18,7 +17,7 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
   private _extensionUri: vscode.Uri;
   private _context: vscode.ExtensionContext;
 
-  constructor(private readonly context: vscode.ExtensionContext) {
+  constructor(context: vscode.ExtensionContext) {
     this._extensionUri = context.extensionUri;
     this._context = context;
   }
@@ -26,7 +25,6 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
     context: vscode.WebviewViewResolveContext,
-    _token: vscode.CancellationToken,
   ) {
     this._view = webviewView;
 
@@ -45,7 +43,6 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
       (message: ExtensionMessage) => {
         this._handleWebviewMessage(message);
       },
-      undefined,
       this._context.subscriptions
     );
   }

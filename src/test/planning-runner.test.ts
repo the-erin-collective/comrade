@@ -118,11 +118,11 @@ const mockAgentMapping: PhaseAgentMapping = {
   }
 };
 
-suite('PlanningRunner Tests', () => {
+describe('PlanningRunner Tests', () => {
   let workspaceUri: vscode.Uri;
   let session: Session;
 
-  setup(() => {
+  beforeEach(() => {
     // Create mock workspace URI
     workspaceUri = vscode.Uri.file('/test/workspace');
     
@@ -140,12 +140,12 @@ suite('PlanningRunner Tests', () => {
     session.metadata.userRequirements = 'Create a simple React component with TypeScript that displays a greeting message';
   });
 
-  test('should create PlanningRunner instance', () => {
+  it('should create PlanningRunner instance', () => {
     const runner = new PlanningRunner(session, mockAgent, 'Test personality');
     assert.ok(runner);
   });
 
-  test('should validate inputs correctly', () => {
+  it('should validate inputs correctly', () => {
     const runner = new PlanningRunner(session, mockAgent, 'Test personality');
     
     // Access protected method for testing
@@ -155,7 +155,7 @@ suite('PlanningRunner Tests', () => {
     assert.strictEqual(isValid, true);
   });
 
-  test('should validate inputs fail without agent', () => {
+  it('should validate inputs fail without agent', () => {
     const runner = new PlanningRunner(session, null as any, 'Test personality');
     
     // Access protected method for testing
@@ -165,7 +165,7 @@ suite('PlanningRunner Tests', () => {
     assert.strictEqual(isValid, false);
   });
 
-  test('should get runner name', () => {
+  it('should get runner name', () => {
     const runner = new PlanningRunner(session, mockAgent, 'Test personality');
     
     // Access protected method for testing
@@ -175,7 +175,7 @@ suite('PlanningRunner Tests', () => {
     assert.strictEqual(name, 'Planning');
   });
 
-  test('should infer action types correctly', () => {
+  it('should infer action types correctly', () => {
     const runner = new PlanningRunner(session, mockAgent, 'Test personality');
     
     // Access private method for testing
@@ -188,7 +188,7 @@ suite('PlanningRunner Tests', () => {
     assert.strictEqual(inferActionType('Execute the build command'), ActionType.RUN_COMMAND);
   });
 
-  test('should extract action parameters correctly', () => {
+  it('should extract action parameters correctly', () => {
     const runner = new PlanningRunner(session, mockAgent, 'Test personality');
     
     // Access private method for testing
@@ -204,7 +204,7 @@ suite('PlanningRunner Tests', () => {
     assert.strictEqual(params3.packageName, '@types/react');
   });
 
-  test('should extract actions from plan text', () => {
+  it('should extract actions from plan text', () => {
     const runner = new PlanningRunner(session, mockAgent, 'Test personality');
     
     const planText = `
@@ -236,7 +236,7 @@ This is a moderate complexity task.
     assert.strictEqual(actions[3].type, ActionType.RUN_COMMAND);
   });
 
-  test('should calculate action metadata correctly', () => {
+  it('should calculate action metadata correctly', () => {
     const runner = new PlanningRunner(session, mockAgent, 'Test personality');
     
     const actions = [
@@ -276,7 +276,7 @@ This is a moderate complexity task.
     assert.ok(metadata.estimatedDuration > 0);
   });
 
-  test('should enhance action parameters with context', () => {
+  it('should enhance action parameters with context', () => {
     const runner = new PlanningRunner(session, mockAgent, 'Test personality');
     
     const action = {
@@ -297,7 +297,7 @@ This is a moderate complexity task.
     assert.strictEqual(enhanced.language, 'typescript');
   });
 
-  test('should build context summary', () => {
+  it('should build context summary', () => {
     const runner = new PlanningRunner(session, mockAgent, 'Test personality');
     
     // Set mock workspace context
@@ -314,7 +314,7 @@ This is a moderate complexity task.
     assert.ok(summary.includes('React'));
   });
 
-  test('should handle missing workspace context', () => {
+  it('should handle missing workspace context', () => {
     const runner = new PlanningRunner(session, mockAgent, 'Test personality');
     
     // Don't set workspace context
@@ -326,7 +326,7 @@ This is a moderate complexity task.
     assert.strictEqual(summary, 'No workspace context available');
   });
 
-  test('should build planning system prompt', () => {
+  it('should build planning system prompt', () => {
     const runner = new PlanningRunner(session, mockAgent, 'Test personality');
     
     // Set mock workspace context
@@ -343,7 +343,7 @@ This is a moderate complexity task.
     assert.ok(prompt.includes('Test personality'));
   });
 
-  test('should build planning user prompt for first iteration', () => {
+  it('should build planning user prompt for first iteration', () => {
     const runner = new PlanningRunner(session, mockAgent, 'Test personality');
     
     const userRequirements = 'Create a React component';
@@ -360,7 +360,7 @@ This is a moderate complexity task.
     assert.ok(!prompt.includes('PREVIOUS PLAN'));
   });
 
-  test('should build planning user prompt for refinement iteration', () => {
+  it('should build planning user prompt for refinement iteration', () => {
     const runner = new PlanningRunner(session, mockAgent, 'Test personality');
     
     const userRequirements = 'Create a React component';
@@ -377,7 +377,7 @@ This is a moderate complexity task.
     assert.ok(prompt.includes('refine and improve'));
   });
 
-  test('should determine when to continue iterating', async () => {
+  it('should determine when to continue iterating', async () => {
     const runner = new PlanningRunner(session, mockAgent, 'Test personality');
     
     // Access private method for testing
@@ -399,3 +399,4 @@ This is a moderate complexity task.
     assert.strictEqual(result3, true);
   });
 });
+

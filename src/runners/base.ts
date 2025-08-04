@@ -4,8 +4,8 @@
 
 import * as vscode from 'vscode';
 import { IAgent } from '../core/agent';
-import { ISession, SessionState } from '../core/session';
-import { WebFileSystem, WebCompatibility } from '../core/webcompat';
+import { ISession } from '../core/session';
+import { WebFileSystem } from '../core/webcompat';
 
 export interface RunnerResult {
   success: boolean;

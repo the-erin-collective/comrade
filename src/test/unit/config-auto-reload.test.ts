@@ -27,11 +27,9 @@ const mockPersonalityManager = {
   initialize: async () => {}
 } as any;
 
-suite('Configuration Auto-Reload Unit Tests', () => {
+describe('Configuration Auto-Reload Unit Tests', () => {
   let autoReloadManager: ConfigurationAutoReloadManager;
-  let testComponent: TestReloadableComponent;
-
-  setup(() => {
+  let testComponent: TestReloadableComponent;  beforeEach(() => {
     // Reset singleton
     ConfigurationAutoReloadManager.resetInstance();
     
@@ -45,22 +43,18 @@ suite('Configuration Auto-Reload Unit Tests', () => {
     // Create test component
     testComponent = new TestReloadableComponent();
     autoReloadManager.registerComponent(testComponent);
-  });
-
-  teardown(() => {
+  });  afterEach(() => {
     if (autoReloadManager) {
       autoReloadManager.dispose();
     }
   });
 
-  suite('Component Registration', () => {
-    
-    test('should register and track components', () => {
+  describe('Component Registration', () => {  it('should register and track components', () => {
       const stats = autoReloadManager.getReloadStats();
       assert.ok(stats.registeredComponents > 0, 'Should have registered components');
     });
 
-    test('should unregister components', () => {
+  it('should unregister components', () => {
       const initialStats = autoReloadManager.getReloadStats();
       
       autoReloadManager.unregisterComponent(ComponentType.AGENTS);
@@ -69,7 +63,7 @@ suite('Configuration Auto-Reload Unit Tests', () => {
       assert.strictEqual(newStats.registeredComponents, initialStats.registeredComponents - 1);
     });
 
-    test('should track reload statistics', () => {
+  it('should track reload statistics', () => {
       const stats = autoReloadManager.getReloadStats();
       
       assert.ok(typeof stats.registeredComponents === 'number');
@@ -80,9 +74,7 @@ suite('Configuration Auto-Reload Unit Tests', () => {
     });
   });
 
-  suite('Configuration Precedence Rules (Requirement 6.6)', () => {
-    
-    test('should determine workspace precedence over user settings', () => {
+  describe('Configuration Precedence Rules (Requirement 6.6)', () => {  it('should determine workspace precedence over user settings', () => {
       const userEvent: ConfigurationChangeEvent = {
         section: 'comrade.agents',
         affectedComponents: [ComponentType.AGENTS],
@@ -106,7 +98,7 @@ suite('Configuration Auto-Reload Unit Tests', () => {
       assert.ok(shouldOverride, 'Workspace settings should override user settings');
     });
 
-    test('should determine user precedence over default settings', () => {
+  it('should determine user precedence over default settings', () => {
       const defaultEvent: ConfigurationChangeEvent = {
         section: 'comrade.agents',
         affectedComponents: [ComponentType.AGENTS],
@@ -130,7 +122,7 @@ suite('Configuration Auto-Reload Unit Tests', () => {
       assert.ok(shouldOverride, 'User settings should override default settings');
     });
 
-    test('should not override higher precedence with lower', () => {
+  it('should not override higher precedence with lower', () => {
       const workspaceEvent: ConfigurationChangeEvent = {
         section: 'comrade.agents',
         affectedComponents: [ComponentType.AGENTS],
@@ -155,9 +147,7 @@ suite('Configuration Auto-Reload Unit Tests', () => {
     });
   });
 
-  suite('Component Reload Workflow', () => {
-    
-    test('should reload components in dependency order', async () => {
+  describe('Component Reload Workflow', () => {  it('should reload components in dependency order', async () => {
       const reloadOrder: ComponentType[] = [];
       
       // Create components that track reload order
@@ -182,7 +172,7 @@ suite('Configuration Auto-Reload Unit Tests', () => {
       assert.deepStrictEqual(orderedTypes, expectedOrder);
     });
 
-    test('should handle reload failures gracefully', async () => {
+  it('should handle reload failures gracefully', async () => {
       // Create a component that fails to reload
       const failingComponent = new TestReloadableComponent(ComponentType.MCP_SERVERS);
       failingComponent.shouldFailReload = true;
@@ -197,7 +187,7 @@ suite('Configuration Auto-Reload Unit Tests', () => {
       assert.strictEqual(stats.reloadsInProgress, 0, 'Should not have stuck reloads');
     });
 
-    test('should prevent concurrent reloads of same component', async () => {
+  it('should prevent concurrent reloads of same component', async () => {
       let reloadStartCount = 0;
       let reloadCompleteCount = 0;
       
@@ -225,9 +215,7 @@ suite('Configuration Auto-Reload Unit Tests', () => {
     });
   });
 
-  suite('Manual Reload Operations', () => {
-    
-    test('should support manual reload of specific components', async () => {
+  describe('Manual Reload Operations', () => {  it('should support manual reload of specific components', async () => {
       const initialReloadCount = testComponent.reloadCount;
       
       await autoReloadManager.manualReload([ComponentType.AGENTS]);
@@ -237,7 +225,7 @@ suite('Configuration Auto-Reload Unit Tests', () => {
       assert.ok(testComponent.lastChangeEvent.section.includes('manual'));
     });
 
-    test('should wait for all reloads to complete', async () => {
+  it('should wait for all reloads to complete', async () => {
       // Start a slow reload
       const slowComponent = new TestReloadableComponent(ComponentType.MCP_SERVERS);
       let reloadCompleted = false;
@@ -258,9 +246,7 @@ suite('Configuration Auto-Reload Unit Tests', () => {
     });
   });
 
-  suite('Configuration Change Analysis', () => {
-    
-    test('should analyze configuration changes correctly', () => {
+  describe('Configuration Change Analysis', () => {  it('should analyze configuration changes correctly', () => {
       // Create mock configuration change event
       const mockEvent = {
         affectsConfiguration: (section: string) => {
@@ -281,7 +267,7 @@ suite('Configuration Auto-Reload Unit Tests', () => {
       assert.ok(mcpChange, 'Should detect MCP server configuration changes');
     });
 
-    test('should determine configuration precedence', () => {
+  it('should determine configuration precedence', () => {
       // Test precedence determination logic
       const precedence = (autoReloadManager as any).determineConfigurationPrecedence('comrade.agents');
       
@@ -290,9 +276,7 @@ suite('Configuration Auto-Reload Unit Tests', () => {
     });
   });
 
-  suite('Error Handling and Recovery', () => {
-    
-    test('should handle component registration errors', () => {
+  describe('Error Handling and Recovery', () => {  it('should handle component registration errors', () => {
       // Try to register invalid component
       const invalidComponent = null as any;
       
@@ -306,7 +290,7 @@ suite('Configuration Auto-Reload Unit Tests', () => {
       });
     });
 
-    test('should handle reload queue processing errors', async () => {
+  it('should handle reload queue processing errors', async () => {
       // Create a component that throws during reload
       const errorComponent = new TestReloadableComponent(ComponentType.UI_SETTINGS);
       errorComponent.shouldFailReload = true;
@@ -322,9 +306,7 @@ suite('Configuration Auto-Reload Unit Tests', () => {
     });
   });
 
-  suite('Reload Queue Management', () => {
-    
-    test('should queue reload events properly', () => {
+  describe('Reload Queue Management', () => {  it('should queue reload events properly', () => {
       const event: ConfigurationChangeEvent = {
         section: 'comrade.agents',
         affectedComponents: [ComponentType.AGENTS],
@@ -339,7 +321,7 @@ suite('Configuration Auto-Reload Unit Tests', () => {
       assert.ok(stats.queuedReloads > 0, 'Should have queued reload events');
     });
 
-    test('should consolidate duplicate reload events', () => {
+  it('should consolidate duplicate reload events', () => {
       const event1: ConfigurationChangeEvent = {
         section: 'comrade.agents',
         affectedComponents: [ComponentType.AGENTS],
@@ -400,3 +382,4 @@ class TestReloadableComponent implements ReloadableComponent {
     return changeEvent.affectedComponents.includes(this.componentType);
   }
 }
+
