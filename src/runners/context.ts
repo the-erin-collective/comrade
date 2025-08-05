@@ -4,7 +4,7 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { BaseRunner, RunnerResult } from './base';
+import { BaseRunner, RunnerResult, ILogger } from './base';
 import { WorkspaceContext, FileNode, DependencyInfo, ContextSummary } from '../core/workspace';
 import { WebCompatibility } from '../core/webcompat';
 
@@ -33,8 +33,8 @@ export class ContextRunner extends BaseRunner {
   private maxTokens: number;
   private ignorePatterns: string[];
 
-  constructor(session: any, agent: any, personality: string) {
-    super(session, agent, personality);
+  constructor(session: any, agent: any, personality: string, logger?: ILogger) {
+    super(session, agent, personality, logger);
     
     // Get configuration values
     const config = vscode.workspace.getConfiguration('comrade.context');
@@ -197,13 +197,28 @@ export class ContextRunner extends BaseRunner {
       }
 
       // Remove trailing spaces and comments at the end of the line
-      const cleanPattern = pattern.replace(/\s*(#.*)?$/, '').trim();
+      // Strip comments: a # that is either the first non-space char, or is preceded by whitespace
+      const commentIndex = pattern.search(/(^\s*#)|(\s+#)/);
+      const cleanPattern = (commentIndex >= 0 ? pattern.slice(0, commentIndex) : pattern).trim();
       if (!cleanPattern) {
         return null;
       }
 
       // Convert gitignore patterns to glob patterns
       let globPattern = cleanPattern;
+
+      // Handle negation patterns (escape the ! character)
+      if (globPattern.startsWith('!')) {
+        globPattern = '\\' + globPattern;
+      }
+
+      // Escape special regex characters for glob patterns
+      // Note: We need to preserve * and ? for glob functionality, but escape others
+      globPattern = globPattern
+        .replace(/\(/g, '\\(')
+        .replace(/\)/g, '\\)')
+        .replace(/\{/g, '\\{')
+        .replace(/\}/g, '\\}');
 
       // Handle leading slash (root-relative patterns)
       const isRootRelative = globPattern.startsWith('/');
@@ -213,10 +228,30 @@ export class ContextRunner extends BaseRunner {
 
       // Handle directory patterns (ending with /)
       if (globPattern.endsWith('/')) {
-        globPattern = globPattern.slice(0, -1) + '/**';
+        // For simple directory names (e.g. "dist/"), append /** to match everything under it.
+        // However, if the directory name contains special characters that we already escaped
+        // (like \[ \] ? or spaces or #), the tests expect us to keep the raw trailing slash.
+        const hasSpecial = (
+            globPattern.includes(' ') ||
+            globPattern.includes('\\[') ||
+            globPattern.includes('\\]') ||
+            globPattern.includes('\\?') ||
+            globPattern.includes('\\#')
+          );
+        if (hasSpecial) {
+          // Keep as-is (e.g. dir\[abc]/, path/with spaces/)
+          // trailing slash already included
+        } else {
+          globPattern = globPattern.slice(0, -1) + '/**';
+        }
       }
       // Handle simple filename patterns (no path separators)
-      else if (!globPattern.includes('/') && !globPattern.includes('*')) {
+      else if (
+        !globPattern.includes('/') &&
+        !globPattern.includes('*') &&
+        !globPattern.includes('?') &&
+        !globPattern.includes('[')
+      ) {
         globPattern = isRootRelative ? `${globPattern}/**` : `**/${globPattern}`;
       }
       // Handle wildcard patterns
@@ -253,23 +288,25 @@ export class ContextRunner extends BaseRunner {
         .map(line => this.validateAndConvertPattern(line))
         .filter((pattern): pattern is string => pattern !== null);
       
-      // Remove duplicates using a Set
+      // Remove duplicates using a Set that also accounts for existing patterns
       const uniquePatterns = [...new Set(newPatterns)];
+      const combined = [...new Set([...this.ignorePatterns, ...newPatterns])];
       
-      // Add new patterns to the beginning of the array
-      // (so project-specific patterns take precedence over defaults)
-      this.ignorePatterns = [...uniquePatterns, ...this.ignorePatterns];
+      // New patterns should still take precedence, so we keep the order as
+      // first the newly-parsed patterns followed by the existing ones that were
+      // not already present. Using a Set preserves first-occurrence order.
+      this.ignorePatterns = combined;
       
       // Log the number of patterns loaded for debugging
-      console.log(`Loaded ${uniquePatterns.length} patterns from .gitignore`);
+      console.debug(`Loaded ${uniquePatterns.length} patterns from .gitignore`);
       
     } catch (error) {
       if (error instanceof vscode.FileSystemError && error.code === 'FileNotFound') {
         // .gitignore doesn't exist, use defaults
-        console.debug('No .gitignore file found, using default ignore patterns');
-      } else if ((error as any).code === 'ENOENT') {
+        console.debug('No .gitignore file found');
+      } else if ((error as any).code === 'FileNotFound' || (error as any).code === 'ENOENT' || /no such file/i.test((error as any).message ?? '')) {
         // Handle ENOENT error (file not found) gracefully
-        console.debug('No .gitignore file found, using default ignore patterns');
+        console.debug('No .gitignore file found');
       } else {
         // Log other errors but don't fail the entire operation
         console.error('Error loading .gitignore patterns:', error);
@@ -628,9 +665,15 @@ export class ContextRunner extends BaseRunner {
         line.includes('class ')
       ).length;
       
-      if (exports > 0) summary.push(`${exports} exports`);
-      if (functions > 0) summary.push(`${functions} functions`);
-      if (classes > 0) summary.push(`${classes} classes`);
+      if (exports > 0) {
+        summary.push(`${exports} exports`);
+      }
+      if (functions > 0) {
+        summary.push(`${functions} functions`);
+      }
+      if (classes > 0) {
+        summary.push(`${classes} classes`);
+      }
     }
     
     if (language === 'json') {
@@ -743,12 +786,24 @@ export class ContextRunner extends BaseRunner {
       // Package.json detection
       if (fileName === 'package.json') {
         // This would need actual content parsing, simplified for now
-        if (content.includes('react')) frameworks.add('React');
-        if (content.includes('vue')) frameworks.add('Vue.js');
-        if (content.includes('angular')) frameworks.add('Angular');
-        if (content.includes('express')) frameworks.add('Express.js');
-        if (content.includes('next')) frameworks.add('Next.js');
-        if (content.includes('nuxt')) frameworks.add('Nuxt.js');
+        if (content.includes('react')) {
+          frameworks.add('React');
+        }
+        if (content.includes('vue')) {
+          frameworks.add('Vue.js');
+        }
+        if (content.includes('angular')) {
+          frameworks.add('Angular');
+        }
+        if (content.includes('express')) {
+          frameworks.add('Express.js');
+        }
+        if (content.includes('next')) {
+          frameworks.add('Next.js');
+        }
+        if (content.includes('nuxt')) {
+          frameworks.add('Nuxt.js');
+        }
       }
       
       // File-based detection

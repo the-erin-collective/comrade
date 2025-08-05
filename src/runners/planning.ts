@@ -2,7 +2,7 @@
  * PlanningRunner for iterative plan generation
  */
 
-import { BaseRunner, RunnerResult } from './base';
+import { BaseRunner, RunnerResult, ILogger } from './base';
 import { WorkspaceContext, ActionList, Action, ActionType, ActionStatus, ActionMetadata } from '../core/workspace';
 import { ChatMessage, IChatBridge, ChatBridge } from '../core/chat';
 import { IAgent } from '../core/agent';
@@ -37,9 +37,10 @@ export class PlanningRunner extends BaseRunner {
     session: ISession,
     agent: IAgent,
     personality: string,
-    options: PlanningOptions = {}
+    options: PlanningOptions = {},
+    logger?: ILogger
   ) {
-    super(session, agent, personality);
+    super(session, agent, personality, logger);
     this.chatBridge = new ChatBridge();
     this.options = {
       maxIterations: 3,

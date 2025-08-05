@@ -7,6 +7,10 @@ import { IAgent } from '../core/agent';
 import { ISession } from '../core/session';
 import { WebFileSystem } from '../core/webcompat';
 
+export interface ILogger {
+  error(msg: string): void;
+}
+
 export interface RunnerResult {
   success: boolean;
   data?: any;
@@ -42,11 +46,13 @@ export abstract class BaseRunner {
   protected session: ISession;
   protected agent: IAgent;
   protected personality: string;
+  protected logger: ILogger;
 
-  constructor(session: ISession, agent: IAgent, personality: string) {
+  constructor(session: ISession, agent: IAgent, personality: string, logger: ILogger = console) {
     this.session = session;
     this.agent = agent;
     this.personality = personality;
+    this.logger = logger;
   }
 
   /**
@@ -70,11 +76,18 @@ export abstract class BaseRunner {
           { runner: this.getRunnerName() }
         );
         error.suggestedFix = 'Check your configuration and try again';
-        await this.handleError(error);
-        return {
-          success: false,
-          error
-        };
+        try {
+          await this.handleError(error);
+          return {
+            success: false,
+            error
+          };
+        } catch (handledError) {
+          return {
+            success: false,
+            error: handledError as Error
+          };
+        }
       }
 
       // Report start of execution
@@ -101,11 +114,18 @@ export abstract class BaseRunner {
 
       return result;
     } catch (error) {
-      await this.handleError(error as Error);
-      return {
-        success: false,
-        error: error as Error
-      };
+      try {
+        await this.handleError(error as Error);
+        return {
+          success: false,
+          error: error as Error
+        };
+      } catch (handledError) {
+        return {
+          success: false,
+          error: handledError as Error
+        };
+      }
     }
   }
 
@@ -286,7 +306,7 @@ export abstract class BaseRunner {
    */
   protected async defaultErrorHandler(error: Error): Promise<ErrorRecoveryOptions> {
     // Log the error
-    console.error(`Error in ${this.getRunnerName()}:`, error);
+    this.logger.error(`Error in ${this.getRunnerName()}: ${error.message}`);
 
     // Update session state
     this.session.error(`${this.getRunnerName()} failed: ${error.message}`);

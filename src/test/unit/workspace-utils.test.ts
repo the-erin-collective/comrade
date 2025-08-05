@@ -49,10 +49,18 @@ describe('Workspace Utilities', () => {
 
   describe('handleNoWorkspace', () => {
     it('should show a warning message when no workspace is open', () => {
+      // Mock the promise to avoid hanging
+      showWarningMessageStub.resolves(undefined);
+      
       handleNoWorkspace({} as any);
       assert(showWarningMessageStub.calledOnce);
       const message = showWarningMessageStub.firstCall.args[0];
       assert(message.includes('requires an open workspace'));
+      
+      // Check that the correct options are provided
+      const options = showWarningMessageStub.firstCall.args.slice(1);
+      assert(options.includes('Open Workspace'));
+      assert(options.includes('Open Folder'));
     });
 
     it('should not show a warning when a workspace is open', () => {
@@ -64,8 +72,13 @@ describe('Workspace Utilities', () => {
     });
 
     it('should execute open workspace command when button is clicked', async () => {
-      showWarningMessageStub.resolves({ title: 'Open Workspace' });
-      await handleNoWorkspace({} as any);
+      showWarningMessageStub.resolves('Open Workspace');
+      
+      handleNoWorkspace({} as any);
+      
+      // Wait for the promise to resolve
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
       assert(executeCommandStub.calledWith('workbench.action.openWorkspace'));
     });
   });

@@ -66,7 +66,8 @@ describe('OpenAI Function Calling Integration Tests', () => {
     ToolManager.resetInstance();
   });
 
-  describe('Tool Integration', () => {  it('should add available tools to OpenAI request', async () => {
+  describe('Tool Integration', () => {
+    it('should add available tools to OpenAI request', async () => {
       // Register a test tool
       const testTool: ToolDefinition = {
         name: 'test_tool',

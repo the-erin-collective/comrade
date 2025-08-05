@@ -4,7 +4,7 @@
 
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { BaseRunner, RunnerResult, RunnerError } from './base';
+import { BaseRunner, RunnerResult, RunnerError, ILogger } from './base';
 import { ActionList, Action, ActionType, ActionStatus, ActionResult } from '../core/workspace';
 import { ChatMessage, IChatBridge, ChatBridge } from '../core/chat';
 import { IAgent } from '../core/agent';
@@ -41,9 +41,10 @@ export class ExecutionRunner extends BaseRunner {
     session: ISession,
     agent: IAgent,
     personality: string,
-    options: ExecutionOptions = {}
+    options: ExecutionOptions = {},
+    logger?: ILogger
   ) {
-    super(session, agent, personality);
+    super(session, agent, personality, logger);
     this.chatBridge = new ChatBridge();
     this.options = {
       dryRun: false,
@@ -285,18 +286,28 @@ export class ExecutionRunner extends BaseRunner {
   /**
    * Check if action dependencies are satisfied
    */
-  private areDependenciesSatisfied(action: Action): boolean {
-    if (!this.actionList || !action.dependencies || action.dependencies.length === 0) {
+  public areDependenciesSatisfied(action: Action): boolean {
+    // If no dependencies, they are satisfied by default
+    if (!action.dependencies || action.dependencies.length === 0) {
       return true;
     }
 
+    // If we don't have an action list, dependencies can't be satisfied
+    if (!this.actionList) {
+      return false;
+    }
+
+    // Check each dependency
     for (const depId of action.dependencies) {
       const dependency = this.actionList.actions.find(a => a.id === depId);
+      
+      // If dependency doesn't exist or isn't completed, dependencies aren't satisfied
       if (!dependency || dependency.status !== ActionStatus.COMPLETED) {
         return false;
       }
     }
 
+    // All dependencies are satisfied
     return true;
   }
 

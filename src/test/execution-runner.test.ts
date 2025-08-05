@@ -185,25 +185,26 @@ describe('ExecutionRunner Tests', () => {
   });
 
   it('should handle action dependencies correctly', () => {
-    const runner = executionRunner as any;
+    // Verify the method exists
+    assert.ok(typeof executionRunner.areDependenciesSatisfied === 'function', 'areDependenciesSatisfied method should exist');
     
     // Create a copy of the sample action list to avoid modifying the original
     const testActionList = JSON.parse(JSON.stringify(sampleActionList));
-    runner.actionList = testActionList;
+    (executionRunner as any).actionList = testActionList;
 
     // Test action without dependencies
     const action1 = testActionList.actions[0];
-    const satisfied1 = runner.areDependenciesSatisfied(action1);
+    const satisfied1 = executionRunner.areDependenciesSatisfied(action1);
     assert.strictEqual(satisfied1, true);
 
     // Test action with unsatisfied dependencies
     const action2 = testActionList.actions[1];
-    const satisfied2 = runner.areDependenciesSatisfied(action2);
+    const satisfied2 = executionRunner.areDependenciesSatisfied(action2);
     assert.strictEqual(satisfied2, false);
 
     // Mark dependency as completed and test again
     testActionList.actions[0].status = ActionStatus.COMPLETED;
-    const satisfied3 = runner.areDependenciesSatisfied(action2);
+    const satisfied3 = executionRunner.areDependenciesSatisfied(action2);
     assert.strictEqual(satisfied3, true);
   });
 

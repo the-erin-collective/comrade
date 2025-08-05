@@ -4,9 +4,10 @@
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { BaseRunner, RunnerResult } from '../runners/base';
+import { BaseRunner, RunnerResult, ILogger } from '../runners/base';
 import { Session, SessionState, WorkflowMode } from '../core/session';
 import { IAgent, PhaseAgentMapping, SessionRequirements, AgentCapabilities, PhaseType } from '../core/agent';
+import sinon from 'sinon';
 
 // Mock agent for testing
 class MockAgent implements IAgent {
@@ -36,8 +37,8 @@ class TestRunner extends BaseRunner {
   private shouldFail: boolean;
   private shouldValidate: boolean;
 
-  constructor(session: any, agent: IAgent, personality: string, shouldFail = false, shouldValidate = true) {
-    super(session, agent, personality);
+  constructor(session: any, agent: IAgent, personality: string, shouldFail = false, shouldValidate = true, logger?: ILogger) {
+    super(session, agent, personality, logger);
     this.shouldFail = shouldFail;
     this.shouldValidate = shouldValidate;
   }
@@ -46,7 +47,7 @@ class TestRunner extends BaseRunner {
     if (this.shouldFail) {
       throw new Error('Test execution failure');
     }
-    
+
     this.reportProgress('Test execution in progress');
     return {
       success: true,
@@ -59,7 +60,10 @@ class TestRunner extends BaseRunner {
   }
 
   protected async handleError(error: Error): Promise<void> {
-    await this.defaultErrorHandler(error);
+    // Wrap the error with runner name like a real runner would
+    const wrappedError = new Error(`${this.getRunnerName()} failed: ${error.message}`);
+    await this.defaultErrorHandler(wrappedError);
+    throw wrappedError;
   }
 
   protected getRunnerName(): string {
@@ -242,7 +246,7 @@ describe('BaseRunner Tests', () => {
       preferredCostTier: 'low'
     };
     mockProgress = new MockProgress();
-    
+
     mockSession = new Session(
       'test-session',
       mockWorkspaceUri,
@@ -251,7 +255,7 @@ describe('BaseRunner Tests', () => {
       WorkflowMode.SPEED,
       mockProgress
     );
-    
+
     mockAgent = new MockAgent();
   });
 
@@ -265,21 +269,23 @@ describe('BaseRunner Tests', () => {
   });
 
   it('Runner execution with validation failure', async () => {
-    const runner = new TestRunner(mockSession, mockAgent, 'test personality', false, false);
+    const logger = { error: sinon.stub() };
+    const runner = new TestRunner(mockSession, mockAgent, 'test personality', false, false, logger);
     const result = await runner.run();
 
     assert.strictEqual(result.success, false);
-    assert.ok(result.error);
-    assert.strictEqual(result.error.message, 'Input validation failed');
+    assert.match(result.error?.message || '', /Input validation failed/);
+    sinon.assert.calledOnce(logger.error);
   });
 
   it('Runner execution with execution failure', async () => {
-    const runner = new TestRunner(mockSession, mockAgent, 'test personality', true, true);
+    const logger = { error: sinon.stub() };
+    const runner = new TestRunner(mockSession, mockAgent, 'test personality', true, true, logger);
     const result = await runner.run();
 
     assert.strictEqual(result.success, false);
-    assert.ok(result.error);
-    assert.strictEqual(result.error.message, 'Test execution failure');
+    assert.match(result.error?.message || '', /TestRunner failed: Test execution failure/);
+    sinon.assert.calledOnce(logger.error);
   });
 
   it('Runner execution with cancelled session', async () => {
@@ -294,7 +300,7 @@ describe('BaseRunner Tests', () => {
 
   it('Runner error creation', () => {
     const runner = new TestRunner(mockSession, mockAgent, 'test personality');
-    
+
     const recoverableError = (runner as any).createRecoverableError('Test error', 'TEST_ERROR', { test: true });
     assert.strictEqual(recoverableError.message, 'Test error');
     assert.strictEqual(recoverableError.code, 'TEST_ERROR');
@@ -309,7 +315,7 @@ describe('BaseRunner Tests', () => {
 
   it('Runner workspace utilities', () => {
     const runner = new TestRunner(mockSession, mockAgent, 'test personality');
-    
+
     const workspaceRoot = (runner as any).getWorkspaceRoot();
     // Handle both Windows and Unix paths
     const expectedPath = process.platform === 'win32' ? '\\test\\workspace' : '/test/workspace';

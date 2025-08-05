@@ -348,7 +348,7 @@ export class ChatBridge implements IChatBridge {
       }
       throw new ChatBridgeError(
         `Failed to stream message: ${error instanceof Error ? error.message : String(error)}`,
-        'stream_message_failed',
+        'STREAM_ERROR',
         agent.provider
       );
     }

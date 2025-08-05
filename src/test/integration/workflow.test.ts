@@ -11,7 +11,7 @@ import { PlanningRunner } from '../../runners/planning';
 import { ExecutionRunner } from '../../runners/execution';
 import { AgentRegistry } from '../../core/registry';
 import { ConfigurationManager } from '../../core/config';
-import { ChatBridge } from '../../core/chat';
+
 import { SessionState, WorkflowMode } from '../../core/session';
 import { 
   createMockSession, 

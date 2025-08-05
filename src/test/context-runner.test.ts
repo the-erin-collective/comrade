@@ -301,21 +301,27 @@ describe('ContextRunner Tests', () => {
       error.code = 'FileNotFound';
       readWorkspaceFileStub.rejects(error);
       
-      // Store original console.debug to restore later
-      const originalDebug = console.debug;
-      const debugSpy = sandbox.spy(console, 'debug');
+      // Mock console.debug to capture the message
+      const debugStub = sandbox.stub(console, 'debug');
       
-      await (contextRunner as any).loadGitignorePatterns();
-      
-      // Verify default patterns are still present
-      const ignorePatterns = (contextRunner as any).ignorePatterns;
-      assert.ok(ignorePatterns.length > 0);
-      
-      // Verify debug message was logged
-      assert.ok(debugSpy.calledWith(sinon.match('No .gitignore file found')));
-      
-      // Restore console.debug
-      console.debug = originalDebug;
+      try {
+        await (contextRunner as any).loadGitignorePatterns();
+        
+        // Verify default patterns are still present
+        const ignorePatterns = (contextRunner as any).ignorePatterns;
+        assert.ok(ignorePatterns.length > 0);
+        
+        // Verify debug message was logged - be more flexible with the assertion
+        const debugCalls = debugStub.getCalls();
+        const hasExpectedMessage = debugCalls.some(call => 
+          call.args[0] && call.args[0].includes('No .gitignore file found')
+        );
+        assert.ok(hasExpectedMessage, 
+          `Expected debug message not found. Actual calls: ${debugCalls.map(call => call.args[0]).join(', ')}`);
+      } catch (testError) {
+        console.error('Test error:', testError);
+        throw testError;
+      }
     });
 
     it('should handle read errors gracefully', async () => {
@@ -323,18 +329,24 @@ describe('ContextRunner Tests', () => {
       error.code = 'EACCES';
       readWorkspaceFileStub.rejects(error);
       
-      // Store original console.error to restore later
-      const originalError = console.error;
-      const errorSpy = sandbox.spy(console, 'error');
+      // Mock console.error to capture the message
+      const errorStub = sandbox.stub(console, 'error');
       
-      // Should not throw
-      await (contextRunner as any).loadGitignorePatterns();
-      
-      // Verify error was logged
-      assert.ok(errorSpy.calledWith(sinon.match('Error loading .gitignore patterns')));
-      
-      // Restore console.error
-      console.error = originalError;
+      try {
+        // Should not throw
+        await (contextRunner as any).loadGitignorePatterns();
+        
+        // Verify error was logged - be more flexible with the assertion
+        const errorCalls = errorStub.getCalls();
+        const hasExpectedMessage = errorCalls.some(call => 
+          call.args[0] && call.args[0].includes('Error loading .gitignore patterns')
+        );
+        assert.ok(hasExpectedMessage,
+          `Expected error message not found. Actual calls: ${errorCalls.map(call => call.args.join(' ')).join(', ')}`);
+      } catch (testError) {
+        console.error('Test error:', testError);
+        throw testError;
+      }
     });
 
   it('should not add duplicate patterns', async () => {

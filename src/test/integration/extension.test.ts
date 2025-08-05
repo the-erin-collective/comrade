@@ -266,7 +266,7 @@ describe('VS Code Extension Integration Tests', () => {
     assert.ok(personalityCall, 'Personality config command should be registered');
     
     // Mock VS Code APIs
-    const _showTextDocumentStub = sandbox.stub(vscode.window, 'showTextDocument');
+    sandbox.stub(vscode.window, 'showTextDocument');
     const openTextDocumentStub = sandbox.stub(vscode.workspace, 'openTextDocument');
     
     // Mock document opening
@@ -307,7 +307,7 @@ describe('VS Code Extension Integration Tests', () => {
     
     // Mock VS Code APIs
     const withProgressStub = sandbox.stub(vscode.window, 'withProgress');
-    const _showInformationMessageStub = sandbox.stub(vscode.window, 'showInformationMessage');
+    sandbox.stub(vscode.window, 'showInformationMessage');
     
     // Mock progress execution
     withProgressStub.callsFake(async (_options, task) => {
@@ -341,7 +341,7 @@ describe('VS Code Extension Integration Tests', () => {
     
     // Mock VS Code APIs
     const showQuickPickStub = sandbox.stub(vscode.window, 'showQuickPick');
-    const _showInformationMessageStub = sandbox.stub(vscode.window, 'showInformationMessage');
+    sandbox.stub(vscode.window, 'showInformationMessage');
     
     // Mock user selecting recovery option
     showQuickPickStub.resolves({ 

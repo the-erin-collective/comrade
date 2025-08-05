@@ -19,9 +19,7 @@ describe('Personality Integration Tests', () => {
   });
 
   it('should inject personality into messages', async () => {
-    const _originalMessages: ChatMessage[] = [
-      { role: 'user', content: 'Hello, can you help me?' }
-    ];
+
 
     // We can't easily test the actual injection without mocking the file system,
     // but we can verify that the injectPersonality method exists and is called
