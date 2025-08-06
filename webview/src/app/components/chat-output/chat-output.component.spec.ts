@@ -1,7 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { ChatOutputComponent } from './chat-output.component';
 import { ConversationSession, ChatMessage } from '../../models/session.model';
-import { By } from '@angular/platform-browser';
 
 describe('ChatOutputComponent', () => {
   let fixture: any;
@@ -12,7 +11,26 @@ describe('ChatOutputComponent', () => {
     messages: [
       { id: '1', sender: 'user', content: 'Hello', timestamp: new Date().toISOString() },
       { id: '2', sender: 'agent', content: 'Hi there!', timestamp: new Date().toISOString(), agentId: 'gpt' }
-    ]
+    ],
+    type: 'conversation',
+    currentPhase: 'context',
+    agentConfig: {
+      id: '',
+      name: '',
+      provider: '',
+      model: '',
+      capabilities: {
+        hasVision: false,
+        hasToolUse: false,
+        reasoningDepth: 'basic',
+        speed: 'fast',
+        costTier: 'low'
+      }
+    },
+    title: '',
+    isActive: false,
+    lastActivity: new Date(),
+    metadata: {}
   };
 
   beforeEach(async () => {
@@ -37,7 +55,29 @@ describe('ChatOutputComponent', () => {
   });
 
   it('should show welcome message if no session or messages', () => {
-    component.session = { id: 'empty', messages: [] } as ConversationSession;
+    fixture.setInput('session', {
+      id: 'empty',
+      title: 'Empty Session',
+      type: 'conversation',
+      isActive: false,
+      lastActivity: new Date(),
+      metadata: {},
+      messages: [],
+      currentPhase: 'context',
+      agentConfig: {
+        id: 'agent1',
+        name: 'Default Agent',
+        provider: 'local',
+        model: 'gpt-4',
+        capabilities: {
+          hasVision: false,
+          hasToolUse: false,
+          reasoningDepth: 'basic',
+          speed: 'fast',
+          costTier: 'low',
+        }
+      }
+    });
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Welcome to your new session!');
   });

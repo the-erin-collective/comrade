@@ -1,15 +1,11 @@
 import { TestBed } from '@angular/core/testing';
 import { MessageService, WebviewMessage, ExtensionMessage } from './message.service';
 
-declare global {
-  interface Window {
-    addEventListener: any;
-  }
-}
+// Remove the redeclaration of addEventListener to avoid type conflicts
 
 describe('MessageService', () => {
   let service: MessageService;
-  let postMessageSpy: jasmine.Spy;
+  let postMessageSpy: jasmine.Spy<(msg: ExtensionMessage) => void>;
   let originalAcquireVsCodeApi: any;
 
   beforeAll(() => {
@@ -31,7 +27,7 @@ describe('MessageService', () => {
       providers: [MessageService],
     });
     service = TestBed.inject(MessageService);
-    postMessageSpy = service['vscode'].postMessage;
+  postMessageSpy = (globalThis as any).acquireVsCodeApi().postMessage;
   });
 
   it('should be created', () => {

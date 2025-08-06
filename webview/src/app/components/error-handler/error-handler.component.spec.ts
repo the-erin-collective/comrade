@@ -39,7 +39,7 @@ describe('ErrorHandlerComponent', () => {
   it('should call retryOperation and emit events', () => {
     spyOn(component.errorDismissed, 'emit');
     spyOn(component.operationRetried, 'emit');
-    component.errorState.set({ recoverable: true, sessionId: 's1', message: 'err' } as ErrorState);
+    fixture.setInput('errorState', { recoverable: true, sessionId: 's1', message: 'err' } as ErrorState);
     component.retryOperation();
     expect(messageService.retryOperation).toHaveBeenCalledWith('s1');
     expect(component.errorDismissed.emit).toHaveBeenCalled();
@@ -48,7 +48,7 @@ describe('ErrorHandlerComponent', () => {
 
   it('should call openConfiguration and emit event', () => {
     spyOn(component.configurationOpened, 'emit');
-    component.errorState.set({ configurationLink: 'config', sessionId: 's2', message: 'err' } as ErrorState);
+    fixture.setInput('errorState', { configurationLink: 'config', sessionId: 's2', message: 'err' } as ErrorState);
     component.openConfiguration();
     expect(messageService.openConfiguration).toHaveBeenCalled();
     expect(component.configurationOpened.emit).toHaveBeenCalled();
@@ -56,7 +56,7 @@ describe('ErrorHandlerComponent', () => {
 
   it('should call extendTimeout and emit event', () => {
     spyOn(component.timeoutExtended, 'emit');
-    component.timeoutState.set({ allowExtension: true, sessionId: 's3', message: 'timeout' } as TimeoutState);
+    fixture.setInput('timeoutState', { allowExtension: true, sessionId: 's3', message: 'timeout' } as TimeoutState);
     component.extendTimeout();
     expect(messageService.extendTimeout).toHaveBeenCalledWith('s3');
     expect(component.timeoutExtended.emit).toHaveBeenCalled();
@@ -64,7 +64,7 @@ describe('ErrorHandlerComponent', () => {
 
   it('should call cancelOperation and emit event', () => {
     spyOn(component.operationCancelled, 'emit');
-    component.timeoutState.set({ sessionId: 's4', message: 'timeout' } as TimeoutState);
+    fixture.setInput('timeoutState', { sessionId: 's4', message: 'timeout' } as TimeoutState);
     component.cancelOperation();
     expect(messageService.cancelOperation).toHaveBeenCalledWith('s4');
     expect(component.operationCancelled.emit).toHaveBeenCalled();
