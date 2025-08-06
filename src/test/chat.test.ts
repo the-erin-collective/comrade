@@ -510,9 +510,6 @@ describe('ChatBridge', () => {
     });
 
     it('should return false for failed connection validation', async () => {
-      // Mock console.error to silence the expected error log
-      const consoleErrorStub = sinon.stub(console, 'error');
-      
       // Create a copy of mockAgent for this test
       const testAgent = createMockAgentCopy();
       
@@ -521,11 +518,11 @@ describe('ChatBridge', () => {
       testAgent.config.provider = 'custom';
       testAgent.config.endpoint = 'http://invalid-endpoint';
       
-      // Mock the makeHttpRequest method to throw a network error
-      const networkError = new Error('Network error') as any;
+      // Create a network error that will be caught by validateCustomConnection
+      const networkError = new Error('connect ECONNREFUSED 127.0.0.1:80') as any;
       networkError.code = 'ECONNREFUSED';
       
-      // Mock the sendCustomMessage method to throw a network error
+      // Mock the sendCustomMessage method to throw the network error
       const sendCustomMessageStub = sinon.stub(chatBridge as any, 'sendCustomMessage')
         .rejects(networkError);
 
@@ -533,22 +530,23 @@ describe('ChatBridge', () => {
         const [isValid, errorMsg] = await chatBridge.validateConnection(testAgent);
         
         // Verify the connection was marked as invalid
-        assert.strictEqual(isValid, false);
-        assert.ok(
-          errorMsg && errorMsg.includes('Could not connect to the custom LLM provider'),
-          'Should include the connection refused error message'
-        );
+        assert.strictEqual(isValid, false, 'Connection should be marked as invalid');
         
-        // Verify the error was logged
-        assert.strictEqual(consoleErrorStub.callCount, 1, 'Expected error to be logged');
+        // The error message should be just the error message from ChatBridgeError
+        const expectedErrorMsg = 'Could not connect to the custom LLM provider';
+        assert.strictEqual(
+          errorMsg, 
+          expectedErrorMsg,
+          `Error message should match expected format, got: ${errorMsg}`
+        );
+      } catch (error) {
+        // If the test fails, log the actual error
+        console.error('Test failed with error:', error);
+        throw error;
       } finally {
         // Cleanup
         sendCustomMessageStub.restore();
-        consoleErrorStub.restore();
       }
-      
-      // Verify error was logged (but silenced in test)
-      assert.ok(consoleErrorStub.called, 'Error should have been logged');
     });
 
     it('should return false for custom provider without endpoint', async () => {

@@ -1084,8 +1084,9 @@ export class ChatBridge implements IChatBridge {
           );
         }
 
-        // Handle connection refused
-        if (errorMessage.includes('econnrefused') || errorMessage.includes('connection refused')) {
+        // Handle connection refused - this is the key change to match the test expectation
+        if (errorMessage.includes('econnrefused') || errorMessage.includes('connection refused') || 
+            (error as any).code === 'ECONNREFUSED') {
           throw new ChatBridgeError(
             'Could not connect to the custom LLM provider',
             'CONNECTION_REFUSED',
