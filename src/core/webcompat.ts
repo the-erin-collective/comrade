@@ -163,13 +163,22 @@ export class WebFileSystem {
 
   /**
    * Read file content (web-compatible)
+   * @throws {Error} Throws an error if file cannot be read, preserving the original error code if available
    */
   public static async readFile(uri: vscode.Uri): Promise<string> {
     try {
       const content = await vscode.workspace.fs.readFile(uri);
       return Buffer.from(content).toString('utf8');
     } catch (error) {
-      throw new Error(`Failed to read file ${uri.fsPath}: ${error instanceof Error ? error.message : String(error)}`);
+      const errorMessage = `Failed to read file ${uri.fsPath}: ${error instanceof Error ? error.message : String(error)}`;
+      const newError = new Error(errorMessage);
+      
+      // Preserve the original error code if it exists
+      if (error && typeof error === 'object' && 'code' in error) {
+        (newError as any).code = (error as any).code;
+      }
+      
+      throw newError;
     }
   }
 

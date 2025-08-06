@@ -287,7 +287,9 @@ export class ChatBridge implements IChatBridge {
     try {
       switch (agent.provider) {
         case 'openai':
-          return await this.sendOpenAIMessage(agent, messagesWithPersonality, options);
+          // Add available tools to options for OpenAI provider
+          const openaiOptions = await this.addAvailableTools(agent, options);
+          return await this.sendOpenAIMessage(agent, messagesWithPersonality, openaiOptions);
         case 'ollama':
           return await this.sendOllamaMessage(agent, messagesWithPersonality, options);
         case 'custom':
@@ -297,7 +299,7 @@ export class ChatBridge implements IChatBridge {
         default:
           throw new ChatBridgeError(
             `Unsupported provider: ${agent.provider}`,
-            'unsupported_provider',
+            'UNSUPPORTED_PROVIDER',
             agent.provider
           );
       }
@@ -338,7 +340,7 @@ export class ChatBridge implements IChatBridge {
         default:
           throw new ChatBridgeError(
             `Unsupported provider: ${agent.provider}`,
-            'unsupported_provider',
+            'UNSUPPORTED_PROVIDER',
             agent.provider
           );
       }
@@ -368,26 +370,33 @@ export class ChatBridge implements IChatBridge {
     try {
       let isValid: boolean;
       switch (agent.config.provider) {
+        case 'custom':
+          try {
+            isValid = await this.validateCustomConnection(agent);
+          } catch (error) {
+            if (error instanceof ChatBridgeError) {
+              return [false, error.message];
+            }
+            throw error; // Re-throw if it's not a ChatBridgeError
+          }
+          break;
         case 'openai':
           isValid = await this.validateOpenAIConnection(agent);
-          return [isValid, isValid ? undefined : 'Failed to validate OpenAI connection'];
+          break;
         case 'anthropic':
           isValid = await this.validateAnthropicConnection(agent);
-          return [isValid, isValid ? undefined : 'Failed to validate Anthropic connection'];
+          break;
         case 'ollama':
           isValid = await this.validateOllamaConnection(agent);
-          return [isValid, isValid ? undefined : 'Failed to validate Ollama connection'];
-        case 'custom':
-          isValid = await this.validateCustomConnection(agent);
-          return [isValid, isValid ? undefined : 'Failed to validate custom connection'];
+          break;
         default:
-          const errorMsg = `Unsupported provider: ${agent.config.provider}`;
-          console.warn(errorMsg);
-          return [false, errorMsg];
+          return [false, `Unsupported provider: ${agent.config.provider}`];
       }
-    } catch (error) {
-      let errorMsg = 'Connection validation failed';
 
+      return [isValid, undefined];
+    } catch (error) {
+      let errorMsg = 'An unknown error occurred during connection validation';
+      
       if (error instanceof ChatBridgeError) {
         errorMsg = error.message;
         if (error.suggestedFix) {
@@ -1099,9 +1108,11 @@ export class ChatBridge implements IChatBridge {
 
   private getOpenAIHeaders(config: AgentConfig): Record<string, string> {
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'User-Agent': 'Comrade/1.0'
     };
 
+    // Add API key if available
     if (config.apiKey) {
       headers['Authorization'] = `Bearer ${config.apiKey}`;
     }
@@ -1123,7 +1134,7 @@ export class ChatBridge implements IChatBridge {
 
   private buildOpenAIRequestBody(agent: IAgent, messages: ChatMessage[], options?: ChatOptions): any {
     const body: any = {
-      model: agent.config.model,
+      model: agent.config.model || 'gpt-3.5-turbo',
       messages: messages.map(msg => ({
         role: msg.role,
         content: msg.content
@@ -1135,7 +1146,15 @@ export class ChatBridge implements IChatBridge {
 
     // Add tools if available
     if (options?.tools && options.tools.length > 0) {
-      body.tools = options.tools;
+      // Convert ChatTool format to OpenAI function calling format
+      body.tools = options.tools.map((tool: ChatTool) => ({
+        type: 'function',
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters
+        }
+      }));
       body.tool_choice = 'auto'; // Let the model decide when to use tools
     }
 
@@ -2436,8 +2455,64 @@ export class ChatBridge implements IChatBridge {
     // Check if tools are enabled for this agent
     const toolsEnabled = agent.config.tools?.enabled !== false; // Default to true if not specified
 
-    if (!toolsEnabled || options?.tools) {
+    // If tools are not enabled, return options as is
+    if (!toolsEnabled) {
       return options || {};
+    }
+
+    // If tools are already provided in options, merge them with available tools
+    if (options?.tools) {
+      // Tools are already provided, but we still want to add available tools
+      // Get available tools and merge them with existing tools
+      const context: ExecutionContext = {
+        agentId: agent.id,
+        sessionId: 'chat-session',
+        workspaceUri: vscode.workspace.workspaceFolders?.[0]?.uri,
+        user: {
+          id: 'current-user',
+          permissions: agent.config.tools?.allowedTools || []
+        },
+        security: {
+          level: agent.config.tools?.requireApproval ? SecurityLevel.NORMAL : SecurityLevel.ELEVATED,
+          allowDangerous: agent.config.tools?.requireApproval !== true
+        }
+      };
+
+      // Get available tools for this context
+      const availableTools = this.toolManager.getAvailableTools(context);
+
+      // Filter tools based on agent configuration
+      const allowedTools = agent.config.tools?.allowedTools;
+      const filteredTools = allowedTools
+        ? availableTools.filter(tool => allowedTools.includes(tool.name))
+        : availableTools;
+
+      // Convert to ChatTool format
+      const chatTools: ChatTool[] = filteredTools.map(tool => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters
+      }));
+
+      // Merge existing tools with available tools, avoiding duplicates
+      const mergedTools = [...options.tools];
+      const existingToolNames = new Set(options.tools.map((tool: ChatTool) => tool.name));
+      
+      for (const chatTool of chatTools) {
+        if (!existingToolNames.has(chatTool.name)) {
+          mergedTools.push(chatTool);
+        }
+      }
+
+      // Only add tools if we have any new ones
+      if (mergedTools.length > options.tools.length) {
+        return {
+          ...options,
+          tools: mergedTools
+        };
+      }
+      
+      return options;
     }
 
     try {
@@ -2472,10 +2547,15 @@ export class ChatBridge implements IChatBridge {
         parameters: tool.parameters
       }));
 
-      return {
-        ...options,
-        tools: chatTools.length > 0 ? chatTools : undefined
-      };
+      // Only add tools if we have any
+      if (chatTools.length > 0) {
+        return {
+          ...options,
+          tools: chatTools
+        };
+      }
+      
+      return options || {};
     } catch (error) {
       console.warn('Failed to add available tools:', error);
       return options || {};

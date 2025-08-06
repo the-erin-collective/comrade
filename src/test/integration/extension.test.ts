@@ -588,12 +588,10 @@ describe('VS Code Extension Integration Tests', () => {
       tooltip: '',
       command: '',
       show: sandbox.stub(),
-      hide: sandbox.stub(),
-      dispose: sandbox.stub()
+      hide: sandbox.stub()
     };
 
-    const _createStatusBarItemStub = sandbox.stub(vscode.window, 'createStatusBarItem')
-      .returns(mockStatusBarItem as any);
+    sandbox.stub(vscode.window, 'createStatusBarItem').returns(mockStatusBarItem as any);
 
     // Trigger status bar creation (would be done during activation)
     // This tests that the extension can create and manage status bar items

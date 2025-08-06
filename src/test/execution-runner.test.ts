@@ -185,27 +185,46 @@ describe('ExecutionRunner Tests', () => {
   });
 
   it('should handle action dependencies correctly', () => {
-    // Verify the method exists
-    assert.ok(typeof executionRunner.areDependenciesSatisfied === 'function', 'areDependenciesSatisfied method should exist');
-    
-    // Create a copy of the sample action list to avoid modifying the original
-    const testActionList = JSON.parse(JSON.stringify(sampleActionList));
-    (executionRunner as any).actionList = testActionList;
+    try {
+      // Verify the method exists
+      assert.ok(typeof executionRunner.areDependenciesSatisfied === 'function', 'areDependenciesSatisfied method should exist');
+      
+      // Create a copy of the sample action list to avoid modifying the original
+      const testActionList = JSON.parse(JSON.stringify(sampleActionList));
+      (executionRunner as any).actionList = testActionList;
 
-    // Test action without dependencies
-    const action1 = testActionList.actions[0];
-    const satisfied1 = executionRunner.areDependenciesSatisfied(action1);
-    assert.strictEqual(satisfied1, true);
+      // Debug: Log the action list
+      console.log('Test action list:', JSON.stringify(testActionList, null, 2));
 
-    // Test action with unsatisfied dependencies
-    const action2 = testActionList.actions[1];
-    const satisfied2 = executionRunner.areDependenciesSatisfied(action2);
-    assert.strictEqual(satisfied2, false);
+      // Test action without dependencies
+      const action1 = testActionList.actions[0];
+      console.log('Action1 dependencies:', action1.dependencies);
+      const satisfied1 = executionRunner.areDependenciesSatisfied(action1);
+      console.log('Action1 satisfied:', satisfied1);
+      assert.strictEqual(satisfied1, true, 'Action without dependencies should be satisfied');
 
-    // Mark dependency as completed and test again
-    testActionList.actions[0].status = ActionStatus.COMPLETED;
-    const satisfied3 = executionRunner.areDependenciesSatisfied(action2);
-    assert.strictEqual(satisfied3, true);
+      // Test action with unsatisfied dependencies
+      const action2 = testActionList.actions[1];
+      console.log('Action2 dependencies:', action2.dependencies);
+      
+      // Ensure the dependency is in PENDING status (not completed)
+      testActionList.actions[0].status = ActionStatus.PENDING;
+      console.log('Action1 status before:', testActionList.actions[0].status);
+      
+      const satisfied2 = executionRunner.areDependenciesSatisfied(action2);
+      console.log('Action2 satisfied (should be false):', satisfied2);
+      assert.strictEqual(satisfied2, false, 'Action with unsatisfied dependencies should not be satisfied');
+
+      // Mark dependency as completed and test again
+      testActionList.actions[0].status = ActionStatus.COMPLETED;
+      console.log('Action1 status after:', testActionList.actions[0].status);
+      const satisfied3 = executionRunner.areDependenciesSatisfied(action2);
+      console.log('Action2 satisfied after completion (should be true):', satisfied3);
+      assert.strictEqual(satisfied3, true, 'Action with satisfied dependencies should be satisfied');
+    } catch (error) {
+      console.error('Test error:', error);
+      throw error;
+    }
   });
 
   it('should generate execution summary correctly', () => {

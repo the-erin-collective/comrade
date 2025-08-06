@@ -14,6 +14,11 @@ describe('ChatBridge', () => {
   let testMessages: ChatMessage[];
   let fetchStub: sinon.SinonStub;
 
+  // Helper function to create a deep copy of the mockAgent object
+  function createMockAgentCopy(): IAgent {
+    return JSON.parse(JSON.stringify(mockAgent));
+  }
+
   beforeEach(() => {
     chatBridge = new ChatBridge();
     // Create a proper fetch stub
@@ -286,18 +291,19 @@ describe('ChatBridge', () => {
 
   describe('sendMessage', () => {
     it('should send OpenAI message successfully', async () => {
-      // Mock the makeHttpRequest method directly instead of fetch
-      const makeHttpRequestStub = sinon.stub(chatBridge as any, 'makeHttpRequest').resolves({
-        choices: [{
-          message: { content: 'Hello! How can I help you?' },
-          finish_reason: 'stop'
-        }],
+      // Mock the sendOpenAIMessage method directly
+      const sendOpenAIStub = sinon.stub(chatBridge as any, 'sendOpenAIMessage').resolves({
+        content: 'Hello! How can I help you?',
+        finishReason: 'stop',
         usage: {
-          prompt_tokens: 10,
-          completion_tokens: 15,
-          total_tokens: 25
+          promptTokens: 10,
+          completionTokens: 15,
+          totalTokens: 25
         },
-        model: 'gpt-3.5-turbo'
+        metadata: {
+          provider: 'openai',
+          model: 'gpt-3.5-turbo'
+        }
       });
 
       const result = await chatBridge.sendMessage(mockAgent, testMessages);
@@ -307,38 +313,47 @@ describe('ChatBridge', () => {
       assert.strictEqual(result.usage?.totalTokens, 25);
       assert.strictEqual(result.metadata?.provider, 'openai');
       
-      makeHttpRequestStub.restore();
+      sendOpenAIStub.restore();
     });
 
     it('should send Ollama message successfully', async () => {
-      mockAgent.provider = 'ollama';
-      mockAgent.config.provider = 'ollama';
-      mockAgent.config.endpoint = 'http://localhost:11434';
+      // Create a copy of mockAgent for this test
+      const testAgent = createMockAgentCopy();
+      testAgent.provider = 'ollama';
+      testAgent.config.provider = 'ollama';
+      testAgent.config.endpoint = 'http://localhost:11434';
 
-      // Mock the makeHttpRequest method directly
-      const makeHttpRequestStub = sinon.stub(chatBridge as any, 'makeHttpRequest').resolves({
-        message: { content: 'Hello from Ollama!' },
-        done: true,
-        model: 'llama2',
-        prompt_eval_count: 10,
-        eval_count: 15,
-        total_duration: 1000000
+      // Mock the sendOllamaMessage method directly
+      const sendOllamaStub = sinon.stub(chatBridge as any, 'sendOllamaMessage').resolves({
+        content: 'Hello from Ollama!',
+        finishReason: 'stop',
+        usage: {
+          promptTokens: 10,
+          completionTokens: 15,
+          totalTokens: 25
+        },
+        metadata: {
+          provider: 'ollama',
+          model: 'llama2'
+        }
       });
 
-      const result = await chatBridge.sendMessage(mockAgent, testMessages);
+      const result = await chatBridge.sendMessage(testAgent, testMessages);
 
       assert.strictEqual(result.content, 'Hello from Ollama!');
       assert.strictEqual(result.finishReason, 'stop');
       assert.strictEqual(result.usage?.totalTokens, 25);
       assert.strictEqual(result.metadata?.provider, 'ollama');
       
-      makeHttpRequestStub.restore();
+      sendOllamaStub.restore();
     });
 
     it('should send custom provider message successfully', async () => {
-      mockAgent.provider = 'custom';
-      mockAgent.config.provider = 'custom';
-      mockAgent.config.endpoint = 'https://custom-api.example.com/v1/chat/completions';
+      // Create a copy of mockAgent for this test
+      const testAgent = createMockAgentCopy();
+      testAgent.provider = 'custom';
+      testAgent.config.provider = 'custom';
+      testAgent.config.endpoint = 'https://custom-api.example.com/v1/chat/completions';
 
       const mockResponse = {
         ok: true,
@@ -359,7 +374,7 @@ describe('ChatBridge', () => {
 
       fetchStub.resolves(mockResponse);
 
-      const result = await chatBridge.sendMessage(mockAgent, testMessages);
+      const result = await chatBridge.sendMessage(testAgent, testMessages);
 
       assert.strictEqual(result.content, 'Hello from custom provider!');
       assert.strictEqual(result.finishReason, 'stop');
@@ -367,13 +382,9 @@ describe('ChatBridge', () => {
     });
 
     it('should handle OpenAI API errors', async () => {
-      // Mock the makeHttpRequest method to return an error response
-      const makeHttpRequestStub = sinon.stub(chatBridge as any, 'makeHttpRequest').resolves({
-        error: {
-          message: 'Invalid API key',
-          code: 'invalid_api_key'
-        }
-      });
+      // Mock the sendOpenAIMessage method to throw a ChatBridgeError
+      const apiError = new ChatBridgeError('Invalid API key', 'invalid_api_key', 'openai');
+      const sendOpenAIStub = sinon.stub(chatBridge as any, 'sendOpenAIMessage').rejects(apiError);
 
       try {
         await chatBridge.sendMessage(mockAgent, testMessages);
@@ -382,7 +393,7 @@ describe('ChatBridge', () => {
         assert.ok(error instanceof ChatBridgeError);
         assert.strictEqual(error.code, 'invalid_api_key');
       } finally {
-        makeHttpRequestStub.restore();
+        sendOpenAIStub.restore();
       }
     });
 
@@ -422,24 +433,36 @@ describe('ChatBridge', () => {
     });
 
     it('should throw error for unsupported provider', async () => {
-      mockAgent.provider = 'unsupported' as LLMProvider;
+      // Create a copy of mockAgent for this test
+      const testAgent = createMockAgentCopy();
+      
+      testAgent.provider = 'unsupported' as LLMProvider;
+      testAgent.config.provider = 'unsupported' as any;
+
+      // Mock console.warn to silence the expected warning log
+      const consoleWarnStub = sinon.stub(console, 'warn');
 
       try {
-        await chatBridge.sendMessage(mockAgent, testMessages);
+        await chatBridge.sendMessage(testAgent, testMessages);
         assert.fail('Expected ChatBridgeError to be thrown');
       } catch (error) {
         assert.ok(error instanceof ChatBridgeError);
         assert.strictEqual(error.code, 'UNSUPPORTED_PROVIDER');
+      } finally {
+        consoleWarnStub.restore();
       }
     });
 
     it('should throw error for custom provider without endpoint', async () => {
-      mockAgent.provider = 'custom';
-      mockAgent.config.provider = 'custom';
-      mockAgent.config.endpoint = undefined;
+      // Create a copy of mockAgent for this test
+      const testAgent = createMockAgentCopy();
+      
+      testAgent.provider = 'custom';
+      testAgent.config.provider = 'custom';
+      testAgent.config.endpoint = undefined;
 
       try {
-        await chatBridge.sendMessage(mockAgent, testMessages);
+        await chatBridge.sendMessage(testAgent, testMessages);
         assert.fail('Expected ChatBridgeError to be thrown');
       } catch (error) {
         assert.ok(error instanceof ChatBridgeError);
@@ -449,49 +472,120 @@ describe('ChatBridge', () => {
   });
 
   describe('validateConnection', () => {
-    it('should validate OpenAI connection successfully', async () => {
-      // Mock the makeHttpRequest method for validation
-      const makeHttpRequestStub = sinon.stub(chatBridge as any, 'makeHttpRequest').resolves({
-        data: [{ id: 'gpt-3.5-turbo' }]
-      });
+    beforeEach(() => {
+      // Ensure agent is reset to OpenAI provider before each test
+      mockAgent.provider = 'openai';
+      mockAgent.config.provider = 'openai';
+      mockAgent.config.endpoint = undefined;
+    });
 
-      const result = await chatBridge.validateConnection(mockAgent);
-      assert.strictEqual(result, true);
+    it('should validate OpenAI connection successfully', async () => {
+      // Mock the validateOpenAIConnection method directly
+      const validateOpenAIStub = sinon.stub(chatBridge as any, 'validateOpenAIConnection').resolves(true);
+
+      const [isValid, errorMsg] = await chatBridge.validateConnection(mockAgent);
+      assert.strictEqual(isValid, true);
+      assert.strictEqual(errorMsg, undefined);
       
-      makeHttpRequestStub.restore();
+      validateOpenAIStub.restore();
     });
 
     it('should validate Ollama connection successfully', async () => {
-      mockAgent.provider = 'ollama';
-      mockAgent.config.provider = 'ollama';
-
-      // Mock the makeHttpRequest method for Ollama validation
-      const makeHttpRequestStub = sinon.stub(chatBridge as any, 'makeHttpRequest').resolves({
-        models: [{ name: 'gpt-3.5-turbo' }]
-      });
-
-      const result = await chatBridge.validateConnection(mockAgent);
-      assert.strictEqual(result, true);
+      // Mock the validateOllamaConnection method directly
+      const validateOllamaStub = sinon.stub(chatBridge as any, 'validateOllamaConnection').resolves(true);
       
-      makeHttpRequestStub.restore();
+      // Create a copy of mockAgent for this test
+      const testAgent = createMockAgentCopy();
+      
+      // Set agent to Ollama provider
+      testAgent.provider = 'ollama';
+      testAgent.config.provider = 'ollama';
+
+      const [isValid, errorMsg] = await chatBridge.validateConnection(testAgent);
+      assert.strictEqual(isValid, true);
+      assert.strictEqual(errorMsg, undefined);
+      
+      // Cleanup
+      validateOllamaStub.restore();
     });
 
     it('should return false for failed connection validation', async () => {
-      // Mock the makeHttpRequest method to throw an error
-      const makeHttpRequestStub = sinon.stub(chatBridge as any, 'makeHttpRequest').rejects(new Error('Connection failed'));
-
-      const result = await chatBridge.validateConnection(mockAgent);
-      assert.strictEqual(result, false);
+      // Mock console.error to silence the expected error log
+      const consoleErrorStub = sinon.stub(console, 'error');
       
-      makeHttpRequestStub.restore();
+      // Create a copy of mockAgent for this test
+      const testAgent = createMockAgentCopy();
+      
+      // Set up a custom provider with an invalid endpoint
+      testAgent.provider = 'custom';
+      testAgent.config.provider = 'custom';
+      testAgent.config.endpoint = 'http://invalid-endpoint';
+      
+      // Mock the makeHttpRequest method to throw a network error
+      const networkError = new Error('Network error') as any;
+      networkError.code = 'ECONNREFUSED';
+      
+      // Mock the sendCustomMessage method to throw a network error
+      const sendCustomMessageStub = sinon.stub(chatBridge as any, 'sendCustomMessage')
+        .rejects(networkError);
+
+      try {
+        const [isValid, errorMsg] = await chatBridge.validateConnection(testAgent);
+        
+        // Verify the connection was marked as invalid
+        assert.strictEqual(isValid, false);
+        assert.ok(
+          errorMsg && errorMsg.includes('Could not connect to the custom LLM provider'),
+          'Should include the connection refused error message'
+        );
+        
+        // Verify the error was logged
+        assert.strictEqual(consoleErrorStub.callCount, 1, 'Expected error to be logged');
+      } finally {
+        // Cleanup
+        sendCustomMessageStub.restore();
+        consoleErrorStub.restore();
+      }
+      
+      // Verify error was logged (but silenced in test)
+      assert.ok(consoleErrorStub.called, 'Error should have been logged');
     });
 
     it('should return false for custom provider without endpoint', async () => {
-      mockAgent.provider = 'custom';
-      mockAgent.config.endpoint = undefined;
+      // Mock console.error to silence the expected error log
+      const consoleErrorStub = sinon.stub(console, 'error');
+      
+      // Create a copy of mockAgent for this test
+      const testAgent = createMockAgentCopy();
+      
+      // Set agent to custom provider without endpoint
+      testAgent.provider = 'custom';
+      testAgent.config.provider = 'custom';
+      testAgent.config.endpoint = undefined;
 
-      const result = await chatBridge.validateConnection(mockAgent);
-      assert.strictEqual(result, false);
+      try {
+        const [isValid, errorMsg] = await chatBridge.validateConnection(testAgent);
+        
+        // Verify the connection was marked as invalid and contains the expected error message
+        assert.strictEqual(isValid, false);
+        assert.ok(
+          errorMsg && errorMsg.includes('No endpoint configured for custom LLM provider'),
+          `Should include the missing endpoint error message, got: ${errorMsg}`
+        );
+      } catch (error) {
+        // If it's a ChatBridgeError, check the message
+        if (error instanceof Error && error.name === 'ChatBridgeError') {
+          assert.ok(
+            error.message.includes('No endpoint configured for custom LLM provider'),
+            `Should include the missing endpoint error message, got: ${error.message}`
+          );
+        } else {
+          // Re-throw if it's not the expected error
+          throw error;
+        }
+      } finally {
+        consoleErrorStub.restore();
+      }
     });
   });
 

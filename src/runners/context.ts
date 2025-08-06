@@ -301,17 +301,27 @@ export class ContextRunner extends BaseRunner {
       console.debug(`Loaded ${uniquePatterns.length} patterns from .gitignore`);
       
     } catch (error) {
-      if (error instanceof vscode.FileSystemError && error.code === 'FileNotFound') {
-        // .gitignore doesn't exist, use defaults
+      const errorCode = (error as any).code;
+      const errorMessage = (error as Error).message || '';
+      
+      if (error instanceof vscode.FileSystemError && errorCode === 'FileNotFound' ||
+          errorCode === 'FileNotFound' || 
+          errorCode === 'ENOENT' || 
+          /no such file/i.test(errorMessage)) {
+        // File not found - use defaults
         console.debug('No .gitignore file found');
-      } else if ((error as any).code === 'FileNotFound' || (error as any).code === 'ENOENT' || /no such file/i.test((error as any).message ?? '')) {
-        // Handle ENOENT error (file not found) gracefully
-        console.debug('No .gitignore file found');
+      } else if (error instanceof vscode.FileSystemError && 
+                (errorCode === 'NoPermissions' || 
+                 errorCode === 'EACCES' || 
+                 errorCode === 'EPERM' ||
+                 /permission denied/i.test(errorMessage))) {
+        // Permission denied - log and continue with defaults
+        console.warn('Permission denied when reading .gitignore file');
       } else {
         // Log other errors but don't fail the entire operation
         console.error('Error loading .gitignore patterns:', error);
-        // Don't throw for read errors - just continue with default patterns
       }
+      // In all error cases, continue with default patterns
     }
   }
 
