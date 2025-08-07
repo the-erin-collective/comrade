@@ -1,53 +1,43 @@
-/**
- * Test suite index - loads and runs all tests
- * 
- * This file is the entry point for the VS Code test runner.
- * It's responsible for setting up the test environment and running the tests.
- */
-
 import * as path from 'path';
-import { runTests as vscodeRunTests } from '@vscode/test-electron';
+import Mocha = require('mocha');
+const glob = require('glob');
 
 // Import test setup to ensure Mocha globals are available
 import '../test-setup';
 
-async function runTests() {
-  try {
-    // The folder containing the Extension Manifest package.json
-    const extensionDevelopmentPath = path.resolve(__dirname, '../../');
-    const extensionTestsPath = path.resolve(__dirname, './index');
-    
-    // Run the extension test
-    await vscodeRunTests({
-      extensionDevelopmentPath,
-      extensionTestsPath,
-      launchArgs: [
-        '--disable-extensions', // Disable other extensions
-        '--disable-workspace-trust', // Disable workspace trust
-        '--disable-updates', // Disable updates
-        '--disable-crash-reporter', // Disable crash reporter
-        '--disable-renderer-backgrounding', // Prevent background throttling
-        '--disable-gpu', // Disable GPU hardware acceleration
-        '--no-cached-data', // Don't use cached data
-        '--user-data-dir', 
-        path.join(extensionDevelopmentPath, '.vscode-test', 'user-data-dir')
-      ]
+// This function is called by the test runner to execute the tests
+export function run(testsRoot: string, cb: (error: Error | null, failures?: number) => void): void {
+  // Create the mocha test
+  const mocha = new Mocha({
+    ui: 'tdd',
+    color: true,
+    timeout: 10000,
+    reporter: 'spec'
+  });
+
+  // Add files to the test suite
+  glob('**/**.test.js', { cwd: testsRoot }, (err: Error | null, files: string[]) => {
+    if (err) {
+      return cb(err);
+    }
+
+    // Add files to the test suite
+    files.forEach((f: string) => {
+      mocha.addFile(path.resolve(testsRoot, f));
     });
-    
-  } catch (err) {
-    console.error('❌ Failed to run tests:', err);
-    process.exit(1);
-  }
-}
 
-// Run the tests
-runTests().catch(err => {
-  console.error('❌ Unhandled error in test runner:', err);
-  process.exit(1);
-});
-
-// Export the run function for VS Code test runner
-export function run(): Promise<void> {
-  console.log('🧪 Starting Comrade test suite...');
-  return runTests();
+    try {
+      // Run the mocha test
+      mocha.run((failures: number) => {
+        if (failures > 0) {
+          cb(new Error(`${failures} tests failed.`));
+        } else {
+          cb(null);
+        }
+      });
+    } catch (err) {
+      console.error('Error running tests:', err);
+      cb(err instanceof Error ? err : new Error(String(err)));
+    }
+  });
 }

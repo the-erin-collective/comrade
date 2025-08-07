@@ -11,6 +11,9 @@ export interface StatusBarManager {
   showCancellationButton(session: ISession): void;
   hideCancellationButton(): void;
   updateWorkspaceStatus(hasWorkspace: boolean): void;
+  showReady(): void;
+  showError(message: string): void;
+  showWarning(message: string): void;
   dispose(): void;
 }
 
@@ -18,11 +21,19 @@ export interface StatusBarManager {
  * Manages status bar items for operation progress and cancellation
  */
 export class ComradeStatusBarManager implements StatusBarManager {
+  private persistentItem: vscode.StatusBarItem;
   private progressItem: vscode.StatusBarItem;
   private cancelItem: vscode.StatusBarItem;
   private currentSession: ISession | null = null;
+  private currentState: 'ready' | 'busy' | 'error' | 'warning' = 'ready';
 
   constructor(private context: vscode.ExtensionContext) {
+    // Create persistent status bar item (highest priority)
+    this.persistentItem = vscode.window.createStatusBarItem(
+      vscode.StatusBarAlignment.Left,
+      101
+    );
+    
     // Create status bar items
     this.progressItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Left,
@@ -34,6 +45,12 @@ export class ComradeStatusBarManager implements StatusBarManager {
       99
     );
 
+    // Configure persistent item
+    this.persistentItem.text = '$(robot) Comrade';
+    this.persistentItem.tooltip = 'Comrade - Click for quick access';
+    this.persistentItem.command = 'comrade.statusBar.quickAccess';
+    this.persistentItem.show();
+
     // Configure cancel button
     this.cancelItem.text = '$(stop-circle) Cancel';
     this.cancelItem.tooltip = 'Cancel current operation';
@@ -42,6 +59,9 @@ export class ComradeStatusBarManager implements StatusBarManager {
 
     // Register commands
     this.registerCommands();
+    
+    // Initialize in ready state
+    this.showReady();
   }
 
   private registerCommands() {
@@ -55,7 +75,44 @@ export class ComradeStatusBarManager implements StatusBarManager {
       }
     });
 
-    this.context.subscriptions.push(cancelCommand);
+    const quickAccessCommand = vscode.commands.registerCommand('comrade.statusBar.quickAccess', async () => {
+      const items = [
+        {
+          label: '$(comment-discussion) Open Chat',
+          description: 'Open the Comrade sidebar chat interface',
+          command: 'comrade.sidebar.focus'
+        },
+        {
+          label: '$(gear) Settings',
+          description: 'Open Comrade settings',
+          command: 'workbench.action.openSettings'
+        },
+        {
+          label: '$(question) Help',
+          description: 'View Comrade documentation',
+          command: 'comrade.help'
+        }
+      ];
+
+      const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: 'Choose a Comrade action'
+      });
+
+      if (selected) {
+        if (selected.command === 'comrade.sidebar.focus') {
+          // Focus the Comrade sidebar view
+          await vscode.commands.executeCommand('workbench.view.extension.comrade');
+        } else if (selected.command === 'workbench.action.openSettings') {
+          // Open settings filtered to Comrade
+          await vscode.commands.executeCommand('workbench.action.openSettings', 'comrade');
+        } else if (selected.command === 'comrade.help') {
+          // Open help - for now just show a message, can be enhanced later
+          vscode.window.showInformationMessage('Comrade Help: Check the README for usage instructions.');
+        }
+      }
+    });
+
+    this.context.subscriptions.push(cancelCommand, quickAccessCommand);
   }
 
   /**
@@ -63,6 +120,11 @@ export class ComradeStatusBarManager implements StatusBarManager {
    */
   public showProgress(session: ISession, message: string): void {
     this.currentSession = session;
+    this.currentState = 'busy';
+    
+    // Update persistent item to show busy state
+    this.persistentItem.text = `$(sync~spin) ${message}`;
+    this.persistentItem.tooltip = `Comrade: ${message}`;
     
     this.progressItem.text = `$(sync~spin) ${message}`;
     this.progressItem.tooltip = `Comrade: ${message}`;
@@ -78,6 +140,9 @@ export class ComradeStatusBarManager implements StatusBarManager {
   public hideProgress(): void {
     this.progressItem.hide();
     this.currentSession = null;
+    
+    // Return to ready state
+    this.showReady();
   }
 
   /**
@@ -96,19 +161,20 @@ export class ComradeStatusBarManager implements StatusBarManager {
   }
 
   /**
-   * Update progress message
+   * Show error state in persistent status bar item
    */
-  public updateProgress(message: string): void {
-    if (this.progressItem.text) {
-      this.progressItem.text = `$(sync~spin) ${message}`;
-      this.progressItem.tooltip = `Comrade: ${message}`;
-    }
+  public showError(message: string): void {
+    this.currentState = 'error';
+    
+    this.persistentItem.text = `$(error) ${message}`;
+    this.persistentItem.tooltip = `Comrade Error: ${message}`;
+    this.persistentItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
   }
 
   /**
-   * Show error in status bar temporarily
+   * Show error in status bar temporarily (legacy method for compatibility)
    */
-  public showError(message: string, duration: number = 5000): void {
+  public showTemporaryError(message: string, duration: number = 5000): void {
     const originalText = this.progressItem.text;
     const originalTooltip = this.progressItem.tooltip;
     const originalBackground = this.progressItem.backgroundColor;
@@ -131,9 +197,20 @@ export class ComradeStatusBarManager implements StatusBarManager {
   }
 
   /**
-   * Show warning in status bar temporarily
+   * Show warning state in persistent status bar item
    */
-  public showWarning(message: string, duration: number = 5000): void {
+  public showWarning(message: string): void {
+    this.currentState = 'warning';
+    
+    this.persistentItem.text = `$(warning) ${message}`;
+    this.persistentItem.tooltip = `Comrade Warning: ${message}`;
+    this.persistentItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+  }
+
+  /**
+   * Show warning in status bar temporarily (legacy method for compatibility)
+   */
+  public showTemporaryWarning(message: string, duration: number = 5000): void {
     const originalText = this.progressItem.text;
     const originalTooltip = this.progressItem.tooltip;
     const originalBackground = this.progressItem.backgroundColor;
@@ -153,6 +230,17 @@ export class ComradeStatusBarManager implements StatusBarManager {
         this.progressItem.hide();
       }
     }, duration);
+  }
+
+  /**
+   * Show ready state in persistent status bar item
+   */
+  public showReady(): void {
+    this.currentState = 'ready';
+    
+    this.persistentItem.text = '$(robot) Comrade';
+    this.persistentItem.tooltip = 'Comrade - Click for quick access';
+    this.persistentItem.backgroundColor = undefined;
   }
 
   /**
@@ -179,6 +267,13 @@ export class ComradeStatusBarManager implements StatusBarManager {
   }
 
   /**
+   * Get current status bar state
+   */
+  public getCurrentState(): 'ready' | 'busy' | 'error' | 'warning' {
+    return this.currentState;
+  }
+
+  /**
    * Update workspace status
    */
   public updateWorkspaceStatus(_hasWorkspace: boolean): void {
@@ -190,6 +285,7 @@ export class ComradeStatusBarManager implements StatusBarManager {
    * Dispose of status bar items
    */
   public dispose(): void {
+    this.persistentItem.dispose();
     this.progressItem.dispose();
     this.cancelItem.dispose();
   }

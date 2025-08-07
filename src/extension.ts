@@ -9,7 +9,7 @@ import { registerContextExampleCommands } from './examples/context-runner-usage'
 import { ComradeSidebarProvider } from './providers/sidebarProvider';
 import { createStatusBarManager, StatusBarManager } from './ui/statusBar';
 import { BuiltInTools } from './core/tool-manager';
-import { hasWorkspace, handleNoWorkspace, registerWorkspaceChangeHandlers } from './utils/workspace';
+import { hasWorkspace, registerWorkspaceChangeHandlers } from './utils/workspace';
 
 // Global instances
 let configurationManager: ConfigurationManager;
@@ -17,6 +17,9 @@ let agentRegistry: AgentRegistry;
 let personalityManager: PersonalityManager;
 let statusBarManager: StatusBarManager;
 let autoReloadManager: ConfigurationAutoReloadManager;
+
+// Track sidebar revelation state
+let sidebarHasBeenRevealed = false;
 
 // This method is called when your extension is activated
 export async function activate(context: vscode.ExtensionContext) {
@@ -32,6 +35,12 @@ export async function activate(context: vscode.ExtensionContext) {
         
         // Initialize personality system for each workspace
         personalityManager = PersonalityManager.getInstance();
+        
+        // Initialize enhanced status bar manager early to show initialization progress
+        statusBarManager = createStatusBarManager(context);
+        statusBarManager.showProgress({} as any, 'Initializing Comrade...');
+        
+        // Initialize workspace-dependent features with graceful error handling
         await initializeWorkspaceDependentFeatures();
         
         // Initialize configuration auto-reload system
@@ -41,18 +50,15 @@ export async function activate(context: vscode.ExtensionContext) {
             personalityManager
         );
         
-        // Register workspace change handlers
+        // Register workspace change handlers with non-blocking initialization
         registerWorkspaceChangeHandlers(context, async () => {
-            await initializeWorkspaceDependentFeatures();
+            try {
+                await initializeWorkspaceDependentFeatures();
+            } catch (error) {
+                console.warn('Workspace change handler failed:', error);
+                // Don't block - allow extension to continue functioning
+            }
         });
-        
-        // Handle case where no workspace is open
-        if (!hasWorkspace()) {
-            handleNoWorkspace(context);
-        }
-        
-        // Initialize status bar manager
-        statusBarManager = createStatusBarManager(context);
         
         // Register built-in tools
         BuiltInTools.registerAll();
@@ -69,14 +75,48 @@ export async function activate(context: vscode.ExtensionContext) {
         registerPersonalityCommands(context);
         registerContextExampleCommands(context);
         registerErrorHandlingCommands(context);
+        registerSidebarCommands(context);
         
         // Add disposables to context
         context.subscriptions.push(agentRegistry, personalityManager, autoReloadManager);
         
-        console.log('Comrade extension initialized successfully');
+        // Hide initialization progress
+        statusBarManager.hideProgress();
+        
+        // Automatically reveal the sidebar after all managers are initialized
+        await revealSidebarOnActivation();
+        
+        // Set status bar to ready state and log successful initialization
+        statusBarManager.showReady();
+        
+        // Log successful initialization without workspace warnings (Requirements 1.1, 1.2, 1.3)
+        if (hasWorkspace()) {
+            console.log('Comrade extension initialized successfully with workspace');
+        } else {
+            console.log('Comrade extension initialized successfully without workspace - all features available');
+        }
+        
     } catch (error) {
+        // Ensure proper error handling that doesn't block activation
         console.error('Failed to initialize Comrade extension:', error);
-        vscode.window.showErrorMessage('Failed to initialize Comrade extension. Please check the logs.');
+        
+        // Update status bar to show error state
+        if (statusBarManager) {
+            statusBarManager.showError('Initialization failed');
+        }
+        
+        // Show error message but don't prevent extension from loading
+        vscode.window.showErrorMessage(
+            'Comrade extension encountered errors during initialization. Some features may not work properly. Check the output panel for details.',
+            'View Logs'
+        ).then(selection => {
+            if (selection === 'View Logs') {
+                vscode.commands.executeCommand('workbench.action.showLogs');
+            }
+        });
+        
+        // Don't throw the error - allow extension to continue in degraded mode
+        console.log('Comrade extension loaded in degraded mode due to initialization errors');
     }
 }
 
@@ -268,6 +308,63 @@ Content length: ${personality.content.length} characters`;
 }
 
 /**
+ * Register sidebar-related commands
+ */
+function registerSidebarCommands(context: vscode.ExtensionContext) {
+    // Command to focus the Comrade sidebar
+    const focusSidebarCommand = vscode.commands.registerCommand('comrade.sidebar.focus', async () => {
+        try {
+            // Use the workbench command to focus the extension view
+            await vscode.commands.executeCommand('workbench.view.extension.comrade');
+        } catch (error) {
+            console.error('Failed to focus Comrade sidebar:', error);
+            vscode.window.showErrorMessage('Failed to focus Comrade sidebar. Please ensure the extension is properly installed.');
+        }
+    });
+    
+    // Command to show help information
+    const helpCommand = vscode.commands.registerCommand('comrade.help', async () => {
+        const helpOptions = [
+            {
+                label: '$(book) View Documentation',
+                description: 'Open the Comrade documentation on GitHub',
+                action: 'docs'
+            },
+            {
+                label: '$(bug) Report Issue',
+                description: 'Report a bug or request a feature',
+                action: 'issue'
+            },
+            {
+                label: '$(gear) Extension Settings',
+                description: 'Open Comrade extension settings',
+                action: 'settings'
+            }
+        ];
+
+        const selected = await vscode.window.showQuickPick(helpOptions, {
+            placeHolder: 'How can we help you?'
+        });
+
+        if (selected) {
+            switch (selected.action) {
+                case 'docs':
+                    vscode.env.openExternal(vscode.Uri.parse('https://github.com/comrade-ai/comrade-vscode-extension#readme'));
+                    break;
+                case 'issue':
+                    vscode.env.openExternal(vscode.Uri.parse('https://github.com/comrade-ai/comrade-vscode-extension/issues'));
+                    break;
+                case 'settings':
+                    vscode.commands.executeCommand('workbench.action.openSettings', 'comrade');
+                    break;
+            }
+        }
+    });
+    
+    context.subscriptions.push(focusSidebarCommand, helpCommand);
+}
+
+/**
  * Register error handling and cancellation commands
  */
 function registerErrorHandlingCommands(context: vscode.ExtensionContext) {
@@ -359,32 +456,134 @@ export function getStatusBarManager(): StatusBarManager {
 }
 
 /**
+ * Automatically reveal the Comrade sidebar on extension activation
+ * This function is called after all managers are initialized (Requirement 3.1)
+ */
+async function revealSidebarOnActivation(): Promise<void> {
+    // Only reveal once per session to avoid repeated revelations
+    if (sidebarHasBeenRevealed) {
+        return;
+    }
+    
+    try {
+        // Ensure the explorer is visible first
+        await vscode.commands.executeCommand('workbench.view.explorer');
+        
+        // Small delay to ensure explorer is ready
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Focus the Comrade sidebar view using the registered command
+        await vscode.commands.executeCommand('comrade.sidebar.focus');
+        
+        // Mark as revealed to avoid repeated revelations
+        sidebarHasBeenRevealed = true;
+        
+        console.log('Comrade sidebar automatically revealed on activation (Requirement 3.1, 3.2, 3.3)');
+    } catch (error) {
+        console.warn('Failed to automatically reveal Comrade sidebar:', error);
+        
+        // Try alternative approach - directly focus the extension view
+        try {
+            await vscode.commands.executeCommand('workbench.view.extension.comrade');
+            sidebarHasBeenRevealed = true;
+            console.log('Comrade sidebar revealed using alternative method');
+        } catch (fallbackError) {
+            console.warn('All sidebar revelation methods failed:', fallbackError);
+            // Don't show error to user as this is a nice-to-have feature
+            // Extension should still function without sidebar auto-revelation
+        }
+    }
+}
+
+/**
  * Initialize features that depend on having a workspace open
+ * This function now gracefully handles missing configurations and creates defaults automatically
+ * Integrates with enhanced status bar manager for better user feedback
  */
 async function initializeWorkspaceDependentFeatures(): Promise<void> {
-    if (hasWorkspace() && personalityManager) {
-        // Clear any existing workspace initializations
-        personalityManager.clearAllWorkspaces();
-        
-        // Initialize for each workspace folder
-        const workspaceFolders = vscode.workspace.workspaceFolders || [];
-        for (const workspaceFolder of workspaceFolders) {
-            try {
-                await personalityManager.initialize(workspaceFolder.uri);
-            } catch (error) {
-                console.error(`Failed to initialize workspace ${workspaceFolder.name}:`, error);
-                vscode.window.showErrorMessage(
-                    `Failed to initialize workspace '${workspaceFolder.name}': ${error instanceof Error ? error.message : String(error)}`
-                );
+    try {
+        if (hasWorkspace() && personalityManager) {
+            // Clear any existing workspace initializations
+            personalityManager.clearAllWorkspaces();
+            
+            // Initialize for each workspace folder
+            const workspaceFolders = vscode.workspace.workspaceFolders || [];
+            console.log(`Initializing ${workspaceFolders.length} workspace folder(s) with Comrade features`);
+            
+            for (const workspaceFolder of workspaceFolders) {
+                try {
+                    // Update status bar to show current workspace being initialized
+                    if (statusBarManager) {
+                        statusBarManager.showProgress({} as any, `Initializing ${workspaceFolder.name}...`);
+                    }
+                    
+                    // Check if workspace needs initialization (Requirement 5.1)
+                    const { handleWorkspaceInitialization } = await import('./utils/workspace');
+                    await handleWorkspaceInitialization(workspaceFolder.uri);
+                    
+                    // Initialize personality manager with graceful fallback
+                    await personalityManager.initialize(workspaceFolder.uri);
+                    
+                    console.log(`Successfully initialized workspace: ${workspaceFolder.name} (Requirements 5.1, 5.2)`);
+                } catch (error) {
+                    // Log error instead of showing notification (non-blocking) - Requirements 1.1, 1.2
+                    console.warn(`Failed to initialize workspace ${workspaceFolder.name}:`, error);
+                    
+                    // Attempt to create missing directories and files automatically
+                    try {
+                        const { initializeWorkspaceDefaults } = await import('./utils/workspace');
+                        await initializeWorkspaceDefaults(workspaceFolder.uri);
+                        
+                        // Retry personality initialization after creating defaults
+                        await personalityManager.initialize(workspaceFolder.uri);
+                        console.log(`Successfully recovered workspace initialization for: ${workspaceFolder.name} (Requirement 5.4)`);
+                    } catch (recoveryError) {
+                        console.warn(`Failed to recover workspace ${workspaceFolder.name}:`, recoveryError);
+                        // Continue with other workspaces - don't block extension functionality
+                    }
+                }
             }
+            
+            // Update status bar to reflect successful workspace initialization
+            if (statusBarManager) {
+                statusBarManager.updateWorkspaceStatus(true);
+            }
+            
+            console.log('Workspace-dependent features initialized successfully without blocking notifications (Requirements 1.1, 1.2, 1.3)');
+        } else {
+            // Handle no workspace scenario gracefully (Requirements 1.1, 1.2, 1.3)
+            console.log('No workspace open - initializing with default settings (graceful fallback)');
+            
+            // Initialize configuration defaults for non-workspace usage
+            if (configurationManager) {
+                try {
+                    await configurationManager.initializeDefaultConfiguration();
+                    console.log('Initialized default configuration for non-workspace usage (Requirement 5.4)');
+                } catch (error) {
+                    console.warn('Failed to initialize default configuration:', error);
+                    // Continue - don't block extension functionality
+                }
+            }
+            
+            // Update status bar to reflect no workspace state
+            if (statusBarManager) {
+                statusBarManager.updateWorkspaceStatus(false);
+            }
+            
+            console.log('Extension fully functional without workspace - no warnings shown (Requirements 1.1, 1.2, 1.3)');
+        }
+    } catch (error) {
+        // Top-level error handling - log but don't block extension (Requirements 1.1, 1.2, 1.3)
+        console.error('Error in initializeWorkspaceDependentFeatures:', error);
+        
+        // Update status bar to show warning state instead of error
+        if (statusBarManager) {
+            statusBarManager.showWarning('Workspace initialization incomplete');
+            statusBarManager.updateWorkspaceStatus(hasWorkspace());
         }
         
-        // Update status bar
-        if (statusBarManager) {
-            statusBarManager.updateWorkspaceStatus(true);
-        }
-    } else if (statusBarManager) {
-        statusBarManager.updateWorkspaceStatus(false);
+        // Don't throw error - allow extension to continue functioning
+        console.log('Extension continues in graceful degradation mode - no blocking errors (Requirements 1.1, 1.2, 1.3)');
     }
 }
 

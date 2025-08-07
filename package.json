@@ -96,10 +96,25 @@
         "command": "comrade.retryLastOperation",
         "title": "Retry Last Operation",
         "category": "Comrade"
+      },
+      {
+        "command": "comrade.sidebar.focus",
+        "title": "Focus Comrade Sidebar",
+        "category": "Comrade"
+      },
+      {
+        "command": "comrade.statusBar.quickAccess",
+        "title": "Comrade Quick Access",
+        "category": "Comrade"
+      },
+      {
+        "command": "comrade.help",
+        "title": "Comrade Help",
+        "category": "Comrade"
       }
     ],
     "views": {
-      "explorer": [
+      "comrade": [
         {
           "id": "comrade.sidebar",
           "name": "Comrade",
@@ -108,10 +123,19 @@
         }
       ]
     },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "comrade",
+          "title": "Comrade",
+          "icon": "$(robot)"
+        }
+      ]
+    },
     "viewsWelcome": [
       {
         "view": "comrade.sidebar",
-        "contents": "Welcome to Comrade!\n[Start New Session](command:comrade.newSession)"
+        "contents": "Welcome to Comrade! 🤖\n\nYour AI coding companion is ready to help.\n\n[$(gear) Open Settings](command:comrade.openSettings)\n[$(person) Configure Personality](command:comrade.openPersonalityConfig)\n[$(plug) Setup Agents](command:comrade.openAgentConfig)\n\n---\n\n**Quick Start:**\n• No workspace setup required\n• Works with any folder or project\n• Ready to assist with coding tasks\n\n[$(question) Need Help?](https://github.com/comrade-ai/comrade-vscode-extension#readme)\n[$(bug) Report Issue](https://github.com/comrade-ai/comrade-vscode-extension/issues)"
       }
     ],
     "configuration": {
@@ -329,6 +353,8 @@
     "vscode:prepublish": "npm run compile",
     "compile": "run-s build:webview tsc",
     "compile:test": "tsc -p tsconfig.test.json",
+    "test:extension": "node ./out/test/run-test.js",
+    "test:extension:legacy": "npm run compile && mocha out/test/integration/extension.test.js --timeout 25000 --reporter spec",
     "build:webview": "cd webview && npm run build",
     "tsc": "tsc -p ./",
     "watch": "tsc -watch -p ./",
@@ -351,7 +377,6 @@
     "test:chat": "npm run compile && mocha out/test/unit/enhanced-chat.test.js --timeout 15000 --reporter spec",
     "test:registry": "npm run compile && mocha out/test/unit/enhanced-registry.test.js --timeout 15000 --reporter spec",
     "test:workflow": "npm run compile && mocha out/test/integration/workflow.test.js --timeout 30000 --reporter spec",
-    "test:extension": "npm run compile && mocha out/test/integration/extension.test.js --timeout 25000 --reporter spec",
     "test:watch": "npm run compile && mocha out/test/**/*.test.js --timeout 15000 --reporter spec --watch",
     "test:coverage": "npm run compile && nyc mocha out/test/**/*.test.js --timeout 20000",
     "check-types": "tsc --noEmit",
@@ -360,13 +385,13 @@
   "devDependencies": {
     "@types/glob": "^8.1.0",
     "@types/mocha": "^10.0.10",
-    "@types/node": "20.x",
+    "@types/node": "^20.19.9",
     "@types/sinon": "^17.0.4",
     "@types/vscode": "^1.102.0",
     "@typescript-eslint/eslint-plugin": "^8.31.1",
     "@typescript-eslint/parser": "^8.31.1",
     "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.4.1",
+    "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.25.1",
     "glob": "^8.1.0",
     "mocha": "^11.7.1",

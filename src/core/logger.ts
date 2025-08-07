@@ -41,7 +41,7 @@ export class Logger {
     this.log('error', message, meta);
   }
 
-  private log(level: LogLevel, message: string, meta?: Record<string, any>): void {
+  protected log(level: LogLevel, message: string, meta?: Record<string, any>): void {
     if (LOG_LEVELS[level] < this.level) {
       return;
     }

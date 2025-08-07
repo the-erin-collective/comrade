@@ -95,7 +95,7 @@ describe('OpenAI Function Calling Integration Tests', () => {
 
       // Mock the toolManager.getAvailableTools method to return our test tool
       const toolManager = ToolManager.getInstance();
-      const getAvailableToolsStub = sandbox.stub(toolManager, 'getAvailableTools').callsFake((context) => {
+      const getAvailableToolsStub = sandbox.stub(toolManager, 'getAvailableTools').callsFake((_context) => {
         return [testTool];
       });
 
@@ -123,11 +123,7 @@ describe('OpenAI Function Calling Integration Tests', () => {
       } as Response;
 
       // Spy on makeHttpRequest to verify tools are included in the request
-      const makeHttpRequestSpy = sandbox.stub(chatBridge as any, 'makeHttpRequest').callsFake(async (...args: any[]) => {
-        const [url, options] = args;
-        if (options && options.body) {
-          const requestBody = JSON.parse(options.body);
-        }
+      const makeHttpRequestSpy = sandbox.stub(chatBridge as any, 'makeHttpRequest').callsFake(async (..._args: any[]) => {
         return mockResponse;
       });
 
@@ -166,7 +162,7 @@ describe('OpenAI Function Calling Integration Tests', () => {
 
         // Mock the toolManager.getAvailableTools method
         const toolManager = ToolManager.getInstance();
-        const getAvailableToolsStub = sandbox.stub(toolManager, 'getAvailableTools').callsFake((context) => {
+        const getAvailableToolsStub = sandbox.stub(toolManager, 'getAvailableTools').callsFake((_context) => {
           return [readFileTool];
         });
 

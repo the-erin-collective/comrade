@@ -276,12 +276,60 @@ export class ConfigurationManager {
    */
   private getDefaultConfiguration(): ComradeConfiguration {
     return {
-      agents: [],
+      agents: this.getDefaultAgents(),
       assignmentDefaultMode: 'speed',
       mcpServers: [],
       contextMaxFiles: 100,
       contextMaxTokens: 8000
     };
+  }
+
+  /**
+   * Get default agent configurations for new installations
+   */
+  private getDefaultAgents(): AgentConfigurationItem[] {
+    return [
+      {
+        id: 'default-openai-gpt35',
+        name: 'GPT-3.5 Turbo',
+        provider: 'openai',
+        model: 'gpt-3.5-turbo',
+        temperature: 0.7,
+        maxTokens: 4000,
+        timeout: 30000,
+        capabilities: {
+          hasVision: false,
+          hasToolUse: true,
+          reasoningDepth: 'intermediate',
+          speed: 'fast',
+          costTier: 'low',
+          maxTokens: 4000,
+          supportedLanguages: ['en'],
+          specializations: ['code', 'general']
+        },
+        isEnabledForAssignment: true
+      },
+      {
+        id: 'default-openai-gpt4',
+        name: 'GPT-4',
+        provider: 'openai',
+        model: 'gpt-4',
+        temperature: 0.7,
+        maxTokens: 8000,
+        timeout: 60000,
+        capabilities: {
+          hasVision: false,
+          hasToolUse: true,
+          reasoningDepth: 'advanced',
+          speed: 'medium',
+          costTier: 'high',
+          maxTokens: 8000,
+          supportedLanguages: ['en'],
+          specializations: ['code', 'analysis', 'general']
+        },
+        isEnabledForAssignment: false // Disabled by default due to cost
+      }
+    ];
   }
   
   /**
@@ -798,6 +846,65 @@ export class ConfigurationManager {
           vscode.commands.executeCommand('workbench.action.openSettings', 'comrade');
         }
       });
+    }
+  }
+
+  /**
+   * Initialize default configurations for new workspaces
+   * This method sets up sensible defaults without requiring user intervention
+   */
+  public async initializeDefaultConfiguration(): Promise<void> {
+    try {
+      const config = vscode.workspace.getConfiguration('comrade');
+      
+      // Check if configuration is already initialized
+      const existingAgents = config.get<AgentConfigurationItem[]>('agents', []);
+      if (existingAgents.length > 0) {
+        console.log('Configuration already initialized with agents');
+        return;
+      }
+
+      // Initialize with default agents
+      const defaultConfig = this.getDefaultConfiguration();
+      
+      // Only set defaults if no configuration exists
+      if (!config.get('agents')) {
+        await config.update('agents', defaultConfig.agents, vscode.ConfigurationTarget.Global);
+        console.log('Initialized default agent configurations');
+      }
+      
+      if (!config.get('assignment.defaultMode')) {
+        await config.update('assignment.defaultMode', defaultConfig.assignmentDefaultMode, vscode.ConfigurationTarget.Global);
+        console.log('Initialized default assignment mode');
+      }
+      
+      if (!config.get('context.maxFiles')) {
+        await config.update('context.maxFiles', defaultConfig.contextMaxFiles, vscode.ConfigurationTarget.Global);
+        console.log('Initialized default context max files');
+      }
+      
+      if (!config.get('context.maxTokens')) {
+        await config.update('context.maxTokens', defaultConfig.contextMaxTokens, vscode.ConfigurationTarget.Global);
+        console.log('Initialized default context max tokens');
+      }
+
+      console.log('Default configuration initialization completed');
+    } catch (error) {
+      console.warn('Failed to initialize default configuration:', error);
+      // Don't throw error to prevent blocking extension functionality
+    }
+  }
+
+  /**
+   * Provide graceful configuration loading with automatic defaults
+   * This method ensures the extension works even with missing or corrupted configurations
+   */
+  public getConfigurationWithDefaults(): ComradeConfiguration {
+    try {
+      return this.getConfiguration();
+    } catch (error) {
+      console.warn('Failed to load configuration, using defaults:', error);
+      return this.getDefaultConfiguration();
     }
   }
 
