@@ -20,12 +20,25 @@ declare const acquireVsCodeApi: () => {
   providedIn: 'root'
 })
 export class MessageService {
-  private vscode = acquireVsCodeApi();
+  private vscode: any;
   
   // Signals for reactive state management
   public messageReceived = signal<WebviewMessage | null>(null);
   
   constructor() {
+    try {
+      this.vscode = acquireVsCodeApi();
+      console.log('VS Code API acquired successfully');
+    } catch (error) {
+      console.error('Failed to acquire VS Code API:', error);
+      // Fallback for development/testing
+      this.vscode = {
+        postMessage: (message: any) => console.log('Mock postMessage:', message),
+        getState: () => ({}),
+        setState: (state: any) => console.log('Mock setState:', state)
+      };
+    }
+    
     this.setupMessageListener();
   }
   

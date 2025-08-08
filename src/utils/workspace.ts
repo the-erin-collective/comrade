@@ -114,9 +114,14 @@ export async function initializeWorkspaceDefaults(workspaceUri?: vscode.Uri): Pr
     }
 
     // Initialize personality manager to create default personality file
-    const { PersonalityManager } = await import('../core/personality');
-    const personalityManager = PersonalityManager.getInstance();
-    await personalityManager.initialize(targetUri);
+    try {
+      const { PersonalityManager } = await import('../core/personality');
+      const personalityManager = PersonalityManager.getInstance();
+      await personalityManager.initialize(targetUri);
+    } catch (error) {
+      console.warn('Failed to initialize personality manager:', error);
+      // Continue with initialization even if personality manager fails
+    }
 
     console.log('Workspace defaults initialized successfully');
   } catch (error) {

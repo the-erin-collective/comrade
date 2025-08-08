@@ -241,25 +241,103 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private _getHtmlForWebview(webview: vscode.Webview) {
-    // Get the local path to main script run in the webview, then convert it to a uri we can use in the webview.
-    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'main.js'));
-    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'styles.css'));
+    try {
+      // Read the built Angular HTML file
+      const fs = require('fs');
+      const path = require('path');
+      
+      const htmlPath = path.join(this._extensionUri.fsPath, 'out', 'webview', 'browser', 'index.html');
+      console.log('Loading HTML from:', htmlPath);
+      
+      if (!fs.existsSync(htmlPath)) {
+        console.error('HTML file not found at:', htmlPath);
+        return this._getFallbackHtml(webview);
+      }
+      
+      let html = fs.readFileSync(htmlPath, 'utf8');
+      console.log('HTML loaded, length:', html.length);
+      
+      // Convert resource paths to webview URIs
+      const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'browser', 'main.js'));
+      const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'browser', 'styles.css'));
+      const faviconUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'browser', 'favicon.ico'));
+      
+      console.log('Script URI:', scriptUri.toString());
+      console.log('Style URI:', styleUri.toString());
+      
+      // Replace relative paths with webview URIs
+      html = html.replace('href="styles.css"', `href="${styleUri}"`);
+      html = html.replace('src="main.js"', `src="${scriptUri}"`);
+      html = html.replace('href="favicon.ico"', `href="${faviconUri}"`);
+      
+      // Update CSP to allow the webview resources
+      const cspContent = `default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource}; img-src ${webview.cspSource} data:;`;
+      html = html.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/i, `<meta http-equiv="Content-Security-Policy" content="${cspContent}">`);
+      
+      // If no CSP exists, add one
+      if (!html.includes('Content-Security-Policy')) {
+        html = html.replace('<head>', `<head>\n  <meta http-equiv="Content-Security-Policy" content="${cspContent}">`);
+      }
+      
+      console.log('HTML processed successfully');
+      return html;
+    } catch (error) {
+      console.error('Error loading webview HTML:', error);
+      return this._getFallbackHtml(webview);
+    }
+  }
 
-    // Use a nonce to only allow a specific script to be run.
-    const nonce = getNonce();
-
+  private _getFallbackHtml(webview: vscode.Webview): string {
+    console.log('Using fallback HTML');
     return `<!DOCTYPE html>
       <html lang="en">
       <head>
         <meta charset="UTF-8">
-        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline';">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link href="${styleUri}" rel="stylesheet">
         <title>Comrade</title>
+        <style>
+          body {
+            font-family: var(--vscode-font-family);
+            color: var(--vscode-foreground);
+            background-color: var(--vscode-editor-background);
+            padding: 16px;
+          }
+          .welcome {
+            text-align: center;
+            padding: 32px 16px;
+          }
+          .welcome h3 {
+            margin: 0 0 16px 0;
+            font-size: 18px;
+          }
+          .welcome p {
+            margin: 0 0 24px 0;
+            color: var(--vscode-descriptionForeground);
+          }
+          .btn {
+            padding: 8px 16px;
+            border: none;
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+          }
+          .btn:hover {
+            background: var(--vscode-button-hoverBackground);
+          }
+        </style>
       </head>
       <body>
-        <app-root></app-root>
-        <script nonce="${nonce}" src="${scriptUri}"></script>
+        <div class="welcome">
+          <h3>Welcome to Comrade!</h3>
+          <p>The webview is loading. If you see this message, the Angular app may not have built correctly.</p>
+          <button class="btn" onclick="location.reload()">Reload</button>
+        </div>
+        <script>
+          console.log('Fallback HTML loaded');
+        </script>
       </body>
       </html>`;
   }

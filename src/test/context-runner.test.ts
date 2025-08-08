@@ -6,30 +6,8 @@ import * as vscode from 'vscode';
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 import { ContextRunner } from '../runners/context';
-import { WebFileSystem } from '../core/webcompat';
-
 // Mocha globals are provided by the test environment
 import { SessionState } from '../core/session';
-
-// Mock implementations for testing
-class TestLogger {
-  log() {}
-  error() {}
-  warn() {}
-  info() {}
-  debug() {}
-}
-
-class TestSession {
-  state = SessionState.IDLE;
-  workspaceUri = vscode.Uri.file('/test/workspace');
-  reportProgress() {}
-  error() {}
-}
-
-class TestAgent {
-  capabilities = {};
-}
 
 // Define a minimal Session interface for testing
 interface Session {
@@ -47,7 +25,6 @@ describe('ContextRunner Tests', () => {
   let mockSession: Session;
   let mockAgent: IAgent;
   let contextRunner: ContextRunner;
-  let readWorkspaceFileStub: sinon.SinonStub;
   let mockWorkspaceUri: vscode.Uri;
 
   beforeEach(() => {

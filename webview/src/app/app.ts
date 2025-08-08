@@ -10,13 +10,14 @@ import { ChatOutputComponent } from './components/chat-output/chat-output.compon
 import { InputAreaComponent } from './components/input-area/input-area.component';
 import { ErrorHandlerComponent } from './components/error-handler/error-handler.component';
 import { ProgressIndicatorComponent } from './components/progress-indicator/progress-indicator.component';
+import { SettingsComponent } from './components/settings/settings.component';
 import { SessionService } from './services/session.service';
 import { MessageService } from './services/message.service';
 import { ConversationSession, ContextItem, PhaseAlert, ErrorState, ProgressState, TimeoutState } from './models/session.model';
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule, SessionTabsComponent, ChatOutputComponent, InputAreaComponent, ErrorHandlerComponent, ProgressIndicatorComponent],
+  imports: [CommonModule, FormsModule, SessionTabsComponent, ChatOutputComponent, InputAreaComponent, ErrorHandlerComponent, ProgressIndicatorComponent, SettingsComponent],
   templateUrl: './app.html',
   styleUrl: './app.css'
 })
@@ -33,10 +34,12 @@ export class App {
   public progressState = signal<ProgressState | null>(null);
   public timeoutState = signal<TimeoutState | null>(null);
   public availableAgents = signal([
-    { id: 'gpt-4', name: 'GPT-4' },
-    { id: 'claude', name: 'Claude' },
-    { id: 'local-llama', name: 'Local Llama' }
+    // Start with empty array to show "no agents configured" message
+    // { id: 'gpt-4', name: 'GPT-4' },
+    // { id: 'claude', name: 'Claude' },
+    // { id: 'local-llama', name: 'Local Llama' }
   ]);
+  public showSettings = signal(false);
   
   constructor(
     private sessionService: SessionService,
@@ -99,8 +102,11 @@ export class App {
   }
   
   public onSettingsOpen() {
-    // TODO: Implement settings menu
-    console.log('Open settings menu');
+    this.showSettings.set(true);
+  }
+
+  public onSettingsClose() {
+    this.showSettings.set(false);
   }
 
   private handleExtensionMessage(message: any) {

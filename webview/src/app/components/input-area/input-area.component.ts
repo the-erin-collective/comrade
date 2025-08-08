@@ -9,96 +9,122 @@ import { ContextItem, PhaseAlert } from '../../models/session.model';
   standalone: true,
   template: `
     <div class="input-area">
-      @if (phaseAlert()) {
-        <div class="phase-alert" [class]="phaseAlert()?.type">
-          <span class="alert-message">{{ phaseAlert()?.message }}</span>
-          @if (phaseAlert()?.actionButton) {
-            <button class="alert-action-btn" (click)="phaseAlert()!.actionButton!.action()">
-              {{ phaseAlert()!.actionButton!.text }}
-            </button>
-          }
-          @if (phaseAlert()?.dismissible) {
-            <button class="alert-dismiss-btn" (click)="phaseAlert()!.actionButton!.action()">
-              &times;
-            </button>
-          }
-        </div>
-      }
-
-      <div class="context-items-container" [@slideIn] *ngIf="contextItems().length > 0">
-        @for (item of contextItems(); track $index) {
-          <div class="context-item">
-            <span class="context-icon">{{ getContextIcon(item.type) }}</span>
-            <span class="context-label">{{ getContextLabel(item) }}</span>
-            <button class="remove-context-btn" (click)="removeContextItem($index)">
-              &times;
-            </button>
+      <!-- Information Area -->
+      <div class="info-area">
+        @if (availableAgents().length === 0) {
+          <div class="info-message warning">
+            <span class="info-icon">⚠️</span>
+            <span class="info-text">No agents configured.</span>
+            <button class="info-link" (click)="openAgentSettings()">Configure agents</button>
+          </div>
+        } @else if (phaseAlert()) {
+          <div class="info-message" [class]="phaseAlert()?.type">
+            <span class="info-icon">ℹ️</span>
+            <span class="info-text">{{ phaseAlert()?.message }}</span>
+            @if (phaseAlert()?.actionButton) {
+              <button class="info-link" (click)="phaseAlert()!.actionButton!.action()">
+                {{ phaseAlert()!.actionButton!.text }}
+              </button>
+            }
+          </div>
+        } @else {
+          <div class="info-message">
+            <span class="info-text">{{ getStatusMessage() }}</span>
           </div>
         }
       </div>
 
-      <div class="input-container">
-        <div class="toolbar-section left-toolbar">
-          <button class="toolbar-button" (click)="toggleContextMenu()" title="Add Context">
-            <span class="icon">📎</span>
-          </button>
-          @if (showContextMenu()) {
-            <div class="context-menu">
-              <button class="context-menu-item" (click)="addContext('file')">
-                <span class="icon">📄</span> Add File
-              </button>
-              <button class="context-menu-item" (click)="addContext('selection')">
-                <span class="icon">📝</span> Add Selection
-              </button>
-              <button class="context-menu-item" (click)="addContext('image')">
-                <span class="icon">🖼️</span> Add Image
-              </button>
-              <button class="context-menu-item" (click)="addContext('workspace')">
-                <span class="icon">📁</span> Add Workspace
+      <!-- Context Items -->
+      @if (contextItems().length > 0) {
+        <div class="context-items-container">
+          @for (item of contextItems(); track $index) {
+            <div class="context-item">
+              <span class="context-icon">{{ getContextIcon(item.type) }}</span>
+              <span class="context-label">{{ getContextLabel(item) }}</span>
+              <button class="remove-context-btn" (click)="removeContextItem($index)">
+                &times;
               </button>
             </div>
           }
         </div>
+      }
 
-        <textarea
-          #messageInput
-          class="input-text"
-          [style.height.px]="textareaHeight()"
-          placeholder="Type your message..."
-          [(ngModel)]="currentMessage"
-          (input)="onInputChange($event)"
-          (keydown)="onInputKeyDown($event)"
-          [disabled]="isLoading()"
-        ></textarea>
-
-        <div class="toolbar-section right-toolbar">
-          @if (availableAgents().length > 0) {
-            <select
-              class="agent-select"
-              [(ngModel)]="selectedAgent"
-              (change)="onAgentChange($event)"
-              [disabled]="isLoading()"
-            >
-              @for (agent of availableAgents(); track agent.id) {
-                <option [value]="agent.id">{{ agent.name }}</option>
-              }
-            </select>
-          }
+      <!-- Input Container -->
+      <div class="input-container">
+        <!-- Text Input -->
+        <div class="input-wrapper">
+          <textarea
+            #messageInput
+            class="input-text"
+            [style.height.px]="textareaHeight()"
+            placeholder="Ask a question or describe a task..."
+            [(ngModel)]="currentMessage"
+            (input)="onInputChange($event)"
+            (keydown)="onInputKeyDown($event)"
+            [disabled]="isLoading()"
+          ></textarea>
           <button
-            class="toolbar-button send-button"
+            class="send-button"
             (click)="sendMessage()"
             [disabled]="!currentMessage() || isLoading()"
             title="Send Message"
           >
-            <span class="icon">🚀</span>
+            <span class="icon">↑</span>
           </button>
-          <button
-            class="toolbar-button settings-button"
-            (click)="showComradeMenu()"
-            title="Comrade Menu"
-          >
-            <span class="icon">⚙️</span>
-          </button>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <button class="toolbar-button" (click)="toggleContextMenu()" title="Add Context">
+              <span class="icon">#</span>
+            </button>
+            @if (showContextMenu()) {
+              <div class="context-menu">
+                <button class="context-menu-item" (click)="addContext('file')">
+                  <span class="icon">📄</span> Add File
+                </button>
+                <button class="context-menu-item" (click)="addContext('selection')">
+                  <span class="icon">📝</span> Add Selection
+                </button>
+                <button class="context-menu-item" (click)="addContext('image')">
+                  <span class="icon">🖼️</span> Add Image
+                </button>
+                <button class="context-menu-item" (click)="addContext('workspace')">
+                  <span class="icon">📁</span> Add Workspace
+                </button>
+              </div>
+            }
+
+            <button class="toolbar-button" title="Attach Image">
+              <span class="icon">📷</span>
+            </button>
+          </div>
+
+          <div class="toolbar-center">
+            @if (availableAgents().length > 0) {
+              <select
+                class="agent-select"
+                [(ngModel)]="selectedAgent"
+                (change)="onAgentChange($event)"
+                [disabled]="isLoading()"
+              >
+                @for (agent of availableAgents(); track agent.id) {
+                  <option [value]="agent.id">{{ agent.name }}</option>
+                }
+              </select>
+            } @else {
+              <span class="no-agent-text">No agents available</span>
+            }
+          </div>
+
+          <div class="toolbar-right">
+            <label class="autopilot-toggle">
+              <span class="toggle-label">Autopilot</span>
+              <input type="checkbox" [(ngModel)]="autopilotEnabled" (change)="onAutopilotToggle($event)">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
         </div>
       </div>
     </div>
@@ -124,7 +150,8 @@ export class InputAreaComponent implements AfterViewInit {
   public showContextMenu = signal(false);
   public showSettingsMenu = signal(false);
   public contextItems = signal<ContextItem[]>([]);
-  public textareaHeight = signal(60);
+  public textareaHeight = signal(40);
+  public autopilotEnabled = signal(false);
 
   ngAfterViewInit() {
     this.setupClickOutsideHandler();
@@ -156,7 +183,7 @@ export class InputAreaComponent implements AfterViewInit {
     if (this.messageInput) {
       const textarea = this.messageInput.nativeElement;
       textarea.style.height = 'auto';
-      const newHeight = Math.min(Math.max(textarea.scrollHeight, 60), 200);
+      const newHeight = Math.min(Math.max(textarea.scrollHeight, 40), 120);
       this.textareaHeight.set(newHeight);
     }
   }
@@ -170,11 +197,11 @@ export class InputAreaComponent implements AfterViewInit {
       });
       this.currentMessage.set('');
       this.contextItems.set([]);
-      this.textareaHeight.set(60);
+      this.textareaHeight.set(40);
 
       // Reset textarea height
       if (this.messageInput) {
-        this.messageInput.nativeElement.style.height = '60px';
+        this.messageInput.nativeElement.style.height = '40px';
       }
     }
   }
@@ -238,5 +265,26 @@ export class InputAreaComponent implements AfterViewInit {
       default:
         return 'Context';
     }
+  }
+
+  public getStatusMessage(): string {
+    if (this.isLoading()) {
+      return 'Processing your request...';
+    }
+    if (this.availableAgents().length > 0) {
+      const agent = this.availableAgents().find(a => a.id === this.selectedAgent());
+      return agent ? `Ready with ${agent.name}` : 'Ready to assist';
+    }
+    return 'Configure agents to get started';
+  }
+
+  public openAgentSettings(): void {
+    this.settingsOpen.emit();
+  }
+
+  public onAutopilotToggle(event: Event): void {
+    const target = event.target as HTMLInputElement;
+    this.autopilotEnabled.set(target.checked);
+    // Emit autopilot change event if needed
   }
 }

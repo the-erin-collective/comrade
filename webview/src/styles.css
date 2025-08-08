@@ -12,21 +12,42 @@
   --error-color: var(--vscode-errorForeground);
   --warning-color: var(--vscode-warningForeground);
   --success-color: var(--vscode-terminal-ansiGreen);
+  
+  /* Additional VS Code variables for better theming */
+  --vscode-tab-activeBackground: var(--vscode-tab-activeBackground, var(--vscode-editor-background));
+  --vscode-tab-inactiveBackground: var(--vscode-tab-inactiveBackground, transparent);
+  --vscode-tab-activeForeground: var(--vscode-tab-activeForeground, var(--vscode-foreground));
+  --vscode-tab-inactiveForeground: var(--vscode-tab-inactiveForeground, var(--vscode-descriptionForeground));
+  --vscode-tab-hoverBackground: var(--vscode-tab-hoverBackground, rgba(255, 255, 255, 0.1));
+  --vscode-tab-activeBorder: var(--vscode-tab-activeBorder, var(--vscode-focusBorder));
+  --vscode-button-border: var(--vscode-button-border, transparent);
+  --vscode-button-secondaryBackground: var(--vscode-button-secondaryBackground, var(--vscode-input-background));
+  --vscode-button-secondaryForeground: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  --vscode-button-secondaryHoverBackground: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+  --vscode-toolbar-hoverBackground: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.1));
 }
 
 * {
   box-sizing: border-box;
 }
 
-body {
+html, body {
   margin: 0;
   padding: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
   color: var(--text-color);
   background-color: var(--background-color);
-  height: 100vh;
-  overflow: hidden;
+}
+
+app-root {
+  display: block;
+  height: 100%;
 }
 
 /* Global styles for Angular components */

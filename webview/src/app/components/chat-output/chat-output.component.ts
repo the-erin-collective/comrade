@@ -59,7 +59,7 @@ import { ChatMessage, ConversationSession } from '../../models/session.model';
     .chat-output {
       flex: 1;
       overflow-y: auto;
-      padding: 16px;
+      padding: 16px 16px 120px 16px; /* Bottom padding for fixed input area */
       display: flex;
       flex-direction: column;
       gap: 12px;
@@ -128,27 +128,32 @@ import { ChatMessage, ConversationSession } from '../../models/session.model';
       display: flex;
       align-items: center;
       justify-content: center;
-      height: 200px;
+      flex: 1;
       text-align: center;
+      padding: 40px 20px;
     }
 
     .welcome-message .chat-message-content {
       background: transparent;
-      border: 2px dashed var(--border-color);
+      border: 2px dashed var(--vscode-panel-border);
       margin: 0;
-      max-width: 400px;
+      max-width: 450px;
+      padding: 32px;
+      border-radius: 12px;
     }
 
     .welcome-message h3 {
-      margin: 0 0 12px 0;
-      color: var(--text-color);
-      font-size: 16px;
+      margin: 0 0 16px 0;
+      color: var(--vscode-foreground);
+      font-size: 18px;
+      font-weight: 600;
     }
 
     .welcome-message p {
       margin: 0;
       color: var(--vscode-descriptionForeground);
       font-size: 14px;
+      line-height: 1.5;
     }
 
     .loading-message {

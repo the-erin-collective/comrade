@@ -20,12 +20,14 @@ export interface StatusBarManager {
 /**
  * Manages status bar items for operation progress and cancellation
  */
-export class ComradeStatusBarManager implements StatusBarManager {
+export class ComradeStatusBarManager implements StatusBarManager, vscode.Disposable {
   private persistentItem: vscode.StatusBarItem;
   private progressItem: vscode.StatusBarItem;
   private cancelItem: vscode.StatusBarItem;
   private currentSession: ISession | null = null;
   private currentState: 'ready' | 'busy' | 'error' | 'warning' = 'ready';
+  public cancelCommand?: vscode.Disposable;
+  public quickAccessCommand?: vscode.Disposable;
 
   constructor(private context: vscode.ExtensionContext) {
     // Create persistent status bar item (highest priority)
@@ -112,6 +114,10 @@ export class ComradeStatusBarManager implements StatusBarManager {
       }
     });
 
+    // Store commands as instance variables so they can be accessed by createStatusBarManager
+    this.cancelCommand = cancelCommand;
+    this.quickAccessCommand = quickAccessCommand;
+    
     this.context.subscriptions.push(cancelCommand, quickAccessCommand);
   }
 
@@ -297,10 +303,9 @@ export class ComradeStatusBarManager implements StatusBarManager {
 export function createStatusBarManager(context: vscode.ExtensionContext): StatusBarManager {
   const manager = new ComradeStatusBarManager(context);
   
-  // Register for disposal
-  context.subscriptions.push({
-    dispose: () => manager.dispose()
-  });
+  // The manager constructor already adds commands to context.subscriptions
+  // We just need to add the manager itself for disposal
+  context.subscriptions.push(manager);
 
   return manager;
 }
