@@ -15,7 +15,6 @@ interface AgentConfig {
   selector: 'app-settings',
   standalone: true,
   imports: [CommonModule, FormsModule],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="settings-container">
       <div class="settings-header">
@@ -136,6 +135,7 @@ interface AgentConfig {
             <div class="form-group">
               <label>Provider</label>
               <select [(ngModel)]="agentForm.provider">
+                <option value="" disabled>Select a provider...</option>
                 <option value="openai">OpenAI</option>
                 <option value="anthropic">Anthropic</option>
                 <option value="google">Google</option>
@@ -554,7 +554,7 @@ export class SettingsComponent {
 
   public agentForm = {
     name: '',
-    provider: 'openai',
+    provider: '',
     model: '',
     apiKey: ''
   };
@@ -566,23 +566,15 @@ export class SettingsComponent {
 
   private loadSettings() {
     // Mock data - in real implementation, load from VS Code settings
-    this.agents.set([
-      {
-        id: '1',
-        name: 'GPT-4',
-        provider: 'OpenAI',
-        model: 'gpt-4',
-        apiKey: '***hidden***',
-        enabled: true
-      }
-    ]);
+    // Start with no agents configured
+    this.agents.set([]);
   }
 
   public addNewAgent() {
     this.editingAgent.set(null);
     this.agentForm = {
       name: '',
-      provider: 'openai',
+      provider: '',
       model: '',
       apiKey: ''
     };

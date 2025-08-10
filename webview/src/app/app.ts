@@ -23,7 +23,7 @@ import { ConversationSession, ContextItem, PhaseAlert, ErrorState, ProgressState
 })
 export class App {
   protected title = 'Comrade';
-  
+
   public sessions$: Observable<any[]>;
   public activeSession$: Observable<any>;
   public currentMessage = signal('');
@@ -40,14 +40,25 @@ export class App {
     // { id: 'local-llama', name: 'Local Llama' }
   ]);
   public showSettings = signal(false);
-  
+
   constructor(
     private sessionService: SessionService,
     private messageService: MessageService,
     private store: Store<any>
   ) {
-  this.sessions$ = this.store.select(SessionSelectors.selectSessions);
-  this.activeSession$ = this.store.select(SessionSelectors.selectActiveSession);
+    console.log('App constructor called - Angular is running!');
+    this.sessions$ = this.store.select(SessionSelectors.selectSessions);
+    this.activeSession$ = this.store.select(SessionSelectors.selectActiveSession);
+
+    // Add debugging to see what's happening
+    setTimeout(() => {
+      console.log('DOM check - looking for elements...');
+      const buttons = document.querySelectorAll('button');
+      console.log('Found buttons:', buttons.length);
+      buttons.forEach((btn, i) => {
+        console.log(`Button ${i}:`, btn.textContent, btn.onclick);
+      });
+    }, 2000);
 
     // Initialize with a demo session after a short delay
     this.sessions$.subscribe(sessions => {
@@ -66,21 +77,27 @@ export class App {
       }
     });
   }
-  
+
   public createNewSession() {
+    console.log('createNewSession called');
     this.store.dispatch(SessionActions.createSession({ sessionType: 'conversation' }));
   }
-  
 
-  
+  public testClick() {
+    console.log('TEST CLICK WORKS! Angular events are functioning.');
+    alert('Click event works!');
+  }
+
+
+
   public formatTime(timestamp: string): string {
     return new Date(timestamp).toLocaleTimeString();
   }
-  
+
   public getConversationSession(session: any): ConversationSession | null {
     return session.type === 'conversation' ? session as ConversationSession : null;
   }
-  
+
   public onMessageSubmit(data: { message: string; contextItems: ContextItem[] }) {
     this.activeSession$.subscribe(activeSession => {
       if (activeSession) {
@@ -88,7 +105,7 @@ export class App {
       }
     }).unsubscribe();
   }
-  
+
   public onAgentChange(agentId: string) {
     this.activeSession$.subscribe(activeSession => {
       if (activeSession) {
@@ -96,12 +113,14 @@ export class App {
       }
     }).unsubscribe();
   }
-  
+
   public onContextAdd(data: { type: string; content?: string }) {
     this.messageService.addContext(data.type, data.content);
   }
-  
+
   public onSettingsOpen() {
+    console.log('onSettingsOpen called in main app');
+    this.messageService.openConfiguration('agents');
     this.showSettings.set(true);
   }
 
@@ -195,7 +214,7 @@ export class App {
     this.progressState.set(null);
     this.errorState.set(null);
     this.timeoutState.set(null);
-    
+
     // Show cancellation alert
     this.phaseAlert.set({
       message: 'Operation cancelled',

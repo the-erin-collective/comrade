@@ -3,6 +3,7 @@ export interface SessionTab {
   title: string;
   type: 'conversation' | 'configuration';
   isActive: boolean;
+  isClosed: boolean;
   lastActivity: Date;
   metadata: Record<string, any>;
 }

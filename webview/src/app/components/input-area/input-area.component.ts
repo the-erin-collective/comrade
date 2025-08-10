@@ -15,7 +15,7 @@ import { ContextItem, PhaseAlert } from '../../models/session.model';
           <div class="info-message warning">
             <span class="info-icon">⚠️</span>
             <span class="info-text">No agents configured.</span>
-            <button class="info-link" (click)="openAgentSettings()">Configure agents</button>
+            <button class="info-link" (click)="openAgentSettings()" onclick="console.log('Raw onclick works!')">Configure agents</button>
           </div>
         } @else if (phaseAlert()) {
           <div class="info-message" [class]="phaseAlert()?.type">
@@ -61,12 +61,12 @@ import { ContextItem, PhaseAlert } from '../../models/session.model';
             [(ngModel)]="currentMessage"
             (input)="onInputChange($event)"
             (keydown)="onInputKeyDown($event)"
-            [disabled]="isLoading()"
+            [disabled]="isLoading() || availableAgents().length === 0"
           ></textarea>
           <button
             class="send-button"
             (click)="sendMessage()"
-            [disabled]="!currentMessage() || isLoading()"
+            [disabled]="!currentMessage() || isLoading() || availableAgents().length === 0"
             title="Send Message"
           >
             <span class="icon">↑</span>
@@ -130,7 +130,6 @@ import { ContextItem, PhaseAlert } from '../../models/session.model';
     </div>
   `,
   imports: [CommonModule, FormsModule],
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 
 export class InputAreaComponent implements AfterViewInit {
@@ -189,8 +188,10 @@ export class InputAreaComponent implements AfterViewInit {
   }
 
   public sendMessage() {
+    console.log('sendMessage called');
     const message = this.currentMessage().trim();
     if (message && !this.isLoading()) {
+      console.log('Emitting message:', message);
       this.messageSubmit.emit({
         message,
         contextItems: this.contextItems()
@@ -207,6 +208,7 @@ export class InputAreaComponent implements AfterViewInit {
   }
 
   public toggleContextMenu() {
+    console.log('toggleContextMenu called');
     this.showContextMenu.update(show => !show);
     this.showSettingsMenu.set(false);
   }
@@ -279,10 +281,12 @@ export class InputAreaComponent implements AfterViewInit {
   }
 
   public openAgentSettings(): void {
+    console.log('openAgentSettings called');
     this.settingsOpen.emit();
   }
 
   public onAutopilotToggle(event: Event): void {
+    console.log('onAutopilotToggle called');
     const target = event.target as HTMLInputElement;
     this.autopilotEnabled.set(target.checked);
     // Emit autopilot change event if needed

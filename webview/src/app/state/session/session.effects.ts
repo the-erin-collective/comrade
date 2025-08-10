@@ -30,5 +30,16 @@ export class SessionEffects {
     )
   );
 
+  closeSession$ = createEffect(() =>
+    this.actions$.pipe(
+      ofType(SessionActions.closeSession),
+      mergeMap(({ sessionId }) => {
+        this.sessionService.closeSession(sessionId);
+        return of(SessionActions.closeSessionSuccess({ sessionId }));
+      }),
+      catchError((error) => of(SessionActions.closeSessionFailure({ error })))
+    )
+  );
+
   constructor(private actions$: Actions, private sessionService: SessionService) {}
 }

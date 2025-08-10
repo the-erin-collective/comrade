@@ -8,7 +8,6 @@ import * as SessionActions from '../../state/session/session.actions';
   selector: 'app-session-tabs',
   standalone: true,
   imports: [CommonModule],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="session-tabs">
       <ng-container *ngFor="let session of sessions$ | async; trackBy: trackById">
@@ -160,7 +159,9 @@ export class SessionTabsComponent {
   public sessions$: Observable<any[]>;
 
   constructor(private store: Store<any>) {
-    this.sessions$ = this.store.select(state => state.session.sessions);
+    this.sessions$ = this.store.select(state => 
+      state.session.sessions.filter((session: any) => !session.isClosed)
+    );
   }
 
   public trackById(index: number, session: any) {
@@ -173,17 +174,22 @@ export class SessionTabsComponent {
   }
 
   public closeSession(event: Event, sessionId: string) {
+    console.log('closeSession called for:', sessionId);
     event.stopPropagation();
-    // Optionally dispatch a close action here
-    // this.store.dispatch(SessionActions.closeSession({ sessionId }));
+    // Dispatch the close action
+    this.store.dispatch(SessionActions.closeSession({ sessionId }));
   }
 
   public createNewSession() {
+    console.log('createNewSession called');
     this.store.dispatch(SessionActions.createSession({ sessionType: 'conversation' }));
   }
 
   public showSessionHistory() {
-    // TODO: Implement session history display
+    // TODO: Implement session history modal/dropdown
     console.log('Show session history');
+    // For now, just log the closed sessions
+    // In a full implementation, this would open a modal or dropdown
+    // showing closed sessions that can be reopened
   }
 }

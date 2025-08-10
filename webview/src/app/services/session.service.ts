@@ -82,9 +82,10 @@ export class SessionService {
         // Create new session
         const newSession: SessionTab = {
           id: payload.sessionId,
-          title: payload.title || `Session ${payload.sessionId.slice(-4)}`,
+          title: payload.title || 'New Session',
           type: payload.type || 'conversation',
           isActive: false,
+          isClosed: false,
           lastActivity: new Date(),
           metadata: payload.metadata || {}
         };
@@ -169,13 +170,20 @@ export class SessionService {
   
   public closeSession(sessionId: string) {
     const sessions = new Map(this.sessionsMap());
-    sessions.delete(sessionId);
+    const session = sessions.get(sessionId);
     
-    // If closing active session, switch to another
+    if (session) {
+      // Mark session as closed instead of deleting
+      session.isClosed = true;
+      session.isActive = false;
+      sessions.set(sessionId, session);
+    }
+    
+    // If closing active session, switch to another active session
     if (this.activeSessionIdSignal() === sessionId) {
-      const remainingSessions = Array.from(sessions.values());
-      if (remainingSessions.length > 0) {
-        const nextSession = remainingSessions[remainingSessions.length - 1];
+      const activeSessions = Array.from(sessions.values()).filter(s => !s.isClosed);
+      if (activeSessions.length > 0) {
+        const nextSession = activeSessions[activeSessions.length - 1];
         this.switchToSession(nextSession.id);
       } else {
         this.activeSessionIdSignal.set(null);
@@ -210,6 +218,28 @@ export class SessionService {
     if (session) {
       session.title = title;
       this.sessionsMap.set(sessions);
+      this.persistState();
+    }
+  }
+
+  public getSessionHistory(): SessionTab[] {
+    const sessions = Array.from(this.sessionsMap().values());
+    return sessions
+      .filter(session => session.isClosed)
+      .sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime());
+  }
+
+  public reopenSession(sessionId: string) {
+    const sessions = new Map(this.sessionsMap());
+    const session = sessions.get(sessionId);
+    
+    if (session && session.isClosed) {
+      session.isClosed = false;
+      session.isActive = true;
+      session.lastActivity = new Date();
+      sessions.set(sessionId, session);
+      this.sessionsMap.set(sessions);
+      this.switchToSession(sessionId);
       this.persistState();
     }
   }

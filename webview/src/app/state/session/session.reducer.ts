@@ -33,5 +33,24 @@ export const sessionReducer = createReducer(
     sessions: [...state.sessions, session],
     activeSession: session
   })),
-  on(SessionActions.createSessionFailure, (state, { error }) => ({ ...state, loading: false, error }))
+  on(SessionActions.createSessionFailure, (state, { error }) => ({ ...state, loading: false, error })),
+  on(SessionActions.closeSession, (state) => ({ ...state, loading: true, error: null })),
+  on(SessionActions.closeSessionSuccess, (state, { sessionId }) => {
+    const updatedSessions = state.sessions.map(session => 
+      session.id === sessionId 
+        ? { ...session, isClosed: true, isActive: false }
+        : session
+    );
+    const activeSessions = updatedSessions.filter(session => !session.isClosed);
+    const newActiveSession = state.activeSession?.id === sessionId 
+      ? (activeSessions.length > 0 ? activeSessions[activeSessions.length - 1] : null)
+      : state.activeSession;
+    return {
+      ...state,
+      loading: false,
+      sessions: updatedSessions,
+      activeSession: newActiveSession
+    };
+  }),
+  on(SessionActions.closeSessionFailure, (state, { error }) => ({ ...state, loading: false, error }))
 );

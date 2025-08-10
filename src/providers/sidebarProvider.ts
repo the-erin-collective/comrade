@@ -6,13 +6,13 @@ export interface WebviewMessage {
 }
 
 export interface ExtensionMessage {
-  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration';
+  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'debug';
   payload: any;
 }
 
 export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'comrade.sidebar';
-  
+
   private _view?: vscode.WebviewView;
   private _extensionUri: vscode.Uri;
   private _context: vscode.ExtensionContext;
@@ -48,7 +48,11 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private _handleWebviewMessage(message: ExtensionMessage) {
+    console.log('Received webview message:', message.type, message.payload);
     switch (message.type) {
+      case 'debug':
+        console.log('DEBUG MESSAGE FROM WEBVIEW:', message.payload);
+        break;
       case 'sendMessage':
         this._handleSendMessage(message.payload);
         break;
@@ -90,7 +94,7 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
   private _handleSendMessage(payload: { sessionId: string; message: string; contextItems?: any[] }) {
     // TODO: Implement message sending logic
     console.log('Send message:', payload);
-    
+
     // Send acknowledgment back to webview
     this.postMessage({
       type: 'updateSession',
@@ -120,7 +124,7 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
     // TODO: Implement session creation logic
     const sessionId = Date.now().toString();
     console.log('Create session:', sessionId);
-    
+
     this.postMessage({
       type: 'updateSession',
       payload: {
@@ -150,7 +154,7 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
   private _handleCancelOperation(payload: { sessionId: string; operationType?: string }) {
     // TODO: Implement operation cancellation logic
     console.log('Cancel operation:', payload);
-    
+
     // Send confirmation back to webview
     this.postMessage({
       type: 'hideProgress',
@@ -171,7 +175,7 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
   private _handleOpenConfiguration(payload: { type: string; sessionId?: string }) {
     // TODO: Implement configuration opening logic
     console.log('Open configuration:', payload);
-    
+
     // Open configuration based on type
     switch (payload.type) {
       case 'api':
@@ -245,41 +249,116 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
       // Read the built Angular HTML file
       const fs = require('fs');
       const path = require('path');
-      
+
       const htmlPath = path.join(this._extensionUri.fsPath, 'out', 'webview', 'browser', 'index.html');
       console.log('Loading HTML from:', htmlPath);
-      
+      console.log('Extension mode:', this._context.extensionMode);
+
       if (!fs.existsSync(htmlPath)) {
         console.error('HTML file not found at:', htmlPath);
         return this._getFallbackHtml(webview);
       }
-      
+
       let html = fs.readFileSync(htmlPath, 'utf8');
       console.log('HTML loaded, length:', html.length);
-      
-      // Convert resource paths to webview URIs
+
+      // Convert resource paths to webview URIs - this works for both dev and production
       const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'browser', 'main.js'));
       const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'browser', 'styles.css'));
       const faviconUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'browser', 'favicon.ico'));
-      
+
       console.log('Script URI:', scriptUri.toString());
       console.log('Style URI:', styleUri.toString());
-      
+
+      // Remove the base href tag that causes issues in webviews
+      html = html.replace(/<base href="[^"]*"[^>]*>/i, '');
+
       // Replace relative paths with webview URIs
-      html = html.replace('href="styles.css"', `href="${styleUri}"`);
-      html = html.replace('src="main.js"', `src="${scriptUri}"`);
-      html = html.replace('href="favicon.ico"', `href="${faviconUri}"`);
-      
-      // Update CSP to allow the webview resources
-      const cspContent = `default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource}; img-src ${webview.cspSource} data:;`;
+      html = html.replace(/href="styles\.css"/g, `href="${styleUri}"`);
+      html = html.replace(/src="main\.js"/g, `src="${scriptUri}"`);
+      html = html.replace(/href="favicon\.ico"/g, `href="${faviconUri}"`);
+
+      // Generate a nonce for inline scripts
+      const nonce = getNonce();
+
+      // Update CSP to allow the webview resources and nonce-based inline scripts
+      const cspContent = `default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'nonce-${nonce}'; img-src ${webview.cspSource} data:;`;
       html = html.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/i, `<meta http-equiv="Content-Security-Policy" content="${cspContent}">`);
-      
+
       // If no CSP exists, add one
       if (!html.includes('Content-Security-Policy')) {
         html = html.replace('<head>', `<head>\n  <meta http-equiv="Content-Security-Policy" content="${cspContent}">`);
       }
-      
+
+      // Add debugging information based on extension mode
+      const debugInfo = this._context.extensionMode === vscode.ExtensionMode.Development
+        ? `
+        <script nonce="${nonce}">
+          console.log('WEBVIEW: Development mode - Basic JavaScript is working!');
+          console.log('WEBVIEW: Extension mode:', ${this._context.extensionMode});
+          
+          // Log all script and link elements
+          document.addEventListener('DOMContentLoaded', () => {
+            console.log('WEBVIEW: DOM Content Loaded');
+            const scripts = document.querySelectorAll('script');
+            const links = document.querySelectorAll('link');
+            console.log('WEBVIEW: Found', scripts.length, 'script elements');
+            console.log('WEBVIEW: Found', links.length, 'link elements');
+            
+            scripts.forEach((script, index) => {
+              console.log('WEBVIEW: Script', index, ':', script.src || 'inline');
+            });
+            
+            links.forEach((link, index) => {
+              console.log('WEBVIEW: Link', index, ':', link.href, 'rel:', link.rel);
+            });
+          });
+          
+          window.addEventListener('load', () => {
+            console.log('WEBVIEW: Window loaded in development mode');
+            setTimeout(() => {
+              console.log('WEBVIEW: Checking for app-root element...');
+              const appRoot = document.querySelector('app-root');
+              console.log('WEBVIEW: app-root found:', !!appRoot);
+              if (appRoot) {
+                console.log('WEBVIEW: app-root innerHTML length:', appRoot.innerHTML.length);
+                console.log('WEBVIEW: app-root innerHTML preview:', appRoot.innerHTML.substring(0, 200));
+              }
+              
+              // Check for any JavaScript errors
+              console.log('WEBVIEW: Checking for Angular...');
+              console.log('WEBVIEW: window.ng available:', !!window.ng);
+              console.log('WEBVIEW: document.body.children:', document.body.children.length);
+            }, 2000);
+          });
+          
+          // Catch any errors
+          window.addEventListener('error', (e) => {
+            console.error('WEBVIEW: JavaScript error:', e.error, e.message, e.filename, e.lineno);
+          });
+          
+          window.addEventListener('unhandledrejection', (e) => {
+            console.error('WEBVIEW: Unhandled promise rejection:', e.reason);
+          });
+        </script>`
+        : `
+        <script nonce="${nonce}">
+          console.log('WEBVIEW: Production mode - JavaScript loaded');
+        </script>`;
+
+      // Add a simple inline script first to test basic execution
+      html = html.replace('<body>', `<body><script nonce="${nonce}">
+        console.log('WEBVIEW: Inline script executing immediately!');
+        // Also try to send a message to the extension to confirm JS is working
+        if (window.acquireVsCodeApi) {
+          const vscode = window.acquireVsCodeApi();
+          vscode.postMessage({type: 'debug', payload: 'JavaScript is executing in webview!'});
+        }
+      </script>${debugInfo}`);
+
+      // Log a snippet of the processed HTML to verify script injection
       console.log('HTML processed successfully');
+      console.log('HTML snippet with debug script:', html.substring(html.indexOf('<body>'), html.indexOf('<body>') + 500));
       return html;
     } catch (error) {
       console.error('Error loading webview HTML:', error);

@@ -26,9 +26,13 @@ export class MessageService {
   public messageReceived = signal<WebviewMessage | null>(null);
   
   constructor() {
+    console.log('MessageService constructor called');
+    console.log('Window object:', typeof window);
+    console.log('acquireVsCodeApi available:', typeof (window as any).acquireVsCodeApi);
+    
     try {
       this.vscode = acquireVsCodeApi();
-      console.log('VS Code API acquired successfully');
+      console.log('VS Code API acquired successfully:', this.vscode);
     } catch (error) {
       console.error('Failed to acquire VS Code API:', error);
       // Fallback for development/testing
@@ -40,6 +44,15 @@ export class MessageService {
     }
     
     this.setupMessageListener();
+    
+    // Test message to verify webview is working
+    setTimeout(() => {
+      console.log('Testing webview communication...');
+      this.sendMessage({
+        type: 'openConfiguration',
+        payload: { type: 'test', message: 'Webview loaded successfully' }
+      });
+    }, 1000);
   }
   
   private setupMessageListener() {
