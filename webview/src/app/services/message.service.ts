@@ -1,7 +1,8 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable } from '@angular/core';
+import { Subject, Observable } from 'rxjs';
 
 export interface WebviewMessage {
-  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout';
+  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions';
   payload: any;
 }
 
@@ -22,8 +23,9 @@ declare const acquireVsCodeApi: () => {
 export class MessageService {
   private vscode: any;
   
-  // Signals for reactive state management
-  public messageReceived = signal<WebviewMessage | null>(null);
+  // Use RxJS Subject for proper event-driven messaging
+  private messageSubject = new Subject<WebviewMessage>();
+  public messages$: Observable<WebviewMessage> = this.messageSubject.asObservable();
   
   constructor() {
     console.log('MessageService constructor called');
@@ -56,9 +58,12 @@ export class MessageService {
   }
   
   private setupMessageListener() {
+    console.log('MessageService: Setting up proper event listener');
     window.addEventListener('message', (event) => {
       const message: WebviewMessage = event.data;
-      this.messageReceived.set(message);
+      console.log('MessageService: Received message via event listener:', message.type);
+      // Emit the message through the Subject for reactive handling
+      this.messageSubject.next(message);
     });
   }
   
@@ -141,5 +146,11 @@ export class MessageService {
       type: 'openConfiguration',
       payload: { type, sessionId }
     });
+  }
+
+  public showHistory() {
+    // This is a local UI action, so we'll use a different approach
+    // We'll emit a custom event that the app component can listen to
+    window.dispatchEvent(new CustomEvent('showHistory'));
   }
 }

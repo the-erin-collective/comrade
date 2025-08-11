@@ -22,7 +22,8 @@ export class SessionService {
   public sessionHistory = computed(() => this.sessionHistorySignal());
   
   constructor(private messageService: MessageService) {
-    this.setupMessageHandling();
+    // Temporarily disabled to fix unresponsiveness - messages handled in app component
+    // this.setupMessageHandling();
     this.loadPersistedState();
   }
 
@@ -36,21 +37,60 @@ export class SessionService {
   }
 
   public createSession$(type: 'conversation' | 'configuration' = 'conversation'): Observable<ConversationSession> {
+    console.log('createSession$ called with type:', type);
+    
+    // Create session directly instead of relying on message handling
+    const sessionId = Date.now().toString();
+    const newSession: ConversationSession = {
+      id: sessionId,
+      title: 'New Session',
+      type: 'conversation',
+      isActive: true,
+      isClosed: false,
+      lastActivity: new Date(),
+      metadata: {},
+      messages: [],
+      currentPhase: 'context',
+      agentConfig: {
+        id: 'default',
+        name: 'Default Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        capabilities: {
+          hasVision: false,
+          hasToolUse: true,
+          reasoningDepth: 'advanced',
+          speed: 'medium',
+          costTier: 'high'
+        }
+      }
+    };
+
+    // Add to sessions map
+    const sessions = new Map(this.sessionsMap());
+    
+    // Deactivate all other sessions
+    sessions.forEach(session => session.isActive = false);
+    
+    // Add new session
+    sessions.set(sessionId, newSession);
+    this.sessionsMap.set(sessions);
+    this.activeSessionIdSignal.set(sessionId);
+    this.persistState();
+    
+    // Also send message to extension for consistency
     this.createSession(type);
-    // Find the most recently added conversation session
-    const sessions = Array.from(this.sessionsMap().values()).filter(
-      (s): s is ConversationSession => s.type === 'conversation'
-    );
-    const newSession = sessions[sessions.length - 1];
+    
+    console.log('Created new session:', newSession);
     return of(newSession);
   }
   
   private setupMessageHandling() {
-    effect(() => {
-      const message = this.messageService.messageReceived();
-      if (message) {
-        this.handleExtensionMessage(message);
-      }
+    console.log('SessionService: Setting up event-driven message handling');
+    // Subscribe to messages using RxJS Observable
+    this.messageService.messages$.subscribe(message => {
+      console.log('SessionService: Received message:', message.type);
+      this.handleExtensionMessage(message);
     });
   }
   
@@ -70,6 +110,9 @@ export class SessionService {
         break;
       case 'showError':
         this.handleShowError(message.payload);
+        break;
+      case 'restoreSessions':
+        this.handleRestoreSessions(message.payload);
         break;
     }
   }
@@ -145,6 +188,33 @@ export class SessionService {
     // TODO: Implement error display
     console.error('Extension error:', payload);
   }
+
+  private handleRestoreSessions(payload: any) {
+    console.log('SessionService: Handling session restoration...');
+    
+    // Simple approach: just check and restore without complex flows
+    setTimeout(() => {
+      if (this.hasOpenSessions()) {
+        const openSessions = this.getOpenSessions();
+        console.log('SessionService: Found open sessions to restore:', openSessions.length);
+        
+        if (openSessions.length > 0) {
+          // Find the most recently active session
+          const mostRecentSession = openSessions
+            .sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime())[0];
+          
+          console.log('SessionService: Restoring most recent session:', mostRecentSession.id);
+          
+          // Simply activate it
+          this.switchToSession(mostRecentSession.id);
+          
+          console.log('SessionService: Session restored successfully');
+        }
+      } else {
+        console.log('SessionService: No sessions to restore - user will see welcome page');
+      }
+    }, 500); // Small delay to ensure everything is initialized
+  }
   
   // Session management methods
   public createSession(type: 'conversation' | 'configuration' = 'conversation') {
@@ -177,6 +247,12 @@ export class SessionService {
       session.isClosed = true;
       session.isActive = false;
       sessions.set(sessionId, session);
+      
+      // Update the sessions map immediately
+      this.sessionsMap.set(sessions);
+      this.persistState();
+      
+      console.log('Closed session:', sessionId, 'Session is now closed:', session.isClosed);
     }
     
     // If closing active session, switch to another active session
@@ -190,9 +266,7 @@ export class SessionService {
       }
     }
     
-    this.sessionsMap.set(sessions);
     this.messageService.closeSession(sessionId);
-    this.persistState();
   }
   
   public sendMessage(sessionId: string, message: string, contextItems: any[] = []) {
@@ -230,18 +304,124 @@ export class SessionService {
   }
 
   public reopenSession(sessionId: string) {
+    console.log('SessionService: reopenSession called with ID:', sessionId);
     const sessions = new Map(this.sessionsMap());
     const session = sessions.get(sessionId);
     
+    console.log('SessionService: Found session:', session);
+    console.log('SessionService: Session is closed:', session?.isClosed);
+    
     if (session && session.isClosed) {
+      console.log('SessionService: Reopening session...');
+      
+      // Deactivate all other sessions
+      sessions.forEach(s => s.isActive = false);
+      
+      // Reopen and activate the session
       session.isClosed = false;
       session.isActive = true;
       session.lastActivity = new Date();
       sessions.set(sessionId, session);
+      
+      // Update state
       this.sessionsMap.set(sessions);
-      this.switchToSession(sessionId);
+      this.activeSessionIdSignal.set(sessionId);
       this.persistState();
+      
+      console.log('SessionService: Session reopened successfully');
+      console.log('SessionService: Active session ID now:', this.activeSessionIdSignal());
+      console.log('SessionService: Active session object:', this.activeSession());
+      
+      // Also send message to extension
+      this.messageService.switchSession(sessionId);
+      
+      console.log('SessionService: Reopened session:', session);
+    } else {
+      console.log('SessionService: Cannot reopen session - not found or not closed');
     }
+  }
+
+  public getAllSessions(): SessionTab[] {
+    return Array.from(this.sessionsMap().values());
+  }
+
+  public deleteSession(sessionId: string) {
+    const sessions = new Map(this.sessionsMap());
+    sessions.delete(sessionId);
+    
+    // Update local state - let NgRx handle active session switching
+    this.sessionsMap.set(sessions);
+    this.persistState();
+    
+    console.log('Deleted session:', sessionId);
+  }
+
+  public clearAllSessions() {
+    this.sessionsMap.set(new Map());
+    this.activeSessionIdSignal.set(null);
+    this.persistState();
+    
+    console.log('Cleared all sessions');
+  }
+
+  public clearActiveSession() {
+    console.log('SessionService: Clearing active session');
+    this.activeSessionIdSignal.set(null);
+    
+    // Also make sure no session is marked as active
+    const sessions = new Map(this.sessionsMap());
+    sessions.forEach(session => {
+      session.isActive = false;
+    });
+    this.sessionsMap.set(sessions);
+    this.persistState();
+  }
+
+  // Debug method to check session state
+  public getDebugInfo() {
+    return {
+      sessionsCount: this.sessionsMap().size,
+      sessions: Array.from(this.sessionsMap().entries()),
+      activeSessionId: this.activeSessionIdSignal(),
+      activeSession: this.activeSession(),
+      openSessions: this.getOpenSessions(),
+      hasOpenSessions: this.hasOpenSessions()
+    };
+  }
+
+  public getOpenSessions(): SessionTab[] {
+    return Array.from(this.sessionsMap().values()).filter(session => !session.isClosed);
+  }
+
+  public hasOpenSessions(): boolean {
+    return this.getOpenSessions().length > 0;
+  }
+
+  public restoreOpenSessions(): ConversationSession | null {
+    console.log('SessionService: Attempting to restore open sessions');
+    const openSessions = this.getOpenSessions();
+    console.log('SessionService: Found open sessions:', openSessions.length, openSessions);
+    
+    if (openSessions.length === 0) {
+      console.log('SessionService: No open sessions to restore');
+      return null;
+    }
+
+    // Find the most recently active session
+    const mostRecentSession = openSessions
+      .sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime())[0];
+
+    console.log('SessionService: Most recent session:', mostRecentSession);
+
+    // Activate the most recent session
+    this.switchToSession(mostRecentSession.id);
+    
+    console.log('SessionService: Restored session:', mostRecentSession.id, 'Total open sessions:', openSessions.length);
+    
+    // Return as ConversationSession if it's a conversation type, otherwise null
+    const result = mostRecentSession.type === 'conversation' ? mostRecentSession as ConversationSession : null;
+    console.log('SessionService: Returning restored session:', result);
+    return result;
   }
   
   // Persistence methods
@@ -266,9 +446,14 @@ export class SessionService {
   private loadPersistedState() {
     try {
       const stored = localStorage.getItem('comrade-session-state');
+      console.log('SessionService: Loading persisted state from localStorage:', stored);
+      
       if (stored) {
         const parsed = JSON.parse(stored);
+        console.log('SessionService: Parsed state:', parsed);
+        
         const sessions = new Map<string, SessionTab>(parsed.sessions || []);
+        console.log('SessionService: Restored sessions map:', sessions);
         
         // Restore dates
         sessions.forEach((session: any) => {
@@ -278,16 +463,13 @@ export class SessionService {
         this.sessionsMap.set(sessions);
         this.activeSessionIdSignal.set(parsed.activeSessionId);
         this.sessionHistorySignal.set(parsed.sessionHistory || []);
+        
+        console.log('SessionService: State loaded successfully. Sessions:', sessions.size, 'Active:', parsed.activeSessionId);
+      } else {
+        console.log('SessionService: No persisted state found in localStorage');
       }
     } catch (error) {
-      console.warn('Failed to load persisted session state:', error);
+      console.warn('SessionService: Failed to load persisted session state:', error);
     }
-  }
-  
-  public clearAllSessions() {
-    this.sessionsMap.set(new Map());
-    this.activeSessionIdSignal.set(null);
-    this.sessionHistorySignal.set([]);
-    this.persistState();
   }
 }

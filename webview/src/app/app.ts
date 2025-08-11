@@ -1,4 +1,5 @@
-import { Component, computed, effect, signal } from '@angular/core';
+import { Component, computed, effect, signal, DestroyRef, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Store } from '@ngrx/store';
 import * as SessionActions from './state/session/session.actions';
 import * as SessionSelectors from './state/session/session.selectors';
@@ -11,21 +12,23 @@ import { InputAreaComponent } from './components/input-area/input-area.component
 import { ErrorHandlerComponent } from './components/error-handler/error-handler.component';
 import { ProgressIndicatorComponent } from './components/progress-indicator/progress-indicator.component';
 import { SettingsComponent } from './components/settings/settings.component';
+import { SessionHistoryComponent } from './components/session-history/session-history.component';
 import { SessionService } from './services/session.service';
 import { MessageService } from './services/message.service';
 import { ConversationSession, ContextItem, PhaseAlert, ErrorState, ProgressState, TimeoutState } from './models/session.model';
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule, SessionTabsComponent, ChatOutputComponent, InputAreaComponent, ErrorHandlerComponent, ProgressIndicatorComponent, SettingsComponent],
+  imports: [CommonModule, FormsModule, SessionTabsComponent, ChatOutputComponent, InputAreaComponent, ErrorHandlerComponent, ProgressIndicatorComponent, SettingsComponent, SessionHistoryComponent],
   templateUrl: './app.html',
   styleUrl: './app.css'
 })
 export class App {
   protected title = 'Comrade';
 
-  public sessions$: Observable<any[]>;
-  public activeSession$: Observable<any>;
+  // Use session service signals directly instead of NgRx store
+  public sessions = this.sessionService.sessions;
+  public activeSession = this.sessionService.activeSession;
   public currentMessage = signal('');
   public isLoading = signal(false);
   public loadingMessage = signal('Thinking...');
@@ -40,6 +43,11 @@ export class App {
     // { id: 'local-llama', name: 'Local Llama' }
   ]);
   public showSettings = signal(false);
+  public showHistory = signal(false);
+  public isInitializing = signal(true); // Track initialization state
+  public initializationMessage = signal('Loading Comrade...'); // Dynamic loading message
+
+  private destroyRef = inject(DestroyRef);
 
   constructor(
     private sessionService: SessionService,
@@ -47,45 +55,164 @@ export class App {
     private store: Store<any>
   ) {
     console.log('App constructor called - Angular is running!');
-    this.sessions$ = this.store.select(SessionSelectors.selectSessions);
-    this.activeSession$ = this.store.select(SessionSelectors.selectActiveSession);
+    
+    // Initialize the app properly
+    this.initializeApp();
+  }
 
-    // Add debugging to see what's happening
-    setTimeout(() => {
-      console.log('DOM check - looking for elements...');
-      const buttons = document.querySelectorAll('button');
-      console.log('Found buttons:', buttons.length);
-      buttons.forEach((btn, i) => {
-        console.log(`Button ${i}:`, btn.textContent, btn.onclick);
-      });
-    }, 2000);
+  private async initializeApp() {
+    try {
+      console.log('App: Starting initialization...');
+      
+      // Wait for Angular to be fully ready
+      await this.waitForAngularReady();
+      
+      // Setup message handling
+      this.setupMessageHandling();
+      
+      // Setup event listeners
+      this.setupEventListeners();
+      
+      // DON'T mark initialization as complete yet - wait for session restoration
+      console.log('App: Basic initialization complete, waiting for session restoration...');
+      this.initializationMessage.set('Checking for active sessions...');
+      
+      // Add a fallback timeout in case session restoration never happens
+      setTimeout(() => {
+        if (this.isInitializing()) {
+          console.log('App: Session restoration timeout - completing initialization anyway');
+          this.completeInitialization();
+        }
+      }, 3000); // 3 second timeout
+      
+    } catch (error) {
+      console.error('App: Initialization failed:', error);
+      // Still mark as complete to prevent infinite loading
+      this.isInitializing.set(false);
+    }
+  }
 
-    // Initialize with a demo session after a short delay
-    this.sessions$.subscribe(sessions => {
-      if (sessions.length === 0) {
-        setTimeout(() => {
-          this.store.dispatch(SessionActions.createSession({ sessionType: 'conversation' }));
-        }, 100);
-      }
-    });
-
-    // Handle incoming messages from extension
-    effect(() => {
-      const message = this.messageService.messageReceived();
-      if (message) {
-        this.handleExtensionMessage(message);
-      }
+  private waitForAngularReady(): Promise<void> {
+    return new Promise((resolve) => {
+      // Wait for next tick to ensure Angular is fully initialized
+      setTimeout(() => {
+        console.log('App: Angular ready');
+        resolve();
+      }, 0);
     });
   }
 
+  private setupMessageHandling() {
+    console.log('App: Setting up proper event-driven message handling');
+    
+    // Subscribe to messages using RxJS Observable - no polling needed!
+    this.messageService.messages$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(message => {
+        console.log('App: Received message via subscription:', message.type);
+        this.handleExtensionMessage(message);
+      });
+  }
+
+  private setupEventListeners() {
+    console.log('App: Setting up event listeners');
+    
+    // Listen for history show events
+    window.addEventListener('showHistory', () => {
+      this.showHistory.set(true);
+    });
+  }
+
+  private sessionRestorationHandled = false;
+
+  private handleSessionRestoration() {
+    // Only handle restoration once
+    if (this.sessionRestorationHandled) {
+      console.log('App: Session restoration already handled, ignoring');
+      return;
+    }
+
+    // Only restore if user hasn't navigated away
+    if (this.showHistory() || this.showSettings()) {
+      console.log('App: Skipping session restoration - user has navigated away');
+      this.completeInitialization();
+      return;
+    }
+
+    console.log('App: Processing session restoration (one-time)');
+    this.sessionRestorationHandled = true;
+    
+    const allSessions = this.sessions();
+    console.log('App: All sessions:', allSessions);
+    
+    // Only restore OPEN sessions, not closed ones
+    const openSessions = allSessions.filter(session => !session.isClosed);
+    console.log('App: Open sessions available for restoration:', openSessions);
+    
+    if (openSessions.length > 0) {
+      // Find the most recent OPEN session
+      const mostRecentOpenSession = openSessions
+        .sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime())[0];
+      
+      console.log('App: Restoring most recent open session:', mostRecentOpenSession.id, mostRecentOpenSession);
+      this.initializationMessage.set('Loading previous session...');
+      this.sessionService.switchToSession(mostRecentOpenSession.id);
+      
+      // Wait for session to be fully loaded before completing initialization
+      setTimeout(() => {
+        console.log('App: Active session after restoration:', this.activeSession());
+        console.log('App: Session restored successfully');
+        this.completeInitialization();
+      }, 200); // Give a bit more time for session to fully load
+    } else {
+      console.log('App: No open sessions to restore - user will see welcome screen');
+      // Make sure no session is marked as active
+      this.sessionService.clearActiveSession();
+      this.completeInitialization();
+    }
+  }
+
+  private completeInitialization() {
+    console.log('App: Completing initialization - hiding loading screen');
+    this.isInitializing.set(false);
+  }
+
   public createNewSession() {
-    console.log('createNewSession called');
-    this.store.dispatch(SessionActions.createSession({ sessionType: 'conversation' }));
+    console.log('createNewSession called - using session service directly');
+    
+    // Use session service directly instead of NgRx
+    this.sessionService.createSession$('conversation').subscribe(session => {
+      console.log('New session created:', session);
+      // Switch to session view when creating a new session
+      this.showHistory.set(false);
+      this.showSettings.set(false);
+    });
   }
 
   public testClick() {
     console.log('TEST CLICK WORKS! Angular events are functioning.');
-    alert('Click event works!');
+    console.log('Current isInitializing state:', this.isInitializing());
+    
+    // Debug session state
+    const debugInfo = this.sessionService.getDebugInfo();
+    console.log('Session Debug Info:', debugInfo);
+    
+    // Check UI state
+    console.log('App UI State:');
+    console.log('- showHistory:', this.showHistory());
+    console.log('- showSettings:', this.showSettings());
+    console.log('- activeSession from UI:', this.activeSession());
+    console.log('- sessions from UI:', this.sessions());
+    
+    if (this.isInitializing()) {
+      console.log('Manually completing initialization...');
+      this.isInitializing.set(false);
+    }
+    
+    const activeSession = this.activeSession();
+    const sessionInfo = activeSession ? `ID: ${activeSession.id}, Type: ${activeSession.type}, Messages: ${activeSession.type === 'conversation' ? (activeSession as any).messages?.length || 0 : 'N/A'}` : 'None';
+    
+    alert(`Click works!\nSessions: ${debugInfo.sessionsCount}\nActive: ${debugInfo.activeSessionId}\nOpen: ${debugInfo.openSessions.length}\nActive Session: ${sessionInfo}`);
   }
 
 
@@ -99,19 +226,17 @@ export class App {
   }
 
   public onMessageSubmit(data: { message: string; contextItems: ContextItem[] }) {
-    this.activeSession$.subscribe(activeSession => {
-      if (activeSession) {
-        this.sessionService.sendMessage(activeSession.id, data.message, data.contextItems);
-      }
-    }).unsubscribe();
+    const activeSession = this.activeSession();
+    if (activeSession) {
+      this.sessionService.sendMessage(activeSession.id, data.message, data.contextItems);
+    }
   }
 
   public onAgentChange(agentId: string) {
-    this.activeSession$.subscribe(activeSession => {
-      if (activeSession) {
-        this.messageService.switchAgent(activeSession.id, agentId);
-      }
-    }).unsubscribe();
+    const activeSession = this.activeSession();
+    if (activeSession) {
+      this.messageService.switchAgent(activeSession.id, agentId);
+    }
   }
 
   public onContextAdd(data: { type: string; content?: string }) {
@@ -126,6 +251,14 @@ export class App {
 
   public onSettingsClose() {
     this.showSettings.set(false);
+  }
+
+  public onHistoryOpen() {
+    this.showHistory.set(true);
+  }
+
+  public onHistoryClose() {
+    this.showHistory.set(false);
   }
 
   private handleExtensionMessage(message: any) {
@@ -167,6 +300,16 @@ export class App {
         // Handle session updates
         break;
 
+      case 'restoreSessions':
+        console.log('App: Received session restoration request');
+        // Only handle if not already processed
+        if (!this.sessionRestorationHandled) {
+          this.handleSessionRestoration();
+        } else {
+          console.log('App: Session restoration already handled, ignoring');
+        }
+        break;
+
       default:
         console.log('Unhandled message type:', message.type);
     }
@@ -179,16 +322,15 @@ export class App {
   public onOperationRetried() {
     this.errorState.set(null);
     // Show progress for retry
-    this.activeSession$.subscribe(activeSession => {
-      if (activeSession) {
-        this.progressState.set({
-          isActive: true,
-          message: 'Retrying operation...',
-          cancellable: true,
-          sessionId: activeSession.id
-        });
-      }
-    }).unsubscribe();
+    const activeSession = this.activeSession();
+    if (activeSession) {
+      this.progressState.set({
+        isActive: true,
+        message: 'Retrying operation...',
+        cancellable: true,
+        sessionId: activeSession.id
+      });
+    }
   }
 
   public onConfigurationOpened(configType: string) {
@@ -198,16 +340,15 @@ export class App {
   public onTimeoutExtended() {
     this.timeoutState.set(null);
     // Show progress for extended operation
-    this.activeSession$.subscribe(activeSession => {
-      if (activeSession) {
-        this.progressState.set({
-          isActive: true,
-          message: 'Continuing operation...',
-          cancellable: true,
-          sessionId: activeSession.id
-        });
-      }
-    }).unsubscribe();
+    const activeSession = this.activeSession();
+    if (activeSession) {
+      this.progressState.set({
+        isActive: true,
+        message: 'Continuing operation...',
+        cancellable: true,
+        sessionId: activeSession.id
+      });
+    }
   }
 
   public onOperationCancelled() {

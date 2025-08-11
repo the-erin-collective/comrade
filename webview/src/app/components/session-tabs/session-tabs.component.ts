@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { Store, select } from '@ngrx/store';
 import { Observable } from 'rxjs';
 import * as SessionActions from '../../state/session/session.actions';
+import { MessageService } from '../../services/message.service';
+import { SessionService } from '../../services/session.service';
 
 @Component({
   selector: 'app-session-tabs',
@@ -10,7 +12,7 @@ import * as SessionActions from '../../state/session/session.actions';
   imports: [CommonModule],
   template: `
     <div class="session-tabs">
-      <ng-container *ngFor="let session of sessions$ | async; trackBy: trackById">
+      <ng-container *ngFor="let session of openSessions(); trackBy: trackById">
         <button 
           class="session-tab"
           [class.active]="session.isActive"
@@ -157,10 +159,11 @@ import * as SessionActions from '../../state/session/session.actions';
 })
 export class SessionTabsComponent {
   public sessions$: Observable<any[]>;
+  public openSessions = computed(() => this.sessionService.getOpenSessions());
 
-  constructor(private store: Store<any>) {
+  constructor(private store: Store<any>, private messageService: MessageService, private sessionService: SessionService) {
     this.sessions$ = this.store.select(state => 
-      state.session.sessions.filter((session: any) => !session.isClosed)
+      (state.session.sessions || []).filter((session: any) => session && !session.isClosed)
     );
   }
 
@@ -169,27 +172,28 @@ export class SessionTabsComponent {
   }
 
   public switchToSession(sessionId: string) {
-    // Optionally dispatch a switch action here
-    // this.store.dispatch(SessionActions.switchToSession({ sessionId }));
+    console.log('SessionTabs: Switching to session:', sessionId);
+    this.sessionService.switchToSession(sessionId);
   }
 
   public closeSession(event: Event, sessionId: string) {
-    console.log('closeSession called for:', sessionId);
+    console.log('SessionTabs: Closing session:', sessionId);
     event.stopPropagation();
-    // Dispatch the close action
-    this.store.dispatch(SessionActions.closeSession({ sessionId }));
+    this.sessionService.closeSession(sessionId);
   }
 
   public createNewSession() {
-    console.log('createNewSession called');
-    this.store.dispatch(SessionActions.createSession({ sessionType: 'conversation' }));
+    console.log('SessionTabs: Creating new session');
+    this.sessionService.createSession$('conversation').subscribe(session => {
+      console.log('SessionTabs: New session created:', session);
+    });
   }
 
   public showSessionHistory() {
-    // TODO: Implement session history modal/dropdown
     console.log('Show session history');
-    // For now, just log the closed sessions
-    // In a full implementation, this would open a modal or dropdown
-    // showing closed sessions that can be reopened
+    // Emit an event to show the history modal
+    // We need to communicate with the parent component
+    // For now, we'll use a simple approach through the message service
+    this.messageService.showHistory();
   }
 }

@@ -20,7 +20,8 @@
   align-items: center;
   justify-content: center;
   flex: 1;
-  padding-bottom: 120px; /* Account for input area */
+  padding-bottom: 120px;
+  /* Account for input area */
 }
 
 .welcome-content {
@@ -81,3 +82,43 @@
   font-weight: 600;
 }
 
+/* Loading screen */
+.loading-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding-bottom: 120px;
+  /* Account for input area */
+}
+
+.loading-content {
+  text-align: center;
+  padding: 32px;
+}
+
+.loading-content p {
+  margin: 16px 0 0 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 14px;
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--vscode-progressBar-background);
+  border-top: 3px solid var(--vscode-progressBar-foreground);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}

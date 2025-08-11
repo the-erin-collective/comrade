@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 export interface WebviewMessage {
-  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout';
+  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions';
   payload: any;
 }
 
@@ -16,6 +16,7 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
   private _view?: vscode.WebviewView;
   private _extensionUri: vscode.Uri;
   private _context: vscode.ExtensionContext;
+  private _sessionRestorationSent = false;
 
   constructor(context: vscode.ExtensionContext) {
     this._extensionUri = context.extensionUri;
@@ -45,6 +46,18 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
       },
       this._context.subscriptions
     );
+
+    // Send session restoration message once after webview is ready
+    setTimeout(() => {
+      if (!this._sessionRestorationSent) {
+        console.log('SidebarProvider: Sending session restoration message (one-time)');
+        this._sessionRestorationSent = true;
+        this.postMessage({
+          type: 'restoreSessions',
+          payload: {}
+        });
+      }
+    }, 1500); // Single message after initialization
   }
 
   private _handleWebviewMessage(message: ExtensionMessage) {
