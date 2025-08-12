@@ -39,6 +39,12 @@ import { SessionService } from '../../services/session.service';
           title="Show session history">
           History
         </button>
+        <button 
+          class="session-control-btn settings-btn" 
+          (click)="showSettings()"
+          title="Open settings">
+          ⚙️
+        </button>
       </div>
     </div>
   `,
@@ -155,6 +161,12 @@ import { SessionService } from '../../services/session.service';
     .session-control-btn:active {
       transform: translateY(0);
     }
+
+    .settings-btn {
+      min-width: 32px;
+      padding: 6px 8px;
+      font-size: 14px;
+    }
   `]
 })
 export class SessionTabsComponent {
@@ -195,5 +207,11 @@ export class SessionTabsComponent {
     // We need to communicate with the parent component
     // For now, we'll use a simple approach through the message service
     this.messageService.showHistory();
+  }
+
+  public showSettings() {
+    console.log('Show settings');
+    // Emit an event to show the settings modal
+    this.messageService.showSettings();
   }
 }

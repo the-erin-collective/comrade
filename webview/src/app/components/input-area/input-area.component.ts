@@ -1,4 +1,4 @@
-import { Component, EventEmitter, signal, ViewChild, ElementRef, AfterViewInit, ChangeDetectionStrategy, input, output } from '@angular/core';
+import { Component, EventEmitter, signal, ViewChild, ElementRef, AfterViewInit, ChangeDetectionStrategy, input, output, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ContextItem, PhaseAlert } from '../../models/session.model';
@@ -151,6 +151,33 @@ export class InputAreaComponent implements AfterViewInit {
   public contextItems = signal<ContextItem[]>([]);
   public textareaHeight = signal(40);
   public autopilotEnabled = signal(false);
+
+  constructor() {
+    // Auto-select the first available agent when agents become available
+    effect(() => {
+      const agents = this.availableAgents();
+      const currentSelection = this.selectedAgent();
+      
+      if (agents.length > 0 && !currentSelection) {
+        // Auto-select the first agent if none is selected
+        this.selectedAgent.set(agents[0].id);
+        this.agentChange.emit(agents[0].id);
+        console.log('Auto-selected first available agent:', agents[0].name);
+      } else if (agents.length > 0 && currentSelection) {
+        // Check if the currently selected agent is still available
+        const stillAvailable = agents.find(agent => agent.id === currentSelection);
+        if (!stillAvailable) {
+          // Current agent is no longer available, select the first available one
+          this.selectedAgent.set(agents[0].id);
+          this.agentChange.emit(agents[0].id);
+          console.log('Previously selected agent unavailable, auto-selected:', agents[0].name);
+        }
+      } else if (agents.length === 0) {
+        // No agents available, clear selection
+        this.selectedAgent.set('');
+      }
+    });
+  }
 
   ngAfterViewInit() {
     this.setupClickOutsideHandler();

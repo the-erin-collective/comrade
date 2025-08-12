@@ -2,12 +2,12 @@ import { Injectable } from '@angular/core';
 import { Subject, Observable } from 'rxjs';
 
 export interface WebviewMessage {
-  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions';
+  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult';
   payload: any;
 }
 
 export interface ExtensionMessage {
-  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration';
+  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'fetchOllamaModels' | 'fetchCloudModels' | 'updateConfig' | 'getConfig';
   payload: any;
 }
 
@@ -31,12 +31,23 @@ export class MessageService {
     console.log('MessageService constructor called');
     console.log('Window object:', typeof window);
     console.log('acquireVsCodeApi available:', typeof (window as any).acquireVsCodeApi);
+    console.log('vscodeApi already available:', typeof (window as any).vscodeApi);
     
-    try {
-      this.vscode = acquireVsCodeApi();
-      console.log('VS Code API acquired successfully:', this.vscode);
-    } catch (error) {
-      console.error('Failed to acquire VS Code API:', error);
+    // Check if VS Code API was already acquired globally by the inline script
+    if ((window as any).vscodeApi) {
+      this.vscode = (window as any).vscodeApi;
+      console.log('MessageService: Using existing VS Code API instance:', this.vscode);
+    } else {
+      // Wait a bit for the inline script to execute and try again
+      setTimeout(() => {
+        if ((window as any).vscodeApi) {
+          this.vscode = (window as any).vscodeApi;
+          console.log('MessageService: Found VS Code API after delay:', this.vscode);
+        } else {
+          console.warn('MessageService: VS Code API not found, using mock');
+        }
+      }, 100);
+      
       // Fallback for development/testing
       this.vscode = {
         postMessage: (message: any) => console.log('Mock postMessage:', message),
@@ -148,9 +159,28 @@ export class MessageService {
     });
   }
 
+  public fetchOllamaModels(networkAddress?: string) {
+    this.sendMessage({
+      type: 'fetchOllamaModels',
+      payload: { networkAddress }
+    });
+  }
+
+  public fetchCloudModels(provider: string, apiKey: string) {
+    this.sendMessage({
+      type: 'fetchCloudModels',
+      payload: { provider, apiKey }
+    });
+  }
+
   public showHistory() {
     // This is a local UI action, so we'll use a different approach
     // We'll emit a custom event that the app component can listen to
     window.dispatchEvent(new CustomEvent('showHistory'));
+  }
+
+  public showSettings() {
+    // Emit a custom event that the app component can listen to
+    window.dispatchEvent(new CustomEvent('showSettings'));
   }
 }

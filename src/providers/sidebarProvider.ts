@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
 
 export interface WebviewMessage {
-  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions';
+  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult';
   payload: any;
 }
 
 export interface ExtensionMessage {
-  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'debug';
+  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'debug' | 'fetchOllamaModels' | 'fetchCloudModels' | 'updateConfig' | 'getConfig';
   payload: any;
 }
 
@@ -61,7 +61,7 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private _handleWebviewMessage(message: ExtensionMessage) {
-    console.log('Received webview message:', message.type, message.payload);
+    console.log('SidebarProvider: Received webview message:', message.type, message.payload);
     switch (message.type) {
       case 'debug':
         console.log('DEBUG MESSAGE FROM WEBVIEW:', message.payload);
@@ -98,6 +98,18 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
         break;
       case 'openConfiguration':
         this._handleOpenConfiguration(message.payload);
+        break;
+      case 'fetchOllamaModels':
+        this._handleFetchOllamaModels(message.payload);
+        break;
+      case 'fetchCloudModels':
+        this._handleFetchCloudModels(message.payload);
+        break;
+      case 'updateConfig':
+        this._handleUpdateConfig(message.payload);
+        break;
+      case 'getConfig':
+        this._handleGetConfig(message.payload);
         break;
       default:
         console.warn('Unknown message type:', message.type);
@@ -186,28 +198,183 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private _handleOpenConfiguration(payload: { type: string; sessionId?: string }) {
-    // TODO: Implement configuration opening logic
-    console.log('Open configuration:', payload);
+    console.log('SidebarProvider: Open configuration request:', payload);
+    // Don't open VS Code settings - the webview handles its own settings UI
+    // This message is just for logging/tracking purposes
+  }
 
-    // Open configuration based on type
-    switch (payload.type) {
-      case 'api':
-        vscode.commands.executeCommand('comrade.openApiConfig');
-        break;
-      case 'agents':
-        vscode.commands.executeCommand('comrade.openAgentConfig');
-        break;
-      case 'mcp':
-        vscode.commands.executeCommand('comrade.openMcpConfig');
-        break;
-      default:
-        vscode.commands.executeCommand('comrade.openSettings');
+  private async _handleFetchOllamaModels(payload: { networkAddress?: string }) {
+    console.log('SidebarProvider: Fetching Ollama models:', payload);
+    
+    try {
+      console.log('SidebarProvider: Executing ollama list command...');
+      const models = await this._executeOllamaList();
+      console.log('SidebarProvider: Ollama models retrieved:', models);
+      this.postMessage({
+        type: 'ollamaModelsResult',
+        payload: { 
+          success: true, 
+          models: models,
+          networkAddress: payload.networkAddress 
+        }
+      });
+      console.log('SidebarProvider: Sent ollamaModelsResult message to webview');
+    } catch (error) {
+      console.error('SidebarProvider: Error fetching Ollama models:', error);
+      this.postMessage({
+        type: 'ollamaModelsResult',
+        payload: { 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Failed to fetch Ollama models',
+          networkAddress: payload.networkAddress 
+        }
+      });
+      console.log('SidebarProvider: Sent error ollamaModelsResult message to webview');
+    }
+  }
+
+  private async _handleFetchCloudModels(payload: { provider: string; apiKey: string }) {
+    console.log('Fetching cloud models:', payload.provider);
+    
+    try {
+      const models = await this._fetchCloudProviderModels(payload.provider, payload.apiKey);
+      this.postMessage({
+        type: 'cloudModelsResult',
+        payload: { 
+          success: true, 
+          models: models,
+          provider: payload.provider 
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching cloud models:', error);
+      this.postMessage({
+        type: 'cloudModelsResult',
+        payload: { 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Failed to fetch models',
+          provider: payload.provider 
+        }
+      });
     }
   }
 
   public postMessage(message: WebviewMessage) {
     if (this._view) {
       this._view.webview.postMessage(message);
+    }
+  }
+
+  private async _executeOllamaList(): Promise<string[]> {
+    const { exec } = require('child_process');
+    const { promisify } = require('util');
+    const execAsync = promisify(exec);
+
+    try {
+      console.log('SidebarProvider: Executing "ollama list" command...');
+      const { stdout, stderr } = await execAsync('ollama list');
+      console.log('SidebarProvider: Command stdout:', stdout);
+      console.log('SidebarProvider: Command stderr:', stderr);
+      
+      const lines = stdout.split('\n').filter((line: string) => line.trim());
+      console.log('SidebarProvider: Parsed lines:', lines);
+      
+      // Skip the header line and extract model names
+      const models = lines.slice(1)
+        .map((line: string) => {
+          const parts = line.trim().split(/\s+/);
+          return parts[0]; // First column is the model name
+        })
+        .filter((name: string) => name && name !== '');
+      
+      console.log('SidebarProvider: Extracted models:', models);
+      return models;
+    } catch (error) {
+      console.error('SidebarProvider: Error executing ollama list:', error);
+      throw new Error('Ollama not found or not running. Please ensure Ollama is installed and running.');
+    }
+  }
+
+  private async _fetchCloudProviderModels(provider: string, apiKey: string): Promise<string[]> {
+    // For now, return mock data. In a real implementation, you'd make actual API calls
+    const mockModels: { [key: string]: string[] } = {
+      'openai': ['gpt-4', 'gpt-4-turbo', 'gpt-4-vision-preview', 'gpt-3.5-turbo'],
+      'anthropic': ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307', 'claude-3-opus-20240229'],
+      'google': ['gemini-pro', 'gemini-pro-vision', 'gemini-1.5-pro'],
+      'azure': ['gpt-4', 'gpt-35-turbo', 'gpt-4-vision-preview']
+    };
+    
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    const models = mockModels[provider] || [];
+    console.log(`Mock ${provider} models:`, models);
+    return models;
+  }
+
+  private async _handleUpdateConfig(payload: { agents: any[]; settings: any }) {
+    console.log('SidebarProvider: Updating configuration:', payload);
+    
+    try {
+      // Save agents to VS Code configuration
+      if (payload.agents) {
+        await vscode.workspace.getConfiguration('comrade').update('agents', payload.agents, vscode.ConfigurationTarget.Global);
+        console.log('SidebarProvider: Agents saved to VS Code configuration');
+      }
+      
+      // Save other settings if needed
+      if (payload.settings) {
+        // You can add more settings here as needed
+        console.log('SidebarProvider: Additional settings:', payload.settings);
+      }
+      
+      // Send confirmation back to webview
+      this.postMessage({
+        type: 'configUpdateResult',
+        payload: { success: true }
+      });
+      
+    } catch (error) {
+      console.error('SidebarProvider: Error saving configuration:', error);
+      this.postMessage({
+        type: 'configUpdateResult',
+        payload: { success: false, error: error instanceof Error ? error.message : 'Failed to save configuration' }
+      });
+    }
+  }
+
+  private _handleGetConfig(payload: any) {
+    console.log('SidebarProvider: Getting current configuration');
+    
+    try {
+      // Get current agents from VS Code configuration
+      const config = vscode.workspace.getConfiguration('comrade');
+      const agents = config.get('agents', []);
+      
+      console.log('SidebarProvider: Current agents from config:', agents);
+      
+      // Send configuration back to webview
+      this.postMessage({
+        type: 'configResult',
+        payload: { 
+          success: true,
+          agents: agents,
+          settings: {
+            // Add other settings here if needed
+          }
+        }
+      });
+      
+    } catch (error) {
+      console.error('SidebarProvider: Error getting configuration:', error);
+      this.postMessage({
+        type: 'configResult',
+        payload: { 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Failed to get configuration',
+          agents: []
+        }
+      });
     }
   }
 
@@ -362,10 +529,13 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
       // Add a simple inline script first to test basic execution
       html = html.replace('<body>', `<body><script nonce="${nonce}">
         console.log('WEBVIEW: Inline script executing immediately!');
-        // Also try to send a message to the extension to confirm JS is working
+        // Acquire VS Code API and store it globally for Angular to use
         if (window.acquireVsCodeApi) {
           const vscode = window.acquireVsCodeApi();
+          // Store globally so Angular service can access it
+          window.vscodeApi = vscode;
           vscode.postMessage({type: 'debug', payload: 'JavaScript is executing in webview!'});
+          console.log('WEBVIEW: VS Code API acquired and stored globally');
         }
       </script>${debugInfo}`);
 

@@ -278,10 +278,17 @@ export class SessionService {
     const session = sessions.get(sessionId);
     
     if (session && session.type === 'conversation') {
-      (session as ConversationSession).messages.push(message);
-      session.lastActivity = new Date();
+      // Create a new session object with a new messages array to trigger change detection
+      const updatedSession = {
+        ...session,
+        messages: [...(session as ConversationSession).messages, message],
+        lastActivity: new Date()
+      } as ConversationSession;
+      
+      sessions.set(sessionId, updatedSession);
       this.sessionsMap.set(sessions);
       this.persistState();
+      console.log('SessionService: Added message to session, new message count:', updatedSession.messages.length);
     }
   }
   

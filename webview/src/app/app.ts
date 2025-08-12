@@ -36,11 +36,8 @@ export class App {
   public errorState = signal<ErrorState | null>(null);
   public progressState = signal<ProgressState | null>(null);
   public timeoutState = signal<TimeoutState | null>(null);
-  public availableAgents = signal([
+  public availableAgents = signal<any[]>([
     // Start with empty array to show "no agents configured" message
-    // { id: 'gpt-4', name: 'GPT-4' },
-    // { id: 'claude', name: 'Claude' },
-    // { id: 'local-llama', name: 'Local Llama' }
   ]);
   public showSettings = signal(false);
   public showHistory = signal(false);
@@ -72,6 +69,9 @@ export class App {
       
       // Setup event listeners
       this.setupEventListeners();
+      
+      // Load available agents from configuration
+      this.loadAvailableAgents();
       
       // DON'T mark initialization as complete yet - wait for session restoration
       console.log('App: Basic initialization complete, waiting for session restoration...');
@@ -120,6 +120,20 @@ export class App {
     // Listen for history show events
     window.addEventListener('showHistory', () => {
       this.showHistory.set(true);
+    });
+
+    // Listen for settings show events
+    window.addEventListener('showSettings', () => {
+      this.showSettings.set(true);
+    });
+  }
+
+  private loadAvailableAgents() {
+    console.log('App: Loading available agents from configuration...');
+    // Request current agents from VS Code configuration
+    this.messageService.sendMessage({
+      type: 'getConfig',
+      payload: {}
     });
   }
 
@@ -297,7 +311,7 @@ export class App {
         break;
 
       case 'updateSession':
-        // Handle session updates
+        this.handleSessionUpdate(message.payload);
         break;
 
       case 'restoreSessions':
@@ -310,8 +324,43 @@ export class App {
         }
         break;
 
+      case 'configResult':
+        this.handleConfigResult(message.payload);
+        break;
+
+      case 'configUpdateResult':
+        // Reload agents after configuration update
+        if (message.payload.success) {
+          console.log('App: Configuration updated, reloading agents...');
+          this.loadAvailableAgents();
+        }
+        break;
+
       default:
         console.log('Unhandled message type:', message.type);
+    }
+  }
+
+  private handleConfigResult(payload: { success: boolean; agents?: any[]; error?: string }) {
+    if (payload.success && payload.agents) {
+      console.log('App: Loaded agents from configuration:', payload.agents);
+      // Filter only enabled agents for the UI
+      const enabledAgents = payload.agents.filter(agent => agent.isEnabledForAssignment !== false);
+      this.availableAgents.set(enabledAgents);
+      console.log('App: Available agents updated:', enabledAgents.length);
+    } else {
+      console.log('App: No agents found or error loading config:', payload.error);
+      this.availableAgents.set([]);
+    }
+  }
+
+  private handleSessionUpdate(payload: any) {
+    console.log('App: Handling session update:', payload);
+    
+    if (payload.sessionId && payload.message) {
+      // Add the message to the session
+      this.sessionService.addMessageToSession(payload.sessionId, payload.message);
+      console.log('App: Added message to session:', payload.sessionId);
     }
   }
 
