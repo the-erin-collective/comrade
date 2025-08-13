@@ -9,7 +9,7 @@ import '../test-setup';
 export function run(testsRoot: string, cb: (error: Error | null, failures?: number) => void): void {
   // Create the mocha test
   const mocha = new Mocha({
-    ui: 'tdd',
+    ui: 'bdd',
     color: true,
     timeout: 10000,
     reporter: 'spec'
