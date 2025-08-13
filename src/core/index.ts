@@ -26,3 +26,6 @@ export * from './personality';
 // Tool framework exports
 export * from './tools';
 export * from './tool-manager';
+
+// AI Agent service exports
+export * from './ai-agent';
