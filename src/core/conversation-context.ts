@@ -329,7 +329,7 @@ export class ConversationContextManager implements ConversationContext {
   }
 
   /**
-   * Truncate keeping only recent messages
+   * Truncate keeping only recent messages with enhanced overflow handling
    */
   private truncateKeepRecent(targetTokens: number): void {
     // Always preserve system messages
@@ -339,8 +339,11 @@ export class ConversationContextManager implements ConversationContext {
     // Start with system prompt tokens
     let tokenCount = this.estimateTokens(this.systemPrompt);
     
-    // Add tool results if configured to preserve them
+    // Handle tool results with intelligent preservation
     if (this.config.preserveToolResults) {
+      const importantToolResults = this.getImportantToolResults();
+      this.toolResults = importantToolResults;
+      
       for (const result of this.toolResults) {
         if (result.output) {tokenCount += this.estimateTokens(result.output);}
         if (result.error) {tokenCount += this.estimateTokens(result.error);}
@@ -361,8 +364,12 @@ export class ConversationContextManager implements ConversationContext {
       if (tokenCount + messageTokens > targetTokens) {
         // If we haven't kept minimum messages yet, keep this one anyway
         if (recentMessages.length < this.config.minRecentMessages) {
-          recentMessages.unshift(message);
-          tokenCount += messageTokens;
+          // Try to truncate the message content instead of removing it entirely
+          const truncatedMessage = this.truncateMessageContent(message, targetTokens - tokenCount);
+          if (truncatedMessage) {
+            recentMessages.unshift(truncatedMessage);
+            tokenCount += this.estimateTokens(truncatedMessage.content);
+          }
         } else {
           break;
         }
@@ -374,17 +381,131 @@ export class ConversationContextManager implements ConversationContext {
     
     this.messages = [...systemMessages, ...recentMessages];
     
-    // If still over limit, be more aggressive
-    if (this.getTokenCount() > targetTokens && recentMessages.length > 0) {
-      // Remove messages one by one until we're under the limit
-      while (this.getTokenCount() > targetTokens && this.messages.filter(m => m.role !== 'system').length > 0) {
-        // Find the oldest non-system message and remove it
-        const nonSystemIndex = this.messages.findIndex(m => m.role !== 'system');
-        if (nonSystemIndex !== -1) {
-          this.messages.splice(nonSystemIndex, 1);
-        } else {
-          break;
-        }
+    // If still over limit, apply emergency truncation
+    if (this.getTokenCount() > targetTokens) {
+      this.applyEmergencyTruncation(targetTokens);
+    }
+
+    this.logger.info('Context truncation completed with overflow handling', {
+      originalMessages: systemMessages.length + otherMessages.length,
+      finalMessages: this.messages.length,
+      finalTokens: this.getTokenCount(),
+      targetTokens
+    });
+  }
+
+  /**
+   * Get important tool results to preserve during truncation
+   */
+  private getImportantToolResults(): AIToolResult[] {
+    // Sort tool results by importance (recent, successful, and error results)
+    const sortedResults = [...this.toolResults].sort((a, b) => {
+      // Prioritize recent results
+      const timeDiff = b.metadata.timestamp.getTime() - a.metadata.timestamp.getTime();
+      if (timeDiff !== 0) return timeDiff;
+      
+      // Prioritize successful results over errors
+      if (a.success !== b.success) {
+        return a.success ? -1 : 1;
+      }
+      
+      return 0;
+    });
+    
+    // Keep only the most important results that fit in a reasonable token budget
+    const maxToolResultTokens = Math.floor(this.maxTokens * 0.1); // 10% of context for tool results
+    let toolResultTokens = 0;
+    const importantResults: AIToolResult[] = [];
+    
+    for (const result of sortedResults) {
+      const resultTokens = this.estimateTokens((result.output || result.error || ''));
+      if (toolResultTokens + resultTokens <= maxToolResultTokens) {
+        importantResults.push(result);
+        toolResultTokens += resultTokens;
+      } else {
+        break;
+      }
+    }
+    
+    return importantResults;
+  }
+
+  /**
+   * Truncate message content while preserving important information
+   */
+  private truncateMessageContent(message: AIMessage, availableTokens: number): AIMessage | null {
+    if (availableTokens <= 0) return null;
+    
+    const maxContentLength = availableTokens * 4; // Rough character estimate
+    
+    if (message.content.length <= maxContentLength) {
+      return message;
+    }
+    
+    // For user messages, truncate from the middle to preserve context
+    if (message.role === 'user') {
+      const startLength = Math.floor(maxContentLength * 0.4);
+      const endLength = Math.floor(maxContentLength * 0.4);
+      const truncationMarker = '\n... [content truncated] ...\n';
+      
+      const truncatedContent = 
+        message.content.substring(0, startLength) +
+        truncationMarker +
+        message.content.substring(message.content.length - endLength);
+      
+      return {
+        ...message,
+        content: truncatedContent
+      };
+    }
+    
+    // For assistant messages, truncate from the end
+    const truncatedContent = message.content.substring(0, maxContentLength - 20) + '\n... [truncated]';
+    
+    return {
+      ...message,
+      content: truncatedContent
+    };
+  }
+
+  /**
+   * Apply emergency truncation when normal methods aren't sufficient
+   */
+  private applyEmergencyTruncation(targetTokens: number): void {
+    this.logger.warn('Applying emergency context truncation', {
+      currentTokens: this.getTokenCount(),
+      targetTokens
+    });
+    
+    // Remove tool results if still over limit
+    if (this.getTokenCount() > targetTokens) {
+      this.toolResults = [];
+    }
+    
+    // Remove messages one by one until we're under the limit
+    while (this.getTokenCount() > targetTokens && this.messages.filter(m => m.role !== 'system').length > 0) {
+      // Find the oldest non-system message and remove it
+      const nonSystemIndex = this.messages.findIndex(m => m.role !== 'system');
+      if (nonSystemIndex !== -1) {
+        this.messages.splice(nonSystemIndex, 1);
+      } else {
+        break;
+      }
+    }
+    
+    // If still over limit, truncate system prompt as last resort
+    if (this.getTokenCount() > targetTokens) {
+      const systemPromptTokens = this.estimateTokens(this.systemPrompt);
+      const maxSystemPromptTokens = Math.floor(targetTokens * 0.2); // Max 20% for system prompt
+      
+      if (systemPromptTokens > maxSystemPromptTokens) {
+        const maxSystemPromptLength = maxSystemPromptTokens * 4;
+        this.systemPrompt = this.systemPrompt.substring(0, maxSystemPromptLength - 20) + '\n... [truncated]';
+        
+        this.logger.warn('System prompt truncated due to emergency context overflow', {
+          originalLength: systemPromptTokens,
+          newLength: this.estimateTokens(this.systemPrompt)
+        });
       }
     }
   }
