@@ -2,12 +2,12 @@ import { Injectable } from '@angular/core';
 import { Subject, Observable } from 'rxjs';
 
 export interface WebviewMessage {
-  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult';
+  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult' | 'aiResponse' | 'toolExecution' | 'aiTyping' | 'aiProcessing' | 'streamChunk';
   payload: any;
 }
 
 export interface ExtensionMessage {
-  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'fetchOllamaModels' | 'fetchCloudModels' | 'updateConfig' | 'getConfig';
+  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'fetchOllamaModels' | 'fetchCloudModels' | 'updateConfig' | 'getConfig' | 'cancelMessage';
   payload: any;
 }
 
@@ -73,6 +73,26 @@ export class MessageService {
     window.addEventListener('message', (event) => {
       const message: WebviewMessage = event.data;
       console.log('MessageService: Received message via event listener:', message.type);
+      
+      // Handle streaming chunks
+      if (message.type === 'streamChunk' && message.payload?.messageId) {
+        const callback = this.streamingCallbacks.get(message.payload.messageId);
+        if (callback) {
+          // Call the streaming callback with the chunk
+          callback({
+            content: message.payload.content || '',
+            isComplete: message.payload.done || false,
+            error: message.payload.error
+          });
+          
+          // If this is the final chunk, clean up the callback
+          if (message.payload.done || message.payload.error) {
+            this.streamingCallbacks.delete(message.payload.messageId);
+          }
+        }
+        return; // Don't emit stream chunks through the main subject
+      }
+      
       // Emit the message through the Subject for reactive handling
       this.messageSubject.next(message);
     });
@@ -82,11 +102,61 @@ export class MessageService {
     this.vscode.postMessage(message);
   }
   
-  public sendChatMessage(sessionId: string, message: string, contextItems: any[] = []) {
+  private streamingCallbacks = new Map<string, (chunk: { content: string; isComplete: boolean; error?: string }) => void>();
+
+  /**
+   * Send a chat message with optional streaming support
+   * @param sessionId The session ID
+   * @param message The message to send
+   * @param contextItems Optional context items
+   * @param onChunk Optional callback for streaming chunks
+   */
+  public sendChatMessage(
+    sessionId: string, 
+    message: string, 
+    contextItems: any[] = [],
+    onChunk?: (chunk: { content: string; isComplete: boolean; error?: string }) => void
+  ): string {
+    const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // If streaming is requested, register the callback
+    if (onChunk) {
+      this.streamingCallbacks.set(messageId, onChunk);
+      
+      // Set up a timeout to clean up the callback if no response is received
+      setTimeout(() => {
+        if (this.streamingCallbacks.has(messageId)) {
+          this.streamingCallbacks.delete(messageId);
+        }
+      }, 300000); // 5 minute timeout
+    }
+    
     this.sendMessage({
       type: 'sendMessage',
-      payload: { sessionId, message, contextItems }
+      payload: { 
+        sessionId, 
+        message, 
+        contextItems,
+        messageId,
+        stream: !!onChunk // Indicate to the extension that we want to stream
+      }
     });
+    
+    return messageId;
+  }
+  
+  /**
+   * Cancel an ongoing streaming message
+   * @param messageId The ID of the message to cancel
+   */
+  public cancelStreamingMessage(messageId: string): void {
+    this.sendMessage({
+      type: 'cancelMessage',
+      payload: { messageId }
+    });
+    
+    // Clean up the callback
+    this.streamingCallbacks.delete(messageId);
   }
   
   public switchSession(sessionId: string) {

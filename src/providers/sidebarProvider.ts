@@ -1,8 +1,45 @@
 import * as vscode from 'vscode';
+import { AIAgentService, AIResponse, ToolCall, AIToolResult } from '../core/ai-agent';
 
 export interface WebviewMessage {
-  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult';
+  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult' | 'aiResponse' | 'toolExecution' | 'aiTyping' | 'aiProcessing';
   payload: any;
+}
+
+export interface AIResponseMessage extends WebviewMessage {
+  type: 'aiResponse';
+  payload: {
+    sessionId: string;
+    response: AIResponse;
+    isStreaming?: boolean;
+  };
+}
+
+export interface ToolExecutionMessage extends WebviewMessage {
+  type: 'toolExecution';
+  payload: {
+    sessionId: string;
+    toolCall: ToolCall;
+    result?: AIToolResult;
+    status: 'started' | 'completed' | 'failed';
+  };
+}
+
+export interface AITypingMessage extends WebviewMessage {
+  type: 'aiTyping';
+  payload: {
+    sessionId: string;
+    isTyping: boolean;
+  };
+}
+
+export interface AIProcessingMessage extends WebviewMessage {
+  type: 'aiProcessing';
+  payload: {
+    sessionId: string;
+    status: 'thinking' | 'executing_tools' | 'generating_response' | 'complete';
+    message?: string;
+  };
 }
 
 export interface ExtensionMessage {
@@ -17,10 +54,21 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
   private _extensionUri: vscode.Uri;
   private _context: vscode.ExtensionContext;
   private _sessionRestorationSent = false;
+  private _aiAgentService: AIAgentService;
+  private _activeProcessingSessions: Set<string> = new Set();
 
   constructor(context: vscode.ExtensionContext) {
     this._extensionUri = context.extensionUri;
     this._context = context;
+    this._aiAgentService = new AIAgentService();
+    
+    // Initialize AI agent with default Ollama configuration
+    this._aiAgentService.setModel({
+      name: 'Llama 2',
+      provider: 'ollama',
+      model: 'llama2',
+      endpoint: 'http://localhost:11434'
+    });
   }
 
   public resolveWebviewView(
@@ -58,6 +106,68 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
         });
       }
     }, 1500); // Single message after initialization
+  }
+
+  /**
+   * Handle sending a message from the webview to the AI agent
+   * @param payload - The message payload containing session ID and message content
+   */
+  private async _handleSendMessage(payload: { sessionId: string; message: string; contextItems?: any[] }) {
+    const { sessionId, message, contextItems = [] } = payload;
+    
+    try {
+      // Show typing indicator
+      this._showAITyping(sessionId, true);
+      this._showAIProcessing(sessionId, 'thinking', 'Processing your message...');
+
+      // Add user message to chat history
+      this.postMessage({
+        type: 'updateSession',
+        payload: {
+          sessionId,
+          message: {
+            id: `msg-${Date.now()}`,
+            content: message,
+            timestamp: new Date().toISOString(),
+            sender: 'user'
+          }
+        }
+      });
+
+      // Process any context items if provided
+      if (contextItems.length > 0) {
+        this._showAIProcessing(sessionId, 'thinking', 'Processing context...');
+        // TODO: Process context items and add to conversation
+      }
+
+      // Get response from AI
+      const response = await this._aiAgentService.sendMessage(sessionId, message);
+      
+      // Process tool calls if any
+      if (response.toolCalls && response.toolCalls.length > 0) {
+        await this._processToolCalls(sessionId, response.toolCalls);
+      }
+
+      // Send AI response to webview
+      this._sendAIResponse(sessionId, response);
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to process message';
+      console.error('Error in _handleSendMessage:', error);
+      
+      // Show error to user
+      this.showError(sessionId, {
+        message: errorMessage,
+        code: 'message_processing_error',
+        recoverable: true,
+        suggestedFix: 'Please try again or check your AI model configuration.'
+      });
+      
+    } finally {
+      // Clean up
+      this._showAITyping(sessionId, false);
+      this._showAIProcessing(sessionId, 'complete');
+    }
   }
 
   private _handleWebviewMessage(message: ExtensionMessage) {
@@ -116,23 +226,100 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private _handleSendMessage(payload: { sessionId: string; message: string; contextItems?: any[] }) {
-    // TODO: Implement message sending logic
-    console.log('Send message:', payload);
+  /**
+   * Process tool calls from AI responses
+   * @param sessionId - The current session ID
+   * @param toolCalls - Array of tool calls to process
+   * @returns Promise resolving to array of tool execution results
+   */
+  private async _processToolCalls(sessionId: string, toolCalls: ToolCall[]): Promise<AIToolResult[]> {
+    const results: AIToolResult[] = [];
+    this._showAIProcessing(sessionId, 'executing_tools', `Executing ${toolCalls.length} tool(s)...`);
 
-    // Send acknowledgment back to webview
-    this.postMessage({
-      type: 'updateSession',
-      payload: {
-        sessionId: payload.sessionId,
-        message: {
-          id: Date.now().toString(),
-          content: payload.message,
-          timestamp: new Date().toISOString(),
-          sender: 'user'
-        }
+    for (const toolCall of toolCalls) {
+      const startTime = Date.now();
+      try {
+        // Show tool execution start
+        this.postMessage({
+          type: 'toolExecution',
+          payload: {
+            sessionId,
+            toolCall,
+            status: 'started'
+          }
+        });
+
+        // Execute the tool
+        const result = await this._aiAgentService.executeToolCall(toolCall);
+        results.push(result);
+
+        // Show tool execution result
+        this.postMessage({
+          type: 'toolExecution',
+          payload: {
+            sessionId,
+            toolCall: {
+              ...toolCall,
+              result
+            },
+            status: 'completed',
+            result
+          }
+        });
+
+        // Add tool execution to session history
+        this.postMessage({
+          type: 'updateSession',
+          payload: {
+            sessionId,
+            message: {
+              id: `tool-${toolCall.id}`,
+              content: result.success 
+                ? `Tool "${toolCall.name}" executed successfully: ${result.output || 'No output'}`
+                : `Tool "${toolCall.name}" failed: ${result.error || 'Unknown error'}`,
+              timestamp: new Date().toISOString(),
+              sender: 'tool',
+              toolCall,
+              toolResult: result
+            }
+          }
+        });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        const errorResult: AIToolResult = {
+          success: false,
+          error: errorMessage,
+          metadata: {
+            executionTime: Date.now() - startTime,
+            toolName: toolCall.name,
+            parameters: toolCall.parameters,
+            timestamp: new Date()
+          }
+        };
+        
+        // Add error to results
+        results.push(errorResult);
+
+        // Notify UI of failure
+        this.postMessage({
+          type: 'toolExecution',
+          payload: {
+            sessionId,
+            toolCall: {
+              ...toolCall,
+              result: errorResult
+            },
+            status: 'failed',
+            result: errorResult
+          }
+        });
+
+        // Log error to console
+        console.error('Error executing tool call:', error);
       }
-    });
+    }
+    
+    return results;
   }
 
   private _handleSwitchSession(payload: { sessionId: string }) {
@@ -422,6 +609,65 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
       type: 'showTimeout',
       payload: { sessionId, message, allowExtension }
     });
+  }
+
+  /**
+   * Show AI typing indicator
+   */
+  private _showAITyping(sessionId: string, isTyping: boolean) {
+    this.postMessage({
+      type: 'aiTyping',
+      payload: { sessionId, isTyping }
+    });
+  }
+
+  /**
+   * Show AI processing status
+   */
+  private _showAIProcessing(sessionId: string, status: 'thinking' | 'executing_tools' | 'generating_response' | 'complete', message?: string) {
+    this.postMessage({
+      type: 'aiProcessing',
+      payload: { sessionId, status, message }
+    });
+  }
+
+  /**
+   * Send AI response to webview
+   */
+  private _sendAIResponse(sessionId: string, response: AIResponse, isStreaming: boolean = false) {
+    this.postMessage({
+      type: 'aiResponse',
+      payload: {
+        sessionId,
+        response,
+        isStreaming
+      }
+    });
+
+    // Also send as a regular session update for compatibility
+    this.postMessage({
+      type: 'updateSession',
+      payload: {
+        sessionId,
+        message: {
+          id: Date.now().toString(),
+          content: response.content,
+          timestamp: new Date().toISOString(),
+          sender: 'assistant',
+          metadata: response.metadata,
+          toolCalls: response.toolCalls
+        }
+      }
+    });
+  }
+
+
+
+  /**
+   * Get AI agent service instance (for external access if needed)
+   */
+  public getAIAgentService(): AIAgentService {
+    return this._aiAgentService;
   }
 
   private _getHtmlForWebview(webview: vscode.Webview) {

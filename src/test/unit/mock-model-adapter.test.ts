@@ -1,0 +1,109 @@
+import { MockModelAdapter } from '../../core/model-adapters/mock-model-adapter';
+import { Tool } from '../../core/model-adapters/base-model-adapter';
+
+describe('MockModelAdapter', () => {
+  let adapter: MockModelAdapter;
+  
+  beforeEach(() => {
+    adapter = new MockModelAdapter();
+  });
+
+  describe('streaming', () => {
+    it('should support streaming', () => {
+      expect(adapter.supportsStreaming()).toBe(true);
+    });
+
+    it('should stream response in chunks', async () => {
+      const testPrompt = 'Test prompt';
+      const chunks: string[] = [];
+      
+      await adapter.sendStreamingRequest(testPrompt, (chunk) => {
+        chunks.push(chunk.content);
+      });
+
+      // Verify we received multiple chunks
+      expect(chunks.length).toBeGreaterThan(1);
+      
+      // Verify the complete response is correct when joined
+      const fullResponse = chunks.join('');
+      expect(fullResponse).toContain('This is a streaming mock response to: ' + testPrompt);
+    });
+
+    it('should handle aborting a streaming request', async () => {
+      const testPrompt = 'Test prompt for abort';
+      const chunks: string[] = [];
+      
+      // Start the request but abort it after a short delay
+      const streamingPromise = adapter.sendStreamingRequest(testPrompt, (chunk) => {
+        chunks.push(chunk.content);
+      });
+      
+      // Abort after a short delay to allow some chunks to be received
+      setTimeout(() => adapter.abortStreaming(), 100);
+      
+      // Should reject with abort error
+      await expectAsync(streamingPromise).toBeRejectedWithError('Request was aborted');
+      
+      // Should have received some chunks before aborting
+      expect(chunks.length).toBeGreaterThan(0);
+      
+      // The complete response should not have been received
+      const fullResponse = chunks.join('');
+      expect(fullResponse.length).toBeLessThan(50); // Arbitrary length check
+    });
+  });
+
+  describe('tool calling', () => {
+    it('should support tool calling', () => {
+      expect(adapter.supportsToolCalling()).toBe(true);
+    });
+
+    it('should format tools in prompt', () => {
+      const tools: Tool[] = [
+        {
+          name: 'test_tool',
+          description: 'A test tool',
+          parameters: [
+            {
+              name: 'param1',
+              type: 'string',
+              description: 'Test parameter',
+              required: true
+            }
+          ],
+          execute: async () => ({ success: true, metadata: { executionTime: 0, toolName: 'test', parameters: {} } })
+        }
+      ];
+      
+      const prompt = adapter.formatPrompt([{
+        role: 'user',
+        content: 'Hello',
+        timestamp: new Date()
+      }], tools);
+      
+      expect(prompt).toContain('test_tool');
+      expect(prompt).toContain('A test tool');
+      expect(prompt).toContain('param1');
+    });
+  });
+
+  describe('configuration', () => {
+    it('should initialize with valid config', async () => {
+      await expectAsync(adapter.initialize({
+        name: 'test-model',
+        provider: 'mock',
+        temperature: 0.7
+      })).toBeResolved();
+    });
+
+    it('should test connection successfully', async () => {
+      await adapter.initialize({
+        name: 'test-model',
+        provider: 'mock'
+      });
+      
+      const isConnected = await adapter.testConnection();
+      expect(isConnected).toBe(true);
+    });
+  });
+});

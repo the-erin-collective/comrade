@@ -2,6 +2,7 @@ import { Component, ChangeDetectionStrategy, signal, output } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MessageService } from '../../services/message.service';
+import { ModelListComponent } from './model-list/model-list.component';
 
 interface AgentConfig {
   id: string;
@@ -34,7 +35,7 @@ interface AgentConfig {
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ModelListComponent],
   template: `
     <div class="settings-container">
       <div class="settings-header">
@@ -45,6 +46,13 @@ interface AgentConfig {
       </div>
 
       <div class="settings-tabs">
+        <button 
+          class="settings-tab" 
+          [class.active]="activeTab() === 'models'"
+          (click)="setActiveTab('models')"
+        >
+          Model Management
+        </button>
         <button 
           class="settings-tab" 
           [class.active]="activeTab() === 'agents'"
@@ -60,7 +68,9 @@ interface AgentConfig {
       </div>
 
       <div class="settings-content">
-        @if (activeTab() === 'agents') {
+        @if (activeTab() === 'models') {
+          <model-list></model-list>
+        } @else if (activeTab() === 'agents') {
           <!-- Agent Configuration Section -->
           <div class="settings-section">
             <p class="section-description">Configure AI agents to assist with your coding tasks.</p>
@@ -240,499 +250,72 @@ interface AgentConfig {
   `,
   styles: [`
     .settings-container {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
       display: flex;
       flex-direction: column;
-      background: var(--vscode-editor-background);
-      z-index: 100;
+      height: 100%;
+      background: var(--background-color);
+      color: var(--text-color);
     }
-
+    
     .settings-header {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--vscode-panel-border);
-      background: var(--vscode-sideBar-background);
-    }
-
-    .settings-header h2 {
-      margin: 0;
-      font-size: 18px;
-      font-weight: 600;
-      color: var(--vscode-foreground);
-    }
-
-    .close-btn {
-      display: flex;
       align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      border: none;
-      background: transparent;
-      color: var(--vscode-foreground);
-      cursor: pointer;
-      border-radius: 4px;
-      font-size: 18px;
-      transition: background-color 0.2s;
+      padding: 1rem;
+      border-bottom: 1px solid var(--border-color);
     }
-
-    .close-btn:hover {
-      background: var(--vscode-toolbar-hoverBackground);
-    }
-
+    
     .settings-tabs {
       display: flex;
-      border-bottom: 1px solid var(--vscode-panel-border);
-      background: var(--vscode-sideBar-background);
+      border-bottom: 1px solid var(--border-color);
+      padding: 0 1rem;
     }
-
+    
     .settings-tab {
-      padding: 12px 20px;
+      padding: 0.75rem 1.5rem;
+      background: none;
       border: none;
-      background: transparent;
-      color: var(--vscode-tab-inactiveForeground);
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 500;
       border-bottom: 2px solid transparent;
+      cursor: pointer;
+      font-weight: 500;
+      color: var(--text-secondary);
       transition: all 0.2s ease;
+      
+      &:hover {
+        color: var(--text-color);
+      }
+      
+      &.active {
+        color: var(--primary-color);
+        border-bottom-color: var(--primary-color);
+      }
     }
-
-    .settings-tab:hover {
-      background: var(--vscode-tab-hoverBackground);
-      color: var(--vscode-tab-activeForeground);
-    }
-
-    .settings-tab.active {
-      color: var(--vscode-tab-activeForeground);
-      border-bottom-color: var(--vscode-focusBorder);
-      background: var(--vscode-tab-activeBackground);
-    }
-
+    
     .settings-content {
       flex: 1;
+      padding: 1.5rem;
       overflow-y: auto;
-      padding: 20px;
     }
-
-    .settings-section {
-      margin-bottom: 32px;
-    }
-
-    .settings-section h3 {
-      margin: 0 0 8px 0;
-      font-size: 16px;
-      font-weight: 600;
-      color: var(--vscode-foreground);
-    }
-
-    .section-description {
-      margin: 0 0 16px 0;
-      color: var(--vscode-descriptionForeground);
-      font-size: 14px;
-    }
-
-    .subsection-title {
-      margin: 24px 0 16px 0;
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--vscode-foreground);
-      border-bottom: 1px solid var(--vscode-panel-border);
-      padding-bottom: 8px;
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 40px 20px;
-      border: 2px dashed var(--vscode-panel-border);
-      border-radius: 8px;
-    }
-
-    .empty-state h4 {
-      margin: 0 0 8px 0;
-      font-size: 16px;
-      color: var(--vscode-foreground);
-    }
-
-    .empty-state p {
-      margin: 0 0 20px 0;
-      color: var(--vscode-descriptionForeground);
-    }
-
-    .agents-list {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-
-    .agent-card {
-      padding: 16px;
-      border: 1px solid var(--vscode-panel-border);
-      border-radius: 8px;
-      background: var(--vscode-input-background);
-      transition: all 0.2s;
-    }
-
-    .agent-card.disabled {
-      opacity: 0.6;
-    }
-
-    .agent-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 8px;
-    }
-
-    .agent-name-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 4px;
-    }
-
-    .agent-info h4 {
-      margin: 0;
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--vscode-foreground);
-    }
-
-    .agent-tag {
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-size: 10px;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .agent-tag.multimodal {
-      background: var(--vscode-button-background);
-      color: var(--vscode-button-foreground);
-    }
-
-    .agent-provider {
-      font-size: 12px;
-      color: var(--vscode-descriptionForeground);
-    }
-
-    .agent-controls {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .toggle-switch {
-      position: relative;
-      display: inline-block;
-      width: 40px;
-      height: 20px;
-    }
-
-    .toggle-switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-
-    .toggle-switch .toggle-slider {
-      position: absolute;
+    
+    .close-btn {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
       cursor: pointer;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: var(--vscode-input-background);
-      border: 1px solid var(--vscode-input-border);
-      border-radius: 10px;
-      transition: 0.3s;
-    }
-
-    .toggle-switch .toggle-slider:before {
-      position: absolute;
-      content: "";
-      height: 14px;
-      width: 14px;
-      left: 2px;
-      bottom: 2px;
-      background-color: var(--vscode-foreground);
-      border-radius: 50%;
-      transition: 0.3s;
-    }
-
-    .toggle-switch input:checked + .toggle-slider {
-      background-color: var(--vscode-button-background);
-      border-color: var(--vscode-button-background);
-    }
-
-    .toggle-switch input:checked + .toggle-slider:before {
-      transform: translateX(18px);
-      background-color: var(--vscode-button-foreground);
-    }
-
-    .icon-btn {
+      color: var(--text-secondary);
+      padding: 0.25rem;
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 24px;
-      height: 24px;
-      border: none;
-      background: transparent;
-      color: var(--vscode-foreground);
-      cursor: pointer;
       border-radius: 4px;
-      font-size: 12px;
-      transition: background-color 0.2s;
+      
+      &:hover {
+        background: var(--hover-bg);
+        color: var(--text-color);
+      }
     }
-
-    .icon-btn:hover {
-      background: var(--vscode-toolbar-hoverBackground);
-    }
-
-    .icon-btn.danger:hover {
-      background: var(--vscode-errorForeground);
-      color: white;
-    }
-
-    .agent-status {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .status-indicator {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-    }
-
-    .status-indicator.active {
-      background: var(--vscode-terminal-ansiGreen);
-    }
-
-    .status-indicator.inactive {
-      background: var(--vscode-descriptionForeground);
-    }
-
-    .status-text {
-      font-size: 12px;
-      color: var(--vscode-descriptionForeground);
-    }
-
-    .setting-item {
-      margin-bottom: 20px;
-    }
-
-    .setting-label {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--vscode-foreground);
-      margin-bottom: 4px;
-      cursor: pointer;
-    }
-
-    .setting-input {
-      width: 100px;
-      padding: 6px 8px;
-      border: 1px solid var(--vscode-input-border);
-      background: var(--vscode-input-background);
-      color: var(--vscode-input-foreground);
-      border-radius: 4px;
-      font-size: 14px;
-    }
-
-    .setting-description {
-      margin: 4px 0 0 0;
-      font-size: 12px;
-      color: var(--vscode-descriptionForeground);
-    }
-
-
-
-    .primary-btn, .secondary-btn {
-      padding: 8px 16px;
-      border: none;
-      border-radius: 4px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .primary-btn {
-      background: var(--vscode-button-background);
-      color: var(--vscode-button-foreground);
-    }
-
-    .primary-btn:hover {
-      background: var(--vscode-button-hoverBackground);
-    }
-
-    .secondary-btn {
-      background: var(--vscode-button-secondaryBackground);
-      color: var(--vscode-button-secondaryForeground);
-      border: 1px solid var(--vscode-button-border);
-    }
-
-    .secondary-btn:hover {
-      background: var(--vscode-button-secondaryHoverBackground);
-    }
-
-    /* Modal Styles */
-    .modal-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-    }
-
-    .modal-content {
-      background: var(--vscode-editor-background);
-      border: 1px solid var(--vscode-panel-border);
-      border-radius: 8px;
-      width: 90%;
-      max-width: 500px;
-      max-height: 80vh;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .modal-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--vscode-panel-border);
-    }
-
-    .modal-header h3 {
-      margin: 0;
-      font-size: 16px;
-      font-weight: 600;
-    }
-
-    .modal-body {
-      padding: 20px;
-      overflow-y: auto;
-    }
-
-    .form-group {
-      margin-bottom: 16px;
-    }
-
-    .form-group label {
-      display: block;
-      margin-bottom: 4px;
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--vscode-foreground);
-    }
-
-    .form-group input,
-    .form-group select {
-      width: 100%;
-      padding: 8px 12px;
-      border: 1px solid var(--vscode-input-border);
-      background: var(--vscode-input-background);
-      color: var(--vscode-input-foreground);
-      border-radius: 4px;
-      font-size: 14px;
-    }
-
-    .form-group input:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    .api-key-group {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .api-key-group input {
-      flex: 1;
-    }
-
-    .fetch-models-btn {
-      padding: 8px 12px;
-      border: 1px solid var(--vscode-button-border);
-      background: var(--vscode-button-secondaryBackground);
-      color: var(--vscode-button-secondaryForeground);
-      border-radius: 4px;
-      font-size: 12px;
-      cursor: pointer;
-      white-space: nowrap;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      transition: background-color 0.2s;
-    }
-
-    .fetch-models-btn:hover:not(:disabled) {
-      background: var(--vscode-button-secondaryHoverBackground);
-    }
-
-    .fetch-models-btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    .loading-spinner-small {
-      width: 12px;
-      height: 12px;
-      border: 2px solid var(--vscode-progressBar-background);
-      border-top: 2px solid var(--vscode-progressBar-foreground);
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-    }
-
-    .error-text {
-      color: var(--vscode-errorForeground);
-      font-size: 12px;
-      margin: 4px 0 0 0;
-    }
-
-    .checkbox-label {
-      display: flex !important;
-      align-items: center;
-      gap: 8px;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 500;
-      margin-bottom: 4px;
-    }
-
-    .checkbox-text {
-      flex: 1;
-    }
-
-    .modal-footer {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-      padding: 16px 20px;
-      border-top: 1px solid var(--vscode-panel-border);
-    }
-  `]
+  `],
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class SettingsComponent {
   closeSettings = output<void>();
@@ -740,7 +323,7 @@ export class SettingsComponent {
   public agents = signal<AgentConfig[]>([]);
   public showAgentForm = signal(false);
   public editingAgent = signal<AgentConfig | null>(null);
-  public activeTab = signal<'agents' | 'general'>('agents');
+  public activeTab = signal<'models' | 'agents' | 'general'>('models');
   public availableModels = signal<string[]>([]);
   public loadingModels = signal(false);
   public modelError = signal<string | null>(null);
@@ -1059,8 +642,6 @@ export class SettingsComponent {
     console.log('SettingsComponent: Sent fetchOllamaModels message');
   }
 
-
-
   public resetToDefaults() {
     this.autoSave.set(true);
     this.enableNotifications.set(true);
@@ -1068,7 +649,7 @@ export class SettingsComponent {
     this.maxHistory.set(100);
   }
 
-  public setActiveTab(tab: 'agents' | 'general') {
+  public setActiveTab(tab: 'models' | 'agents' | 'general') {
     this.activeTab.set(tab);
   }
 

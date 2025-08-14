@@ -9,6 +9,8 @@ import { registerContextExampleCommands } from './examples/context-runner-usage'
 import { ComradeSidebarProvider } from './providers/sidebarProvider';
 import { createStatusBarManager, StatusBarManager } from './ui/statusBar';
 import { BuiltInTools } from './core/tool-manager';
+import { ChatBridge } from './core/chat';
+import { AISessionManager } from './core/ai-session';
 import { hasWorkspace, registerWorkspaceChangeHandlers } from './utils/workspace';
 
 // Global instances
@@ -17,6 +19,8 @@ let agentRegistry: AgentRegistry;
 let personalityManager: PersonalityManager;
 let statusBarManager: StatusBarManager;
 let autoReloadManager: ConfigurationAutoReloadManager;
+let chatBridge: ChatBridge;
+let aiSessionManager: AISessionManager;
 
 // Track sidebar revelation state
 let sidebarHasBeenRevealed = false;
@@ -43,12 +47,18 @@ export async function activate(context: vscode.ExtensionContext) {
         // Initialize workspace-dependent features with graceful error handling
         await initializeWorkspaceDependentFeatures();
         
-        // Initialize configuration auto-reload system
+        // Initialize configuration auto-reload system first
         autoReloadManager = ConfigurationAutoReloadManager.getInstance(
             configurationManager,
             agentRegistry,
             personalityManager
         );
+        
+        // Initialize AI Session Manager
+        aiSessionManager = AISessionManager.getInstance(context);
+        
+        // Initialize Chat Bridge with session management
+        chatBridge = new ChatBridge(context);
         
         // Register workspace change handlers with non-blocking initialization
         registerWorkspaceChangeHandlers(context, async () => {
@@ -588,73 +598,68 @@ async function initializeWorkspaceDependentFeatures(): Promise<void> {
 }
 
 // This method is called when your extension is deactivated
-export function deactivate(): Thenable<void> | undefined {
-    const disposables: { dispose(): any }[] = [];
-    const cleanupPromises: Promise<void>[] = [];
+export function deactivate() {
+    console.log('Comrade extension is deactivating...');
     
+    // Clean up resources in reverse order of initialization
     try {
-        // Log deactivation
-        console.log('Comrade extension is deactivating...');
-        
-        // VS Code automatically disposes context subscriptions
-
-        // 2. Clean up managers in reverse order of initialization
-        const managers = [
-            { name: 'StatusBarManager', instance: statusBarManager },
-            { name: 'ConfigurationAutoReloadManager', instance: autoReloadManager },
-            { name: 'PersonalityManager', instance: personalityManager },
-            { name: 'AgentRegistry', instance: agentRegistry },
-            { name: 'ConfigurationManager', instance: configurationManager }
-        ];
-
-        for (const { name, instance } of managers) {
-            if (instance) {
-                try {
-                    if (typeof instance.dispose === 'function') {
-                        console.log(`Disposing ${name}...`);
-                        instance.dispose();
-                    }
-                } catch (error) {
-                    console.error(`Error disposing ${name}:`, error);
-                }
-            }
+        // 1. Clean up AI session manager if it exists
+        if (aiSessionManager) {
+            console.log('Disposing AI Session Manager...');
+            aiSessionManager.dispose();
         }
-
-        // 3. Clear any global state if needed
+        
+        // 2. Clean up chat bridge if it exists
+        if (chatBridge) {
+            console.log('Disposing Chat Bridge...');
+            // Add any necessary cleanup for chatBridge if needed
+        }
+        
+        // 3. Clean up auto reload manager if it exists
+        if (autoReloadManager) {
+            console.log('Disposing Auto Reload Manager...');
+            autoReloadManager.dispose();
+        }
+        
+        // 4. Clean up agent registry if it exists
+        if (agentRegistry) {
+            console.log('Disposing Agent Registry...');
+            agentRegistry.dispose();
+        }
+        
+        // 5. Clean up personality manager if it exists
+        if (personalityManager) {
+            console.log('Disposing Personality Manager...');
+            personalityManager.dispose();
+        }
+        
+        // 6. Clean up status bar manager if it exists
+        if (statusBarManager) {
+            console.log('Disposing Status Bar Manager...');
+            statusBarManager.dispose();
+        }
+        
+        // 7. Clean up configuration manager if it exists
+        if (configurationManager) {
+            console.log('Disposing Configuration Manager...');
+            configurationManager.dispose();
+        }
+        
+        // 8. Clear any global state if needed
         if ((globalThis as any).comradeState) {
             try {
+                console.log('Cleaning up global state...');
                 delete (globalThis as any).comradeState;
             } catch (error) {
                 console.error('Error cleaning up global state:', error);
             }
         }
-
-        console.log('Comrade extension has been deactivated');
         
+        console.log('Comrade extension has been deactivated');
+        return undefined;
     } catch (error) {
         console.error('Error during extension deactivation:', error);
-        // Re-throw to ensure VS Code is aware of the error
-        throw error;
-    } finally {
-        // Ensure we clean up even if an error occurred
-        for (const disposable of disposables) {
-            try {
-                disposable.dispose();
-            } catch (error) {
-                console.error('Error during final cleanup:', error);
-            }
-        }
-        
-        // Wait for any pending cleanup promises
-        if (cleanupPromises.length > 0) {
-            return Promise.all(cleanupPromises)
-                .then(() => {})
-                .catch(error => {
-                    console.error('Error during async cleanup:', error);
-                });
-        }
-        
-        // Return undefined when there are no cleanup promises
+        // Don't re-throw to prevent VS Code from showing an error notification
         return undefined;
     }
 }

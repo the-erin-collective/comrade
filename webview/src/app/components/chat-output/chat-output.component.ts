@@ -1,412 +1,555 @@
-import { Component, Input, OnInit, OnDestroy, ElementRef, ViewChild, AfterViewChecked, signal, computed, ChangeDetectionStrategy } from '@angular/core';
+import { 
+  Component, 
+  Input, 
+  OnInit, 
+  OnDestroy, 
+  ChangeDetectorRef, 
+  ViewChild, 
+  ElementRef, 
+  HostListener,
+  AfterViewChecked,
+  Pipe,
+  PipeTransform,
+  ChangeDetectionStrategy,
+  SecurityContext
+} from '@angular/core';
+import { Observable, Subscription } from 'rxjs';
 import { CommonModule } from '@angular/common';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { ChatMessage, MessageType, ToolResult } from '../../models/chat-message.model';
+import { ConversationSession } from '../../models/conversation-session.model';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { marked } from 'marked';
-import hljs from 'highlight.js';
-import { ChatMessage, ConversationSession } from '../../models/session.model';
+import hljs from 'highlight.js/lib/core';
+import javascript from 'highlight.js/lib/languages/javascript';
+import typescript from 'highlight.js/lib/languages/typescript';
+import json from 'highlight.js/lib/languages/json';
+import xml from 'highlight.js/lib/languages/xml';
+import css from 'highlight.js/lib/languages/css';
+import scss from 'highlight.js/lib/languages/scss';
+import bash from 'highlight.js/lib/languages/bash';
+import 'highlight.js/styles/github.css';
+
+// Register languages
+hljs.registerLanguage('javascript', javascript);
+hljs.registerLanguage('typescript', typescript);
+hljs.registerLanguage('json', json);
+hljs.registerLanguage('xml', xml);
+hljs.registerLanguage('css', css);
+hljs.registerLanguage('scss', scss);
+hljs.registerLanguage('bash', bash);
+
+// Configure marked with proper type extensions
+declare module 'marked' {
+  interface MarkedOptions {
+    highlight?: (code: string, lang: string) => string;
+    gfm?: boolean;
+    breaks?: boolean;
+    smartLists?: boolean;
+    smartypants?: boolean;
+    langPrefix?: string;
+    headerIds?: boolean;
+    mangle?: boolean;
+  }
+}
+
+// Configure marked options
+marked.setOptions({
+  highlight: (code: string, lang: string): string => {
+    const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+    return hljs.highlight(code, { language }).value;
+  },
+  langPrefix: 'hljs language-',
+  gfm: true,
+  breaks: true,
+  smartLists: true,
+  smartypants: true
+});
+
+declare const vscode: any; // VS Code API
+
+// Marked options interface
+interface MarkedOptions {
+  renderer: any;
+  highlight?: (code: string, lang: string) => string;
+  gfm?: boolean;
+  breaks?: boolean;
+  smartLists?: boolean;
+  smartypants?: boolean;
+  langPrefix?: string;
+  headerIds?: boolean;
+  mangle?: boolean;
+}
+
+// Create a local interface that extends the original ChatMessage
+export interface ExtendedChatMessage extends ChatMessage {
+  isStreaming?: boolean;
+  isComplete?: boolean;
+  error?: string;
+  updateContent?(content: string): void;
+  complete?(): void;
+  fail?(error: string): void;
+  renderMarkdown?(content: string): SafeHtml;
+}
+
+// JSON pipe for rendering objects
+@Pipe({ name: 'json', standalone: true })
+export class JsonPipe implements PipeTransform {
+  transform(value: any): string {
+    return JSON.stringify(value, null, 2);
+  }
+}
+
+// Simple timestamp pipe
+@Pipe({ name: 'timestamp', standalone: true })
+export class TimestampPipe implements PipeTransform {
+  transform(timestamp: Date | string | number | null | undefined): string {
+    if (!timestamp) {
+      return '';
+    }
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+}
+
+// Safe HTML pipe for rendering markdown content
+@Pipe({ name: 'safeHtml', standalone: true })
+export class SafeHtmlPipe implements PipeTransform {
+  constructor(private sanitizer: DomSanitizer) {}
+
+  transform(html: string): SafeHtml {
+    return this.sanitizer.bypassSecurityTrustHtml(html);
+  }
+}
 
 @Component({
   selector: 'app-chat-output',
-  standalone: true,
-  imports: [CommonModule],
+  templateUrl: './chat-output.component.html',
+  styleUrls: ['./chat-output.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <div class="chat-output" #chatContainer>
-      @if (session && session.messages && session.messages.length > 0) {
-        @for (message of session.messages; track message.id) {
-          <div class="chat-message" [class]="message.sender">
-            <div class="chat-message-header">
-              <span class="sender-name">{{ getSenderName(message) }}</span>
-              <span class="timestamp">{{ formatTime(message.timestamp) }}</span>
-              @if (message.agentId) {
-                <span class="agent-id">{{ message.agentId }}</span>
-              }
-            </div>
-            <div class="chat-message-content" [innerHTML]="renderMarkdown(message.content)"></div>
-          </div>
-        }
-      } @else {
-        <div class="welcome-message">
-          <div class="chat-message-content">
-            <h3>Welcome to your new session!</h3>
-            <p>Start by typing a message below to begin your conversation with the AI assistant.</p>
-          </div>
-        </div>
-      }
-      
-      @if (isLoading) {
-        <div class="loading-message">
-          <div class="chat-message agent">
-            <div class="chat-message-header">
-              <span class="sender-name">Agent</span>
-              <span class="timestamp">{{ getCurrentTime() }}</span>
-            </div>
-            <div class="chat-message-content">
-              <div class="loading-indicator">
-                <div class="loading-dots">
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                </div>
-                <span class="loading-text">{{ loadingMessage }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      }
-    </div>
-  `,
-  styles: [`
-    .chat-output {
-      flex: 1;
-      overflow-y: auto;
-      padding: 16px 16px 120px 16px; /* Bottom padding for fixed input area */
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      scroll-behavior: smooth;
-    }
-
-    .chat-message {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      animation: fadeIn 0.3s ease-in;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .chat-message-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 11px;
-      color: var(--vscode-descriptionForeground);
-    }
-
-    .sender-name {
-      font-weight: 600;
-    }
-
-    .timestamp {
-      opacity: 0.7;
-    }
-
-    .agent-id {
-      background: var(--vscode-badge-background);
-      color: var(--vscode-badge-foreground);
-      padding: 2px 6px;
-      border-radius: 10px;
-      font-size: 10px;
-    }
-
-    .chat-message-content {
-      padding: 12px 16px;
-      border-radius: 8px;
-      line-height: 1.5;
-      word-wrap: break-word;
-      overflow-wrap: break-word;
-    }
-
-    .chat-message.user .chat-message-content {
-      background-color: var(--primary-color);
-      color: var(--vscode-button-foreground);
-      margin-left: 20px;
-      border-bottom-right-radius: 4px;
-    }
-
-    .chat-message.agent .chat-message-content {
-      background-color: var(--input-background);
-      border: 1px solid var(--border-color);
-      margin-right: 20px;
-      border-bottom-left-radius: 4px;
-    }
-
-    .welcome-message {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex: 1;
-      text-align: center;
-      padding: 40px 20px;
-    }
-
-    .welcome-message .chat-message-content {
-      background: transparent;
-      border: 2px dashed var(--vscode-panel-border);
-      margin: 0;
-      max-width: 450px;
-      padding: 32px;
-      border-radius: 12px;
-    }
-
-    .welcome-message h3 {
-      margin: 0 0 16px 0;
-      color: var(--vscode-foreground);
-      font-size: 18px;
-      font-weight: 600;
-    }
-
-    .welcome-message p {
-      margin: 0;
-      color: var(--vscode-descriptionForeground);
-      font-size: 14px;
-      line-height: 1.5;
-    }
-
-    .loading-message {
-      animation: fadeIn 0.3s ease-in;
-    }
-
-    .loading-indicator {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .loading-dots {
-      display: flex;
-      gap: 4px;
-    }
-
-    .loading-dots span {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background-color: var(--primary-color);
-      animation: pulse 1.4s ease-in-out infinite both;
-    }
-
-    .loading-dots span:nth-child(1) { animation-delay: -0.32s; }
-    .loading-dots span:nth-child(2) { animation-delay: -0.16s; }
-    .loading-dots span:nth-child(3) { animation-delay: 0s; }
-
-    @keyframes pulse {
-      0%, 80%, 100% {
-        transform: scale(0);
-        opacity: 0.5;
-      }
-      40% {
-        transform: scale(1);
-        opacity: 1;
-      }
-    }
-
-    .loading-text {
-      color: var(--vscode-descriptionForeground);
-      font-style: italic;
-    }
-
-    /* Markdown content styling */
-    .chat-message-content :global(h1),
-    .chat-message-content :global(h2),
-    .chat-message-content :global(h3),
-    .chat-message-content :global(h4),
-    .chat-message-content :global(h5),
-    .chat-message-content :global(h6) {
-      margin: 16px 0 8px 0;
-      font-weight: 600;
-    }
-
-    .chat-message-content :global(h1) { font-size: 1.5em; }
-    .chat-message-content :global(h2) { font-size: 1.3em; }
-    .chat-message-content :global(h3) { font-size: 1.1em; }
-
-    .chat-message-content :global(p) {
-      margin: 8px 0;
-    }
-
-    .chat-message-content :global(ul),
-    .chat-message-content :global(ol) {
-      margin: 8px 0;
-      padding-left: 20px;
-    }
-
-    .chat-message-content :global(li) {
-      margin: 4px 0;
-    }
-
-    .chat-message-content :global(code) {
-      background: var(--vscode-textCodeBlock-background);
-      color: var(--vscode-textPreformat-foreground);
-      padding: 2px 4px;
-      border-radius: 3px;
-      font-family: var(--vscode-editor-font-family);
-      font-size: 0.9em;
-    }
-
-    .chat-message-content :global(pre) {
-      background: var(--vscode-textCodeBlock-background);
-      color: var(--vscode-textPreformat-foreground);
-      padding: 12px;
-      border-radius: 6px;
-      overflow-x: auto;
-      margin: 12px 0;
-      border: 1px solid var(--border-color);
-    }
-
-    .chat-message-content :global(pre code) {
-      background: transparent;
-      padding: 0;
-      font-family: var(--vscode-editor-font-family);
-      font-size: 0.9em;
-    }
-
-    .chat-message-content :global(blockquote) {
-      border-left: 4px solid var(--primary-color);
-      margin: 12px 0;
-      padding: 8px 16px;
-      background: var(--vscode-textBlockQuote-background);
-      font-style: italic;
-    }
-
-    .chat-message-content :global(table) {
-      border-collapse: collapse;
-      width: 100%;
-      margin: 12px 0;
-    }
-
-    .chat-message-content :global(th),
-    .chat-message-content :global(td) {
-      border: 1px solid var(--border-color);
-      padding: 8px 12px;
-      text-align: left;
-    }
-
-    .chat-message-content :global(th) {
-      background: var(--vscode-keybindingTable-headerBackground);
-      font-weight: 600;
-    }
-
-    .chat-message-content :global(a) {
-      color: var(--vscode-textLink-foreground);
-      text-decoration: none;
-    }
-
-    .chat-message-content :global(a:hover) {
-      color: var(--vscode-textLink-activeForeground);
-      text-decoration: underline;
-    }
-  `]
+  standalone: true,
+  imports: [
+    CommonModule,
+    JsonPipe,
+    TimestampPipe,
+    SafeHtmlPipe
+  ]
 })
 export class ChatOutputComponent implements OnInit, OnDestroy, AfterViewChecked {
-  @Input() session: ConversationSession | null = null;
-  @Input() isLoading: boolean = false;
-  @Input() loadingMessage: string = 'Thinking...';
+  @ViewChild('chatContainer') private chatContainer!: ElementRef<HTMLDivElement>;
   
-  @ViewChild('chatContainer', { static: true }) chatContainer!: ElementRef<HTMLDivElement>;
+  @Input() session: {
+    messages: ExtendedChatMessage[];
+    messages$?: Observable<ExtendedChatMessage>;
+  } | null = null;
   
+  @Input() isLoading = false;
+  @Input() loadingMessage = 'Thinking...';
+  
+  protected messages: ExtendedChatMessage[] = [];
+  private streamingMessages = new Map<string, ExtendedChatMessage>();
+  private destroy$ = new Subject<void>();
   private shouldScrollToBottom = true;
   private lastMessageCount = 0;
-  
-  ngOnInit() {
+  private messageSubscription?: Subscription;
+
+  // Message type constants
+  readonly MessageType = {
+    User: 'user',
+    Assistant: 'assistant',
+    System: 'system',
+    Tool: 'tool'
+  } as const;
+
+  constructor(
+    private sanitizer: DomSanitizer,
+    private cdr: ChangeDetectorRef
+  ) {}
+
+  ngOnInit(): void {
     this.setupMarkdown();
-  }
-  
-  ngOnDestroy() {
-    // Cleanup if needed
-  }
-  
-  ngAfterViewChecked() {
-    this.scrollToBottomIfNeeded();
-  }
-  
-  private setupMarkdown() {
-    // Configure marked with highlight.js - using a simpler approach
-    marked.use({
-      breaks: true,
-      gfm: true
-    });
-  }
-  
-  public renderMarkdown(content: string): string {
-    try {
-      let html = marked.parse(content) as string;
-      
-      // Apply syntax highlighting to code blocks
-      html = html.replace(/<pre><code class="language-(\w+)">([\s\S]*?)<\/code><\/pre>/g, (match, lang, code) => {
-        if (hljs.getLanguage(lang)) {
-          try {
-            const highlighted = hljs.highlight(code, { language: lang }).value;
-            return `<pre><code class="hljs language-${lang}">${highlighted}</code></pre>`;
-          } catch (err) {
-            console.warn('Syntax highlighting failed:', err);
-          }
-        }
-        return match;
-      });
-      
-      // Apply auto-highlighting to code blocks without language
-      html = html.replace(/<pre><code>([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
-        try {
-          const highlighted = hljs.highlightAuto(code).value;
-          return `<pre><code class="hljs">${highlighted}</code></pre>`;
-        } catch (err) {
-          return match;
-        }
-      });
-      
-      return html;
-    } catch (error) {
-      console.error('Markdown parsing failed:', error);
-      return this.escapeHtml(content);
-    }
-  }
-  
-  public getSenderName(message: ChatMessage): string {
-    if (message.sender === 'user') {
-      return 'You';
-    } else {
-      return message.agentId ? `Agent (${message.agentId})` : 'Agent';
-    }
-  }
-  
-  public formatTime(timestamp: string): string {
-    return new Date(timestamp).toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
-  }
-  
-  public getCurrentTime(): string {
-    return new Date().toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
-  }
-  
-  private scrollToBottomIfNeeded() {
-    const currentMessageCount = this.session?.messages?.length || 0;
     
-    if (currentMessageCount > this.lastMessageCount) {
-      this.shouldScrollToBottom = true;
-      this.lastMessageCount = currentMessageCount;
+    // Load messages from session if available
+    if (this.session?.messages) {
+      this.messages = [...this.session.messages];
     }
     
-    if (this.shouldScrollToBottom && this.chatContainer) {
-      const container = this.chatContainer.nativeElement;
-      const isNearBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 100;
-      
-      if (isNearBottom || currentMessageCount === 1) {
-        container.scrollTop = container.scrollHeight;
-      }
-      
+    // Set up message subscription if session has messages observable
+    if (this.session?.messages$) {
+      this.messageSubscription = this.session.messages$.subscribe(
+        (message: ExtendedChatMessage) => {
+          this.handleNewMessage(message);
+        }
+      );
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+    if (this.messageSubscription) {
+      this.messageSubscription.unsubscribe();
+    }
+  }
+
+  ngAfterViewChecked(): void {
+    if (this.shouldScrollToBottom) {
+      this.scrollToBottom();
       this.shouldScrollToBottom = false;
     }
   }
-  
-  private escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+
+  @HostListener('window:resize')
+  onResize(): void {
+    this.scrollToBottom(true);
   }
-  
-  public scrollToBottom() {
-    if (this.chatContainer) {
-      const container = this.chatContainer.nativeElement;
-      container.scrollTop = container.scrollHeight;
+
+  // Render markdown to HTML
+  async renderMarkdown(content: string): Promise<SafeHtml> {
+    try {
+      // Convert markdown to HTML and sanitize it
+      const html = await marked.parse(content);
+      return this.sanitizer.bypassSecurityTrustHtml(html as string);
+    } catch (e) {
+      console.error('Error rendering markdown:', e);
+      return this.sanitizer.bypassSecurityTrustHtml(content);
     }
+  }
+
+  // Create a streaming message with proper typing
+  createStreamingMessage(sender: MessageType, content: string): ExtendedChatMessage {
+    const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newMessage: ExtendedChatMessage = {
+      id: messageId,
+      content,
+      sender: sender as any, // Cast to any to match the expected type
+      timestamp: new Date(),
+      type: sender,
+      isStreaming: true,
+      isComplete: false,
+      updateContent: (newContent: string) => {
+        const messageIndex = this.messages.findIndex(msg => msg.id === messageId);
+        if (messageIndex !== -1) {
+          this.messages[messageIndex].content = newContent;
+          this.cdr.detectChanges();
+        }
+      },
+      complete: () => {
+        const messageIndex = this.messages.findIndex(msg => msg.id === messageId);
+        if (messageIndex !== -1) {
+          this.messages[messageIndex].isStreaming = false;
+          this.messages[messageIndex].isComplete = true;
+          this.cdr.detectChanges();
+        }
+      },
+      fail: (error: string) => {
+        const messageIndex = this.messages.findIndex(msg => msg.id === messageId);
+        if (messageIndex !== -1) {
+          this.messages[messageIndex].isStreaming = false;
+          this.messages[messageIndex].isComplete = true;
+          this.messages[messageIndex].error = error;
+          this.cdr.detectChanges();
+        }
+      },
+      renderMarkdown: (content: string) => this.renderMarkdown(content)
+    };
+    
+    // Add the new message to the messages array
+    this.messages = [...this.messages, newMessage];
+    this.scrollToBottom();
+    
+    return newMessage;
+  }
+
+  // Handle stream updates for a message
+  handleStreamUpdate(update: { id: string; content: string; done: boolean; error?: string }): void {
+    let message = this.messages.find(m => m.id === update.id);
+    
+    // If message doesn't exist and this is the first chunk, create it
+    if (!message && update.id) {
+      message = this.createStreamingMessage('assistant', '');
+      message.id = update.id; // Use the provided ID
+      this.messages.push(message);
+      this.scrollToBottom();
+    }
+    
+    if (message) {
+      // Update content if provided
+      if (update.content !== undefined) {
+        // If this is an append operation (default)
+        if (update.content) {
+          message.content = message.content + update.content;
+        }
+        
+        // Update streaming state
+        message.isStreaming = !update.done && !update.error;
+        message.isComplete = update.done && !update.error;
+        
+        // Handle errors
+        if (update.error) {
+          message.error = update.error;
+          message.isStreaming = false;
+          message.isComplete = true;
+        }
+        
+        // Trigger change detection
+        this.cdr.detectChanges();
+        this.scrollToBottom();
+      }
+      
+      // If this is the final chunk, ensure streaming is marked as complete
+      if (update.done) {
+        message.isStreaming = false;
+        message.isComplete = true;
+      }
+    }
+  }
+
+  // Get display name for sender
+  getSenderName(message: ExtendedChatMessage | null | undefined): string {
+    if (!message) {
+      return 'Unknown';
+    }
+    
+    switch (message.sender) {
+      case 'user':
+        return 'You';
+      case 'assistant':
+        return 'Assistant';
+      case 'system':
+        return 'System';
+      case 'tool':
+        return 'Tool';
+      default:
+        return String(message.sender);
+    }
+  }
+
+  // Get the appropriate icon for a message sender
+  getSenderIcon(message: ExtendedChatMessage | null | undefined): string {
+    const icons: Record<string, string> = {
+      'user': '👤',
+      'assistant': '🤖',
+      'system': '⚙️',
+      'tool': '🛠️',
+      'tool-success': '✅',
+      'tool-error': '❌'
+    };
+
+    if (!message?.sender) {
+      return '🤖';
+    }
+
+    // Handle tool result status
+    if (message.sender === 'tool') {
+      if (message.toolResult) {
+        return message.toolResult.success ? '✅' : '❌';
+      }
+      return '🛠️';
+    }
+
+    return icons[message.sender] || '🤖';
+  }
+
+  // Format timestamp for display
+  formatTime(timestamp: Date | string | number | null | undefined): string {
+    if (!timestamp) {
+      return '';
+    }
+    
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // Get current time for new messages
+  getCurrentTime(): string {
+    return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // Get CSS classes for message based on type and status
+  getMessageClasses(message: ExtendedChatMessage | null | undefined): string {
+    if (!message) {
+      return '';
+    }
+    
+    const classes = ['message'];
+    
+    // Add type class
+    classes.push(`message-${message.type || 'text'}`);
+    
+    // Add status classes
+    if (message.isStreaming) {
+      classes.push('streaming');
+    }
+    if (message.isComplete) {
+      classes.push('complete');
+    }
+    if (message.error) {
+      classes.push('error');
+    }
+    
+    return classes.join(' ');
+  }
+
+  // Get CSS classes for tool status
+  getToolStatusClass(message: ExtendedChatMessage | null | undefined): string {
+    if (!message?.toolResult) {
+      return 'tool-pending';
+    }
+    return message.toolResult.success ? 'tool-success' : 'tool-error';
+  }
+
+  // Get tool status text
+  getToolStatus(message: ExtendedChatMessage | null | undefined): string {
+    if (!message?.toolResult) {
+      return 'Pending';
+    }
+    return message.toolResult.success ? 'Success' : 'Failed';
+  }
+
+  // Track messages by ID for ngFor
+  trackByMessageId(index: number, message: ExtendedChatMessage): string {
+    if (!message) {
+      return `msg-${index}`;
+    }
+    return message.id || `msg-${index}`;
+  }
+
+  // Handle new incoming messages
+  handleNewMessage(message: ExtendedChatMessage): void {
+    // Check if this is an update to an existing message (streaming)
+    const existingMessageIndex = this.messages.findIndex(m => m.id === message.id);
+    
+    if (existingMessageIndex !== -1) {
+      // Update existing message
+      this.messages[existingMessageIndex] = {
+        ...this.messages[existingMessageIndex],
+        ...message,
+        // Preserve streaming state if not provided
+        isStreaming: message.isStreaming ?? this.messages[existingMessageIndex].isStreaming,
+        isComplete: message.isComplete ?? this.messages[existingMessageIndex].isComplete
+      };
+      
+      // Trigger change detection
+      this.messages = [...this.messages];
+    } else {
+      // Add new message
+      this.messages = [...this.messages, message];
+    }
+    
+    this.scrollToBottom();
+  }
+
+  // Handle link clicks to open in default browser
+  onLinkClick(event: Event): void {
+    const target = event.target as HTMLElement;
+    const anchor = target.closest('a');
+    
+    if (!anchor) {
+      return;
+    }
+    
+    event.preventDefault();
+    event.stopPropagation();
+    
+    const url = anchor.getAttribute('href');
+    if (!url) {
+      return;
+    }
+    
+    // Use VS Code API to open the URL in the default browser
+    const vscode = (window as any).acquireVsCodeApi?.();
+    if (vscode) {
+      vscode.postMessage({
+        command: 'openExternal',
+        url: url
+      });
+    } else {
+      window.open(url, '_blank');
+    }
+  }
+
+  // Check if a message is currently streaming
+  isMessageStreaming(message: ExtendedChatMessage | null | undefined): boolean {
+    if (!message) {
+      return false;
+    }
+    return Boolean(message.isStreaming);
+  }
+
+  // Split content into chunks for streaming animation
+  splitContentIntoChunks(content: string, chunkSize: number = 20): string[] {
+    if (!content) return [];
+    
+    // For non-streaming content, return as a single chunk
+    if (content.length <= chunkSize * 3) {
+      return [content];
+    }
+    
+    // For streaming content, split into chunks
+    const chunks: string[] = [];
+    let start = 0;
+    
+    while (start < content.length) {
+      // Find the next sentence boundary or word boundary
+      let end = Math.min(start + chunkSize, content.length);
+      
+      // Try to break at sentence boundaries first
+      const sentenceEnd = content.indexOf('. ', start);
+      if (sentenceEnd > start && sentenceEnd < start + chunkSize * 2) {
+        end = sentenceEnd + 1; // Include the period
+      } 
+      // Then try word boundaries
+      else {
+        const spaceIndex = content.lastIndexOf(' ', end);
+        if (spaceIndex > start && (spaceIndex - start) > chunkSize / 2) {
+          end = spaceIndex + 1; // Include the space
+        }
+      }
+      
+      chunks.push(content.substring(start, end).trim());
+      start = end;
+    }
+    
+    return chunks;
+  }
+
+  // Check if a message is a user message
+  isUserMessage(message: ExtendedChatMessage | null | undefined): boolean {
+    return message?.sender === 'user';
+  }
+
+  // Scroll to the bottom of the chat
+  private scrollToBottom(force = false): void {
+    if ((this.shouldScrollToBottom || force) && this.chatContainer?.nativeElement) {
+      try {
+        const element = this.chatContainer.nativeElement;
+        element.scrollTop = element.scrollHeight;
+      } catch (err) {
+        console.error('Error scrolling to bottom:', err);
+      }
+    }
+  }
+
+  // Check if we should auto-scroll to bottom
+  private checkScrollPosition(): void {
+    if (!this.chatContainer) {
+      return;
+    }
+    
+    const element = this.chatContainer.nativeElement;
+    const isAtBottom = element.scrollHeight - element.scrollTop <= element.clientHeight + 50;
+    this.shouldScrollToBottom = isAtBottom;
+  }
+
+  private setupMarkdown(): void {
+    // Configure marked options for better rendering
+    marked.setOptions({
+      breaks: true,
+      gfm: true,
+      headerIds: false,
+      mangle: false
+    });
   }
 }

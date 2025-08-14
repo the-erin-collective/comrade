@@ -9,6 +9,10 @@ import { Logger } from './logger';
 import { ErrorMapper, EnhancedError, ErrorContext } from './error-handler';
 import { ToolRegistry } from './tool-registry';
 import { ReadFileTool, WriteFileTool, ListDirectoryTool } from './tools/file-operations';
+import { createCodingConversationContext } from './conversation-context';
+import { ModelManager } from './model-manager';
+import { ModelAdapter } from './model-adapters';
+import { ModelConfig as BaseModelConfig } from './model-adapters/base-model-adapter';
 
 // Create logger instance for AI operations
 const logger = new Logger({ prefix: 'AIAgent' });
@@ -136,21 +140,11 @@ export interface ConversationContext {
 /**
  * Configuration for AI model connection
  */
-export interface ModelConfig {
+export interface ModelConfig extends BaseModelConfig {
   /** Type of model provider */
   provider: 'ollama' | 'openai' | 'anthropic' | 'huggingface' | 'custom';
   /** Model name/identifier */
   model: string;
-  /** API endpoint URL */
-  endpoint?: string;
-  /** API key for authentication */
-  apiKey?: string;
-  /** Temperature setting for response randomness */
-  temperature?: number;
-  /** Maximum tokens for response */
-  maxTokens?: number;
-  /** Additional provider-specific options */
-  options?: Record<string, any>;
 }
 
 /**
@@ -158,19 +152,26 @@ export interface ModelConfig {
  */
 export class AIAgentService {
   private logger: Logger;
-  private currentModel?: ModelConfig;
+  private modelManager: ModelManager;
+  private currentModelAdapter: ModelAdapter | null = null;
+  private currentModel: ModelConfig | null = null;
   private conversationContexts: Map<string, ConversationContext> = new Map();
   private toolRegistry: ToolRegistry;
+  private isStreaming: boolean = false;
+  private currentStreamAbortController: AbortController | null = null;
+  private modelInitialized: boolean = false;
 
   constructor() {
     this.logger = logger.child({ prefix: 'Service' });
     this.toolRegistry = new ToolRegistry();
+    this.modelManager = new ModelManager();
     
     // Register built-in tools
     this.registerBuiltInTools();
     
     this.logger.info('AI Agent Service initialized', {
-      registeredTools: this.toolRegistry.size()
+      registeredTools: this.toolRegistry.size(),
+      availableModels: this.modelManager.getModelConfigs().length
     });
   }
 
@@ -201,9 +202,19 @@ export class AIAgentService {
    * @param context - Optional conversation context to use
    * @returns Promise resolving to AI response
    */
+  /**
+   * Send a message to the AI model with streaming support
+   * 
+   * @param sessionId - Unique identifier for the conversation session
+   * @param message - User message to send to the AI
+   * @param onChunk - Callback for streaming chunks
+   * @param context - Optional conversation context to use
+   * @returns Promise resolving to AI response
+   */
   async sendMessage(
     sessionId: string, 
     message: string, 
+    onChunk?: (chunk: { content: string; isComplete: boolean }) => void,
     context?: ConversationContext
   ): Promise<AIResponse> {
     const startTime = Date.now();
@@ -242,8 +253,12 @@ export class AIAgentService {
       // Truncate context if needed
       conversationContext.truncateIfNeeded();
 
-      // TODO: This will be implemented in subsequent tasks
-      // For now, return a placeholder response
+      // If streaming is requested, use the streaming method
+      if (onChunk) {
+        return this.streamMessage(sessionId, message, onChunk, conversationContext);
+      }
+
+      // Fall back to non-streaming if no callback provided
       const processingTime = Date.now() - startTime;
       const response: AIResponse = {
         content: 'AI Agent Service is ready. Model adapter implementation pending.',
@@ -290,6 +305,118 @@ export class AIAgentService {
 
       // Throw a simple Error for better test compatibility
       throw new Error(enhancedError.message);
+    }
+  }
+
+  /**
+   * Stream a message to the AI model and receive chunks of the response
+   * 
+   * @param sessionId - Unique identifier for the conversation session
+   * @param message - User message to send to the AI
+   * @param onChunk - Callback for streaming chunks
+   * @param context - Conversation context to use
+   * @returns Promise resolving to complete AI response
+   */
+  private async streamMessage(
+    sessionId: string,
+    message: string,
+    onChunk: (chunk: { content: string; isComplete: boolean; toolCalls?: ToolCall[] }) => void,
+    context: ConversationContext
+  ): Promise<AIResponse> {
+    const startTime = Date.now();
+    let fullResponse = '';
+    let toolCalls: ToolCall[] = [];
+    
+    try {
+      if (this.isStreaming) {
+        throw new Error('A streaming operation is already in progress');
+      }
+
+      this.isStreaming = true;
+      this.currentStreamAbortController = new AbortController();
+
+      // TODO: Replace with actual model adapter streaming implementation
+      // This is a mock implementation that simulates streaming
+      const words = 'This is a simulated streaming response from the AI model. '.split(' ');
+      
+      for (let i = 0; i < words.length; i++) {
+        if (this.currentStreamAbortController.signal.aborted) {
+          throw new Error('Streaming was aborted');
+        }
+
+        const word = words[i] + (i < words.length - 1 ? ' ' : '');
+        fullResponse += word;
+        
+        // Simulate network delay
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // Send chunk to the callback
+        onChunk({
+          content: word,
+          isComplete: i === words.length - 1,
+          toolCalls: i === words.length - 1 ? toolCalls : undefined
+        });
+      }
+
+      const processingTime = Date.now() - startTime;
+      
+      // Create the final response
+      const response: AIResponse = {
+        content: fullResponse,
+        toolCalls,
+        metadata: {
+          model: this.currentModel?.model || 'unknown',
+          tokensUsed: fullResponse.length / 4, // Rough estimate
+          processingTime,
+          timestamp: new Date()
+        }
+      };
+
+      // Add AI response to context
+      const assistantMessage: AIMessage = {
+        role: 'assistant',
+        content: fullResponse,
+        timestamp: new Date(),
+        toolCalls
+      };
+      context.addMessage(assistantMessage);
+
+      this.logger.info('Streaming message processed', {
+        sessionId,
+        processingTime,
+        responseLength: fullResponse.length
+      });
+
+      return response;
+      
+    } catch (error) {
+      const processingTime = Date.now() - startTime;
+      this.logger.error('Error in streaming message', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+        processingTime
+      });
+      
+      // Ensure we clean up the streaming state
+      this.isStreaming = false;
+      this.currentStreamAbortController = null;
+      
+      throw error;
+    } finally {
+      this.isStreaming = false;
+      this.currentStreamAbortController = null;
+    }
+  }
+
+  /**
+   * Abort the current streaming operation if one is in progress
+   */
+  public abortStreaming(): void {
+    if (this.isStreaming && this.currentStreamAbortController) {
+      this.currentStreamAbortController.abort();
+      this.isStreaming = false;
+      this.currentStreamAbortController = null;
+      this.logger.info('Streaming operation aborted');
     }
   }
 
@@ -410,6 +537,7 @@ export class AIAgentService {
         throw new Error('Model name is required');
       }
 
+      // Store the model configuration
       this.currentModel = { ...modelConfig };
       
       this.logger.info('AI model configured successfully', { 
@@ -473,7 +601,7 @@ export class AIAgentService {
     let context = this.conversationContexts.get(sessionId);
     
     if (!context) {
-      context = new DefaultConversationContext();
+      context = createCodingConversationContext();
       this.conversationContexts.set(sessionId, context);
       this.logger.debug('Created new conversation context', { sessionId });
     }
@@ -512,97 +640,3 @@ export class AIAgentService {
   }
 }
 
-/**
- * Default implementation of ConversationContext
- */
-export class DefaultConversationContext implements ConversationContext {
-  public messages: AIMessage[] = [];
-  public toolResults: AIToolResult[] = [];
-  public systemPrompt: string = 'You are a helpful AI coding assistant.';
-  public maxTokens: number = 4000; // Conservative default
-
-  /**
-   * Truncate context if it exceeds token limits
-   */
-  truncateIfNeeded(): void {
-    const currentTokens = this.getTokenCount();
-    
-    if (currentTokens <= this.maxTokens) {
-      return;
-    }
-
-    logger.debug('Truncating conversation context', { 
-      currentTokens, 
-      maxTokens: this.maxTokens,
-      messageCount: this.messages.length 
-    });
-
-    // Keep system message and recent messages
-    const systemMessages = this.messages.filter(m => m.role === 'system');
-    const otherMessages = this.messages.filter(m => m.role !== 'system');
-    
-    // Keep the most recent messages that fit within the token limit
-    const recentMessages: AIMessage[] = [];
-    let tokenCount = this.estimateTokens(this.systemPrompt);
-    
-    // Add messages from most recent backwards
-    for (let i = otherMessages.length - 1; i >= 0; i--) {
-      const message = otherMessages[i];
-      const messageTokens = this.estimateTokens(message.content);
-      
-      if (tokenCount + messageTokens > this.maxTokens * 0.8) { // Leave some buffer
-        break;
-      }
-      
-      recentMessages.unshift(message);
-      tokenCount += messageTokens;
-    }
-
-    this.messages = [...systemMessages, ...recentMessages];
-    
-    logger.debug('Context truncated', { 
-      newMessageCount: this.messages.length,
-      estimatedTokens: this.getTokenCount() 
-    });
-  }
-
-  /**
-   * Add a message to the conversation
-   */
-  addMessage(message: AIMessage): void {
-    this.messages.push(message);
-  }
-
-  /**
-   * Add a tool result to the context
-   */
-  addToolResult(result: AIToolResult): void {
-    this.toolResults.push(result);
-  }
-
-  /**
-   * Get estimated token count for the current context
-   */
-  getTokenCount(): number {
-    let tokenCount = this.estimateTokens(this.systemPrompt);
-    
-    for (const message of this.messages) {
-      tokenCount += this.estimateTokens(message.content);
-    }
-    
-    for (const result of this.toolResults) {
-      if (result.output) {
-        tokenCount += this.estimateTokens(result.output);
-      }
-    }
-    
-    return tokenCount;
-  }
-
-  /**
-   * Rough token estimation (approximately 4 characters per token)
-   */
-  private estimateTokens(text: string): number {
-    return Math.ceil(text.length / 4);
-  }
-}

@@ -1,0 +1,40 @@
+// Theme variables and colors
+:root {
+  --primary-color: #007acc;
+  --secondary-color: #1e1e1e;
+  --background-color: #252526;
+  --text-color: #cccccc;
+  --border-color: #3c3c3c;
+  --hover-color: #2a2d2e;
+  --success-color: #4caf50;
+  --error-color: #f44336;
+  --warning-color: #ff9800;
+}
+
+// VSCode theme integration
+.vscode-dark {
+  --primary-color: #007acc;
+  --secondary-color: #1e1e1e;
+  --background-color: #252526;
+  --text-color: #cccccc;
+  --border-color: #3c3c3c;
+  --hover-color: #2a2d2e;
+}
+
+.vscode-light {
+  --primary-color: #005a9e;
+  --secondary-color: #ffffff;
+  --background-color: #f3f3f3;
+  --text-color: #333333;
+  --border-color: #d4d4d4;
+  --hover-color: #e8e8e8;
+}
+
+.vscode-high-contrast {
+  --primary-color: #ffffff;
+  --secondary-color: #000000;
+  --background-color: #000000;
+  --text-color: #ffffff;
+  --border-color: #ffffff;
+  --hover-color: #333333;
+}

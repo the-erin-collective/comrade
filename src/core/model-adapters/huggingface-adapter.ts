@@ -5,7 +5,8 @@ import {
   Tool,
   AIResponse,
   ToolCall,
-  ToolParameter
+  ToolParameter,
+  StreamCallback
 } from './base-model-adapter';
 import { AbstractModelAdapter } from './abstract-model-adapter';
 
@@ -31,6 +32,7 @@ interface HuggingFaceRequest {
     do_sample?: boolean;
     stop?: string[];
     return_full_text?: boolean;
+    stream?: boolean;
   };
   options?: {
     wait_for_model?: boolean;
@@ -576,5 +578,90 @@ export class HuggingFaceAdapter extends AbstractModelAdapter {
         required: tool.parameters.filter(p => p.required).map(p => p.name)
       }
     };
+  }
+
+  /**
+   * Internal streaming request implementation
+   */
+  protected async _sendStreamingRequest(
+    prompt: string,
+    callback: StreamCallback,
+    signal: AbortSignal
+  ): Promise<void> {
+    if (!this.config?.apiKey) {
+      throw new Error('HuggingFace API key not configured');
+    }
+
+    const requestBody: HuggingFaceRequest = {
+      inputs: prompt,
+      parameters: {
+        max_new_tokens: this.config.maxTokens || 512,
+        temperature: this.config.temperature || 0.7,
+        return_full_text: false,
+        stream: true
+      }
+    };
+
+    const response = await fetch(`${this.baseUrl}/${this.modelName}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.config.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+      signal
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HuggingFace API error: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No response body available');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.trim() && line.startsWith('data: ')) {
+            try {
+              const jsonStr = line.slice(6); // Remove 'data: ' prefix
+              if (jsonStr === '[DONE]') {
+                return;
+              }
+              
+              const data = JSON.parse(jsonStr);
+              if (data.token && data.token.text) {
+                callback({
+                  content: data.token.text,
+                  isComplete: data.generated_text !== undefined,
+                  metadata: {
+                    model: this.config.name || 'huggingface',
+                    processingTime: 0
+                  }
+                });
+              }
+            } catch (parseError) {
+              console.warn('Failed to parse HuggingFace response line:', line);
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
   }
 }

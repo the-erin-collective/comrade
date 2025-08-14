@@ -4,7 +4,8 @@ import {
   ChatMessage,
   Tool,
   AIResponse,
-  ToolCall
+  ToolCall,
+  StreamCallback
 } from './base-model-adapter';
 import { AbstractModelAdapter } from './abstract-model-adapter';
 
@@ -424,5 +425,92 @@ export class OllamaAdapter extends AbstractModelAdapter {
    */
   getContextSize(): number {
     return this.context.length;
+  }
+
+  /**
+   * Internal streaming request implementation
+   */
+  protected async _sendStreamingRequest(
+    prompt: string,
+    callback: StreamCallback,
+    signal: AbortSignal
+  ): Promise<void> {
+    if (!this.config) {
+      throw new Error('Adapter not initialized. Call initialize() first.');
+    }
+
+    const requestBody: OllamaRequest = {
+      model: this.modelName,
+      prompt,
+      stream: true,
+      context: this.context.length > 0 ? this.context : undefined,
+      options: {
+        temperature: this.config.temperature,
+        num_predict: this.config.maxTokens,
+      }
+    };
+
+    const response = await fetch(`${this.baseUrl}/api/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+      signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No response body available');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.trim()) {
+            try {
+              const data = JSON.parse(line) as OllamaResponse;
+              if (data.response) {
+                callback({
+                  content: data.response,
+                  isComplete: data.done || false,
+                  metadata: {
+                    model: this.modelName,
+                    processingTime: 0
+                  }
+                });
+              }
+              
+              if (data.done) {
+                // Update context for next request
+                if (data.context) {
+                  this.context = data.context;
+                }
+                return;
+              }
+            } catch (parseError) {
+              console.warn('Failed to parse Ollama response line:', line);
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
   }
 }

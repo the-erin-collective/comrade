@@ -25,8 +25,8 @@ export interface ConfigurationSession extends SessionTab {
 export interface ChatMessage {
   id: string;
   content: string;
-  timestamp: string;
-  sender: 'user' | 'agent';
+  timestamp: number | Date;
+  sender: 'user' | 'assistant' | 'system' | 'tool';
   agentId?: string;
   metadata?: Record<string, any>;
 }

@@ -2,12 +2,16 @@
  * Base interfaces and types for AI model adapters
  */
 
+export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
+
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system' | 'tool';
+  role: MessageRole;
   content: string;
   timestamp: Date;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
+  isStreaming?: boolean;
+  isComplete?: boolean;
 }
 
 export interface ToolCall {
@@ -74,6 +78,16 @@ export interface ModelCapabilities {
 }
 
 /**
+ * Callback for streaming responses
+ */
+export type StreamCallback = (chunk: {
+  content: string;
+  isComplete: boolean;
+  toolCalls?: ToolCall[];
+  metadata?: Partial<ResponseMetadata>;
+}) => void;
+
+/**
  * Base interface for all model adapters
  */
 export interface ModelAdapter {
@@ -91,11 +105,24 @@ export interface ModelAdapter {
    * Send a request to the model and get the raw response
    */
   sendRequest(prompt: string): Promise<string>;
+  
+  /**
+   * Send a streaming request to the model
+   * @param prompt The prompt to send
+   * @param callback Callback for streamed chunks
+   * @returns Promise that resolves when streaming is complete
+   */
+  sendStreamingRequest(prompt: string, callback: StreamCallback): Promise<void>;
 
   /**
    * Check if the model supports tool calling
    */
   supportsToolCalling(): boolean;
+  
+  /**
+   * Check if the model supports streaming responses
+   */
+  supportsStreaming(): boolean;
 
   /**
    * Get the model's capabilities

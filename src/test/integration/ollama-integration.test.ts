@@ -5,6 +5,7 @@
  * Run manually with: npm run test:integration
  */
 
+import assert from 'assert';
 import { OllamaAdapter } from '../../core/model-adapters/ollama-adapter';
 import { ModelConfig, ChatMessage } from '../../core/model-adapters';
 
@@ -66,9 +67,9 @@ describe('OllamaAdapter Integration Tests', () => {
     console.log('Ollama response:', response);
     
     // Basic assertions
-    expect(response).toBeDefined();
-    expect(typeof response).toBe('string');
-    expect(response.length).toBeGreaterThan(0);
+    assert(response !== undefined, 'Response should be defined');
+    assert(typeof response === 'string', 'Response should be a string');
+    assert(response.length > 0, 'Response should not be empty');
   });
 
   it('should maintain conversation context', async function() {
@@ -98,7 +99,7 @@ describe('OllamaAdapter Integration Tests', () => {
     console.log('Context test - Response 2:', response2);
     
     // The model should remember the name Alice
-    expect(response2.toLowerCase()).toContain('alice');
+    assert(response2.toLowerCase().includes('alice'), 'Response should contain "alice"');
   });
 
   it('should handle model capability detection', async function() {
@@ -108,10 +109,10 @@ describe('OllamaAdapter Integration Tests', () => {
     
     console.log('Detected capabilities:', capabilities);
     
-    expect(capabilities).toBeDefined();
-    expect(capabilities.supportsStreaming).toBe(true);
-    expect(capabilities.supportsSystemPrompts).toBe(true);
-    expect(capabilities.maxContextLength).toBeGreaterThan(0);
+    assert(capabilities !== undefined, 'Capabilities should be defined');
+    assert(capabilities.supportsStreaming === true, 'Should support streaming');
+    assert(capabilities.supportsSystemPrompts === true, 'Should support system prompts');
+    assert(capabilities.maxContextLength > 0, 'Should have positive max context length');
   });
 
   it('should get available models', async function() {
@@ -121,9 +122,9 @@ describe('OllamaAdapter Integration Tests', () => {
     
     console.log('Available models:', models);
     
-    expect(Array.isArray(models)).toBe(true);
-    expect(models.length).toBeGreaterThan(0);
-    expect(models).toContain(testConfig.name);
+    assert(Array.isArray(models), 'Models should be an array');
+    assert(models.length > 0, 'Should have at least one model');
+    assert(models.includes(testConfig.name), 'Should include test model');
   });
 });
 

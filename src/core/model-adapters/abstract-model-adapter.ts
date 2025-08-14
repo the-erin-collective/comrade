@@ -6,7 +6,8 @@ import {
   Tool,
   AIResponse,
   ToolCall,
-  ResponseMetadata
+  ResponseMetadata,
+  StreamCallback
 } from './base-model-adapter';
 
 /**
@@ -15,6 +16,8 @@ import {
 export abstract class AbstractModelAdapter implements ModelAdapter {
   protected config: ModelConfig | null = null;
   protected capabilities: ModelCapabilities;
+  protected isStreaming: boolean = false;
+  protected abortController: AbortController | null = null;
 
   constructor(capabilities: ModelCapabilities) {
     this.capabilities = capabilities;
@@ -44,6 +47,60 @@ export abstract class AbstractModelAdapter implements ModelAdapter {
   supportsToolCalling(): boolean {
     return this.capabilities.supportsToolCalling;
   }
+
+  /**
+   * Check if the model supports streaming responses
+   */
+  supportsStreaming(): boolean {
+    return this.capabilities.supportsStreaming;
+  }
+
+  /**
+   * Send a streaming request to the model
+   * @param prompt The prompt to send
+   * @param callback Callback for streamed chunks
+   * @returns Promise that resolves when streaming is complete
+   */
+  async sendStreamingRequest(prompt: string, callback: StreamCallback): Promise<void> {
+    if (!this.supportsStreaming()) {
+      throw new Error('Streaming is not supported by this model');
+    }
+
+    if (this.isStreaming) {
+      throw new Error('A streaming operation is already in progress');
+    }
+
+    this.isStreaming = true;
+    this.abortController = new AbortController();
+
+    try {
+      await this._sendStreamingRequest(prompt, callback, this.abortController.signal);
+    } finally {
+      this.isStreaming = false;
+      this.abortController = null;
+    }
+  }
+
+  /**
+   * Abort any ongoing streaming request
+   */
+  abortStreaming(): void {
+    if (this.isStreaming && this.abortController) {
+      this.abortController.abort();
+      this.isStreaming = false;
+      this.abortController = null;
+    }
+  }
+
+  /**
+   * Internal method to be implemented by subclasses for actual streaming logic
+   * @protected
+   */
+  protected abstract _sendStreamingRequest(
+    prompt: string,
+    callback: StreamCallback,
+    signal: AbortSignal
+  ): Promise<void>;
 
   /**
    * Validate basic configuration requirements

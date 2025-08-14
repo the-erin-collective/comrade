@@ -14,6 +14,16 @@ export {
   ModelConfig 
 } from './ai-agent';
 
+// Re-export types from conversation-context.ts for convenience
+export {
+  ConversationContextManager,
+  ConversationContextConfig,
+  SerializableConversationContext,
+  TruncationStrategy,
+  createConversationContext,
+  createCodingConversationContext
+} from './conversation-context';
+
 // Import for alias
 import { AIToolResult } from './ai-agent';
 

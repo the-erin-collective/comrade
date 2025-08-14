@@ -6,10 +6,10 @@ import assert from 'assert';
 import { 
   AIAgentService, 
   ModelConfig, 
-  DefaultConversationContext,
   AIMessage,
   ToolCall 
 } from '../../core/ai-agent';
+import { ConversationContextManager } from '../../core/conversation-context';
 import { Tool } from '../../core/types';
 
 describe('AIAgentService', () => {
@@ -22,6 +22,7 @@ describe('AIAgentService', () => {
   describe('Model Configuration', () => {
     it('should set and get model configuration', () => {
       const modelConfig: ModelConfig = {
+        name: 'Llama 2',
         provider: 'ollama',
         model: 'llama2',
         endpoint: 'http://localhost:11434',
@@ -48,6 +49,7 @@ describe('AIAgentService', () => {
   describe('Message Processing', () => {
     beforeEach(() => {
       const modelConfig: ModelConfig = {
+        name: 'Llama 2',
         provider: 'ollama',
         model: 'llama2'
       };
@@ -112,6 +114,7 @@ describe('AIAgentService', () => {
   describe('Conversation Context Management', () => {
     it('should create and manage conversation contexts', async () => {
       const modelConfig: ModelConfig = {
+        name: 'Llama 2',
         provider: 'ollama',
         model: 'llama2'
       };
@@ -127,6 +130,7 @@ describe('AIAgentService', () => {
 
     it('should clear conversation context', async () => {
       const modelConfig: ModelConfig = {
+        name: 'Llama 2',
         provider: 'ollama',
         model: 'llama2'
       };
@@ -143,6 +147,7 @@ describe('AIAgentService', () => {
 
     it('should clear all contexts', async () => {
       const modelConfig: ModelConfig = {
+        name: 'Llama 2',
         provider: 'ollama',
         model: 'llama2'
       };
@@ -175,11 +180,11 @@ describe('AIAgentService', () => {
   });
 });
 
-describe('DefaultConversationContext', () => {
-  let context: DefaultConversationContext;
+describe('ConversationContextManager', () => {
+  let context: ConversationContextManager;
 
   beforeEach(() => {
-    context = new DefaultConversationContext();
+    context = new ConversationContextManager();
   });
 
   it('should initialize with default values', () => {

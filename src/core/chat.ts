@@ -9,6 +9,7 @@ import { WebNetworkUtils, WebCompatibility } from './webcompat';
 import { ToolManager, ToolExecutionError } from './tool-manager';
 import { ExecutionContext, SecurityLevel } from './tools';
 import { EnhancedError, ErrorContext } from './error-handler';
+import { AISessionManager, IAIConversationSession, AIConversationState } from './ai-session';
 
 // Type definitions for API responses
 interface OpenAIResponse {
@@ -150,6 +151,7 @@ export class ChatBridgeError extends Error {
 export class ChatBridge implements IChatBridge {
   private readonly httpTimeout: number = 30000; // 30 seconds default
   private readonly toolManager: ToolManager;
+  private sessionManager?: AISessionManager;
   private readonly MEMORY_CHECK_INTERVAL = 5000; // 5 seconds
   private readonly MEMORY_THRESHOLD = 90; // 90% of system memory
   private readonly CHUNK_PROCESSING_TIMEOUT = 30000; // 30 seconds
@@ -258,8 +260,13 @@ export class ChatBridge implements IChatBridge {
   }
   // Example: private someService = inject(SomeService);
 
-  constructor() {
+  constructor(context?: vscode.ExtensionContext) {
     this.toolManager = ToolManager.getInstance();
+    
+    // Initialize session manager if context is provided
+    if (context) {
+      this.sessionManager = AISessionManager.getInstance(context);
+    }
 
     // Register built-in tools if not already registered
     try {
@@ -278,6 +285,43 @@ export class ChatBridge implements IChatBridge {
   }
 
   async sendMessage(agent: IAgent, messages: ChatMessage[], options?: ChatOptions): Promise<ChatResponse> {
+    // Get or create session
+    const sessionId = options?.metadata?.sessionId as string || 'default';
+    let session = this.sessionManager?.getSession(sessionId);
+    
+    // Create new session if it doesn't exist
+    if (!session && this.sessionManager) {
+      session = this.sessionManager.createSession({
+        maxHistoryLength: agent.config.maxHistoryLength,
+        persistHistory: agent.config.persistHistory,
+        contextWindowSize: agent.config.contextWindowSize,
+        includeFileContents: agent.config.includeFileContents,
+        includeWorkspaceContext: agent.config.includeWorkspaceContext
+      });
+      
+      // Add system message to new session
+      if (messages.some(m => m.role === 'system')) {
+        const systemMessage = messages.find(m => m.role === 'system');
+        if (systemMessage) {
+          session.addMessage(systemMessage);
+        }
+      } else if (agent.config.systemPrompt) {
+        session.addMessage({
+          role: 'system',
+          content: agent.config.systemPrompt,
+          timestamp: new Date()
+        });
+      }
+    }
+    
+    // Add user messages to session
+    const userMessages = messages.filter(m => m.role === 'user');
+    for (const message of userMessages) {
+      session?.addMessage({
+        ...message,
+        timestamp: new Date()
+      });
+    }
     // Validate request before processing
     this.validateRequest(messages, options);
 
@@ -473,7 +517,26 @@ export class ChatBridge implements IChatBridge {
 
       // Handle tool calls if present
       if (chatResponse.finishReason === 'tool_calls' && chatResponse.toolCalls) {
-        return await this.handleToolCalls(agent, messages, chatResponse, options);
+        response = await this.handleToolCalls(agent, messages, chatResponse, options);
+        
+        // Add assistant's tool call messages to session
+        const sessionId = options?.metadata?.sessionId as string || 'default';
+        const session = this.sessionManager?.getSession(sessionId);
+        session?.addMessage({
+          role: 'assistant',
+          content: response.content,
+          tool_calls: response.toolCalls,
+          timestamp: new Date()
+        });
+      } else if (response.content) {
+        // Add regular assistant message to session
+        const sessionId = options?.metadata?.sessionId as string || 'default';
+        const session = this.sessionManager?.getSession(sessionId);
+        session?.addMessage({
+          role: 'assistant',
+          content: response.content,
+          timestamp: new Date()
+        });
       }
 
       return chatResponse;
@@ -1688,40 +1751,55 @@ export class ChatBridge implements IChatBridge {
         };
 
         let errorToThrow: ChatBridgeError;
-        const errorStr = errorMessage.toLowerCase();
 
-        if (errorStr.includes('aborted') || errorStr.includes('cancel')) {
-          errorToThrow = new ChatBridgeError(
-            'Request was aborted',
-            'ABORTED',
-            format as LLMProvider,
-            undefined,
-            undefined,
-            'The request was cancelled by the user or due to a timeout',
-            errorContext
-          );
-        } else if (errorStr.includes('network')) {
-          errorToThrow = new ChatBridgeError(
-            'Network error occurred',
-            'NETWORK_ERROR',
-            format as LLMProvider,
-            undefined,
-            undefined,
-            'Please check your internet connection and try again',
-            errorContext,
-            true // retryable
-          );
+        if (error instanceof Error) {
+          const errorStr = errorMessage.toLowerCase();
+
+          if (errorStr.includes('aborted') || errorStr.includes('cancel')) {
+            errorToThrow = new ChatBridgeError(
+              'Request was aborted',
+              'ABORTED',
+              format as LLMProvider,
+              undefined,
+              undefined,
+              'The request was cancelled by the user or due to a timeout',
+              errorContext
+            );
+          } else if (errorStr.includes('network')) {
+            errorToThrow = new ChatBridgeError(
+              'Network error occurred',
+              'NETWORK_ERROR',
+              format as LLMProvider,
+              undefined,
+              undefined,
+              'Please check your internet connection and try again',
+              errorContext,
+              true // retryable
+            );
+          } else {
+            // Generic error for other status codes
+            errorToThrow = new ChatBridgeError(
+              `Streaming request failed: ${errorMessage}`,
+              'STREAM_ERROR',
+              format as LLMProvider,
+              undefined,
+              undefined,
+              'An error occurred while processing the stream',
+              errorContext,
+              false,
+              error instanceof Error ? error : undefined
+            );
+          }
         } else {
+          // Non-Error object thrown
           errorToThrow = new ChatBridgeError(
-            `Streaming request failed: ${errorMessage}`,
+            `Streaming request failed: ${String(error)}`,
             'STREAM_ERROR',
             format as LLMProvider,
             undefined,
             undefined,
-            'An error occurred while processing the stream',
-            errorContext,
-            false,
-            error instanceof Error ? error : undefined
+            'An unknown error occurred',
+            errorContext
           );
         }
 
@@ -2360,12 +2438,6 @@ export class ChatBridge implements IChatBridge {
     }
   }
 
-
-
-
-
-
-
   /**
    * Validate request format before sending
    * @param messages Array of chat messages to validate
@@ -2446,8 +2518,6 @@ export class ChatBridge implements IChatBridge {
       }
     }
   }
-
-
 
   /**
    * Add available tools to chat options based on agent configuration
@@ -2572,6 +2642,8 @@ export class ChatBridge implements IChatBridge {
     response: ChatResponse,
     options?: ChatOptions
   ): Promise<ChatResponse> {
+    const sessionId = options?.metadata?.sessionId as string || 'default';
+    const session = this.sessionManager?.getSession(sessionId);
     if (!response.toolCalls || response.toolCalls.length === 0) {
       return response;
     }
@@ -2580,16 +2652,22 @@ export class ChatBridge implements IChatBridge {
       // Create execution context
       const context: ExecutionContext = {
         agentId: agent.id,
-        sessionId: 'chat-session', // TODO: Get actual session ID
+        sessionId: sessionId,
         workspaceUri: vscode.workspace.workspaceFolders?.[0]?.uri,
         user: {
-          id: 'current-user', // TODO: Get actual user ID
+          id: vscode.env.machineId, // Use machine ID as user ID
           permissions: agent.config.tools?.allowedTools || []
         },
         security: {
           level: agent.config.tools?.requireApproval ? SecurityLevel.NORMAL : SecurityLevel.ELEVATED,
           allowDangerous: agent.config.tools?.requireApproval !== true
-        }
+        },
+        // Add session reference if available
+        session: session ? {
+          id: session.id,
+          state: session.state,
+          metadata: session.metadata
+        } : undefined
       };
 
       // Execute tool calls
