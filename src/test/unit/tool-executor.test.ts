@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { expect } from 'chai';
+import * as sinon from 'sinon';
 import { ToolExecutor } from '../../core/tool-executor';
 import { ToolRegistry } from '../../core/tool-registry';
 import { Tool, ToolResult, ToolCall } from '../../core/types';
@@ -31,7 +32,7 @@ describe('ToolExecutor', () => {
   });
 
   afterEach(() => {
-    vi.clearAllMocks();
+    sinon.restore();
   });
 
   it('should execute a single tool successfully', async () => {
@@ -43,7 +44,7 @@ describe('ToolExecutor', () => {
       async () => ({
         success: true,
         output: 'Test output',
-        metadata: { executionTime: 10, toolName: 'test_tool', parameters: {} }
+        metadata: { executionTime: 10, toolName: 'test_tool', parameters: {}, timestamp: new Date() }
       })
     );
     toolRegistry.registerTool(mockTool);
@@ -58,10 +59,10 @@ describe('ToolExecutor', () => {
     const { results, errors } = await toolExecutor.executeToolCalls([toolCall]);
 
     // Verify
-    expect(results).toHaveLength(1);
-    expect(errors).toHaveLength(0);
-    expect(results[0].success).toBe(true);
-    expect(results[0].output).toBe('Test output');
+    expect(results).to.have.lengthOf(1);
+    expect(errors).to.have.lengthOf(0);
+    expect(results[0].success).to.equal(true);
+    expect(results[0].output).to.equal('Test output');
   });
 
   it('should handle tool execution errors', async () => {
@@ -73,7 +74,7 @@ describe('ToolExecutor', () => {
       async () => ({
         success: false,
         error: 'Tool execution failed',
-        metadata: { executionTime: 10, toolName: 'failing_tool', parameters: {} }
+        metadata: { executionTime: 10, toolName: 'failing_tool', parameters: {}, timestamp: new Date() }
       })
     );
     toolRegistry.registerTool(mockTool);
@@ -88,9 +89,9 @@ describe('ToolExecutor', () => {
     const { results, errors } = await toolExecutor.executeToolCalls([toolCall]);
 
     // Verify
-    expect(results).toHaveLength(0);
-    expect(errors).toHaveLength(1);
-    expect(errors[0].message).toContain('Tool execution failed');
+    expect(results).to.have.lengthOf(0);
+    expect(errors).to.have.lengthOf(1);
+    expect(errors[0].message).to.include('Tool execution failed');
   });
 
   it('should execute multiple tools with concurrency control', async () => {
@@ -107,7 +108,7 @@ describe('ToolExecutor', () => {
         return {
           success: true,
           output: `Output from ${id}`,
-          metadata: { executionTime: 10, toolName: `tool_${id}`, parameters: {} }
+          metadata: { executionTime: 10, toolName: `tool_${id}`, parameters: {}, timestamp: new Date() }
         };
       }
     );
@@ -129,7 +130,7 @@ describe('ToolExecutor', () => {
                           executionOrder.indexOf('start_2') >= 0 &&
                           executionOrder.indexOf('end_1') === -1 &&
                           executionOrder.indexOf('end_2') === -1;
-    expect(firstTwoStarted).toBe(true);
+    expect(firstTwoStarted).to.equal(true);
   });
 
   it('should respect max concurrency limit', async () => {
@@ -145,7 +146,7 @@ describe('ToolExecutor', () => {
       async () => {
         activeTasks.count++;
         const currentActive = activeTasks.count;
-        expect(currentActive).toBeLessThanOrEqual(maxConcurrent);
+        expect(currentActive).to.be.lessThanOrEqual(maxConcurrent);
         
         await new Promise(resolve => setTimeout(resolve, 50));
         activeTasks.count--;
@@ -153,7 +154,7 @@ describe('ToolExecutor', () => {
         return {
           success: true,
           output: 'Done',
-          metadata: { executionTime: 10, toolName: 'concurrent_tool', parameters: {} }
+          metadata: { executionTime: 10, toolName: 'concurrent_tool', parameters: {}, timestamp: new Date() }
         };
       }
     );
@@ -169,7 +170,7 @@ describe('ToolExecutor', () => {
     await toolExecutor.executeToolCalls(toolCalls);
 
     // If we get here without the test failing, concurrency was respected
-    expect(true).toBe(true);
+    expect(true).to.equal(true);
   });
 
   it('should handle tool timeouts', async () => {
@@ -183,7 +184,7 @@ describe('ToolExecutor', () => {
         return {
           success: true,
           output: 'This should time out',
-          metadata: { executionTime: 2000, toolName: 'slow_tool', parameters: {} }
+          metadata: { executionTime: 2000, toolName: 'slow_tool', parameters: {}, timestamp: new Date() }
         };
       }
     );
@@ -199,9 +200,9 @@ describe('ToolExecutor', () => {
     const { results, errors } = await toolExecutor.executeToolCalls([toolCall]);
 
     // Verify
-    expect(results).toHaveLength(0);
-    expect(errors).toHaveLength(1);
-    expect(errors[0].message).toContain('timed out');
+    expect(results).to.have.lengthOf(0);
+    expect(errors).to.have.lengthOf(1);
+    expect(errors[0].message).to.include('timed out');
   });
 
   it('should retry failed executions', async () => {
@@ -219,7 +220,7 @@ describe('ToolExecutor', () => {
         return {
           success: true,
           output: 'Succeeded after retry',
-          metadata: { executionTime: 10, toolName: 'flaky_tool', parameters: {} }
+          metadata: { executionTime: 10, toolName: 'flaky_tool', parameters: {}, timestamp: new Date() }
         };
       }
     );
@@ -235,9 +236,9 @@ describe('ToolExecutor', () => {
     const { results } = await toolExecutor.executeToolCalls([toolCall]);
 
     // Verify
-    expect(callCount).toBe(2); // Initial + 1 retry
-    expect(results).toHaveLength(1);
-    expect(results[0].output).toBe('Succeeded after retry');
+    expect(callCount).to.equal(2); // Initial + 1 retry
+    expect(results).to.have.lengthOf(1);
+    expect(results[0].output).to.equal('Succeeded after retry');
   });
 
   it('should cancel all executions', async () => {
@@ -251,7 +252,7 @@ describe('ToolExecutor', () => {
         return {
           success: true,
           output: 'This should be cancelled',
-          metadata: { executionTime: 1000, toolName: 'cancellable_tool', parameters: {} }
+          metadata: { executionTime: 1000, toolName: 'cancellable_tool', parameters: {}, timestamp: new Date() }
         };
       }
     );
@@ -270,8 +271,8 @@ describe('ToolExecutor', () => {
     const { results, errors } = await executionPromise;
 
     // Verify
-    expect(results).toHaveLength(0);
-    expect(errors).toHaveLength(1);
-    expect(errors[0].message).toContain('cancelled');
+    expect(results).to.have.lengthOf(0);
+    expect(errors).to.have.lengthOf(1);
+    expect(errors[0].message).to.include('cancelled');
   });
 });

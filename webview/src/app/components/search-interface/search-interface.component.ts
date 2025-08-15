@@ -214,11 +214,11 @@ export interface SearchResults {
                 <div class="range-inputs">
                   <mat-form-field appearance="outline">
                     <mat-label>Min</mat-label>
-                    <input matInput type="number" [(ngModel)]="searchQuery.messageLength.min">
+                    <input matInput type="number" [(ngModel)]="searchQuery.messageLength!.min">
                   </mat-form-field>
                   <mat-form-field appearance="outline">
                     <mat-label>Max</mat-label>
-                    <input matInput type="number" [(ngModel)]="searchQuery.messageLength.max">
+                    <input matInput type="number" [(ngModel)]="searchQuery.messageLength!.max">
                   </mat-form-field>
                 </div>
               </div>
@@ -693,8 +693,8 @@ export class SearchInterfaceComponent implements OnInit, OnDestroy {
     roles: [],
     tools: [],
     models: [],
-    messageLength: {},
-    tokenCount: {},
+    messageLength: { min: undefined, max: undefined },
+    tokenCount: { min: undefined, max: undefined },
     caseSensitive: false,
     useRegex: false,
     searchToolParameters: true,

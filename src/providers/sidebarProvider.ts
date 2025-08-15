@@ -62,13 +62,8 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
     this._context = context;
     this._aiAgentService = new AIAgentService();
     
-    // Initialize AI agent with default Ollama configuration
-    this._aiAgentService.setModel({
-      name: 'Llama 2',
-      provider: 'ollama',
-      model: 'llama2',
-      endpoint: 'http://localhost:11434'
-    });
+    // AI agent will be initialized with configured agents from settings
+    // No need for hardcoded default configuration
   }
 
   public resolveWebviewView(

@@ -729,8 +729,9 @@ export class AgentRegistry {
       errors.push('Model not specified');
     }
 
-    if (agent.provider === 'openai' && !agent.config.apiKey) {
-      errors.push('API key required for OpenAI provider');
+    // Only require API key for non-Ollama providers
+    if (agent.provider !== 'ollama' && !agent.config.apiKey) {
+      errors.push('API key required for this provider');
     }
 
     // Check connectivity

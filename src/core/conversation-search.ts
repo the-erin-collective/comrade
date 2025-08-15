@@ -663,7 +663,7 @@ export class ConversationSearchService {
             type: 'tool_name',
             text: toolCall.name,
             position: { start: 0, end: toolCall.name.length },
-            highlighted: this.highlightText(toolCall.name, query.text, query.caseSensitive)
+            highlighted: this.highlightText(toolCall.name, query.text, query.caseSensitive || false)
           });
         }
 
@@ -675,7 +675,7 @@ export class ConversationSearchService {
             type: 'tool_parameter',
             text: paramString,
             position: { start: 0, end: paramString.length },
-            highlighted: this.highlightText(paramString, query.text, query.caseSensitive)
+            highlighted: this.highlightText(paramString, query.text, query.caseSensitive || false)
           });
         }
       }
@@ -691,7 +691,7 @@ export class ConversationSearchService {
             type: 'tool_result',
             text: resultText,
             position: { start: 0, end: resultText.length },
-            highlighted: this.highlightText(resultText, query.text, query.caseSensitive)
+            highlighted: this.highlightText(resultText, query.text, query.caseSensitive || false)
           });
         }
       }

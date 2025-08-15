@@ -102,7 +102,7 @@ describe('AI Agent Service Error Handling', () => {
         sendRequest: sandbox.stub()
       };
       
-      mockModelManager.createAdapter.resolves(mockAdapter);
+      mockCreateAdapter.resolves(mockAdapter);
 
       try {
         await aiAgent.sendMessage('test-session', 'Hello');
@@ -133,7 +133,7 @@ describe('AI Agent Service Error Handling', () => {
           .onSecondCall().resolves('test response')
       };
       
-      mockModelManager.createAdapter.resolves(mockAdapter);
+      mockCreateAdapter.resolves(mockAdapter);
       mockToolRegistry.getAllTools.returns([]);
 
       const response = await aiAgent.sendMessage('test-session', 'Hello');
@@ -161,7 +161,7 @@ describe('AI Agent Service Error Handling', () => {
         sendRequest: sandbox.stub().resolves('test response')
       };
       
-      mockModelManager.createAdapter.resolves(mockAdapter);
+      mockCreateAdapter.resolves(mockAdapter);
       mockToolRegistry.getAllTools.returns([]);
 
       // Create a context with many messages to trigger overflow
@@ -364,7 +364,7 @@ describe('AI Agent Service Error Handling', () => {
         sendRequest: sandbox.stub().resolves('test response')
       };
       
-      mockModelManager.createAdapter.resolves(mockAdapter);
+      mockCreateAdapter.resolves(mockAdapter);
       mockToolRegistry.getAllTools.returns([
         { name: 'test_tool', description: 'Test tool', parameters: [], execute: sandbox.stub() }
       ]);
@@ -393,7 +393,7 @@ describe('AI Agent Service Error Handling', () => {
         sendRequest: sandbox.stub().resolves('test response')
       };
       
-      mockModelManager.createAdapter.resolves(mockAdapter);
+      mockCreateAdapter.resolves(mockAdapter);
       mockToolRegistry.getAllTools.returns([]);
 
       const response = await aiAgent.sendMessage('test-session', 'Hello');
@@ -410,7 +410,7 @@ describe('AI Agent Service Error Handling', () => {
         model: 'broken-model'
       });
 
-      mockModelManager.createAdapter.rejects(new Error('Adapter initialization failed'));
+      mockCreateAdapter.rejects(new Error('Adapter initialization failed'));
 
       try {
         await aiAgent.sendMessage('test-session', 'Hello');
@@ -445,7 +445,7 @@ describe('AI Agent Service Error Handling', () => {
           .onSecondCall().resolves('test response')
       };
       
-      mockModelManager.createAdapter.resolves(mockAdapter);
+      mockCreateAdapter.resolves(mockAdapter);
       mockToolRegistry.getAllTools.returns([]);
 
       const startTime = Date.now();
@@ -471,7 +471,7 @@ describe('AI Agent Service Error Handling', () => {
         testConnection: sandbox.stub().rejects(authError)
       };
       
-      mockModelManager.createAdapter.resolves(mockAdapter);
+      mockCreateAdapter.resolves(mockAdapter);
 
       try {
         await aiAgent.sendMessage('test-session', 'Hello');
@@ -496,7 +496,7 @@ describe('AI Agent Service Error Handling', () => {
         sendRequest: sandbox.stub().rejects(new Error('Server error'))
       };
       
-      mockModelManager.createAdapter.resolves(mockAdapter);
+      mockCreateAdapter.resolves(mockAdapter);
       mockToolRegistry.getAllTools.returns([]);
 
       try {

@@ -289,7 +289,7 @@ export class AISessionManager implements vscode.Disposable {
       session.messages = data.messages || [];
       session.metadata = data.metadata || {};
       session.state = data.state || AIConversationState.Active;
-      session.createdAt = new Date(data.createdAt);
+      (session as any).createdAt = new Date(data.createdAt);
       session.lastActivity = new Date(data.lastActivity || data.createdAt);
     }
     

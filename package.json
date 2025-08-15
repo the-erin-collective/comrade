@@ -383,6 +383,7 @@
     "format": "prettier --write \"src/**/*.ts\""
   },
   "devDependencies": {
+    "@types/chai": "^5.2.2",
     "@types/glob": "^8.1.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.19.9",
@@ -392,6 +393,7 @@
     "@typescript-eslint/parser": "^8.31.1",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.5.2",
+    "chai": "^5.2.1",
     "eslint": "^9.25.1",
     "glob": "^8.1.0",
     "mocha": "^11.7.1",

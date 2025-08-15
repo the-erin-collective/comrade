@@ -41,7 +41,7 @@ describe('ConfigurationManager', () => {
 
   it('should create singleton instance', () => {
     const instance1 = ConfigurationManager.getInstance(mockSecretStorage);
-    const instance2 = ConfigurationManager.getInstance();
+    const instance2 = ConfigurationManager.getInstance(mockSecretStorage);
     assert.strictEqual(instance1, instance2);
   });
 

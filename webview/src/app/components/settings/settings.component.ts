@@ -89,7 +89,7 @@ interface AgentConfig {
                       <div class="agent-info">
                         <div class="agent-name-row">
                           <h4>{{ agent.name }}</h4>
-                          @if (agent.capabilities?.hasVision) {
+                          @if (agent.capabilities.hasVision) {
                             <span class="agent-tag multimodal">Multimodal</span>
                           }
                         </div>
@@ -240,7 +240,7 @@ interface AgentConfig {
           </div>
           <div class="modal-footer">
             <button type="button" class="secondary-btn" (click)="closeAgentForm()">Cancel</button>
-            <button type="submit" class="primary-btn" [disabled]="!agentFormElement.form?.valid">
+            <button type="submit" class="primary-btn" [disabled]="!agentFormElement.form.valid">
               {{ editingAgent() ? 'Update' : 'Add' }} Agent
             </button>
           </div>

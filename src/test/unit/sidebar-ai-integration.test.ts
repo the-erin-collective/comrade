@@ -2,7 +2,7 @@
  * Unit tests for sidebar provider AI integration
  */
 
-import * as assert from 'assert';
+import { expect } from 'chai';
 import * as vscode from 'vscode';
 import { ComradeSidebarProvider } from '../../providers/sidebarProvider';
 
@@ -23,12 +23,12 @@ describe('Sidebar Provider AI Integration Tests', () => {
 
   it('should initialize with AI agent service', () => {
     const aiService = sidebarProvider.getAIAgentService();
-    assert.ok(aiService, 'AI agent service should be initialized');
+    expect(aiService).to.exist;
     
     const currentModel = aiService.getCurrentModel();
-    assert.ok(currentModel, 'Should have default model configuration');
-    assert.strictEqual(currentModel!.provider, 'ollama', 'Should use Ollama as default provider');
-    assert.strictEqual(currentModel!.model, 'llama2', 'Should use llama2 as default model');
+    expect(currentModel).to.exist;
+    expect(currentModel!.provider).to.equal('ollama');
+    expect(currentModel!.model).to.equal('llama2');
   });
 
   it('should have AI-related message types in interface', () => {
@@ -82,25 +82,25 @@ describe('Sidebar Provider AI Integration Tests', () => {
     };
 
     // If these compile without errors, the interfaces are properly defined
-    assert.strictEqual(aiResponseMessage.type, 'aiResponse');
-    assert.strictEqual(toolExecutionMessage.type, 'toolExecution');
-    assert.strictEqual(aiTypingMessage.type, 'aiTyping');
-    assert.strictEqual(aiProcessingMessage.type, 'aiProcessing');
+    expect(aiResponseMessage.type).to.equal('aiResponse');
+    expect(toolExecutionMessage.type).to.equal('toolExecution');
+    expect(aiTypingMessage.type).to.equal('aiTyping');
+    expect(aiProcessingMessage.type).to.equal('aiProcessing');
   });
 
   it('should provide access to AI agent service methods', () => {
     const aiService = sidebarProvider.getAIAgentService();
     
     // Verify key methods are available
-    assert(typeof aiService.sendMessage === 'function', 'Should have sendMessage method');
-    assert(typeof aiService.executeToolCall === 'function', 'Should have executeToolCall method');
-    assert(typeof aiService.getAvailableTools === 'function', 'Should have getAvailableTools method');
-    assert(typeof aiService.setModel === 'function', 'Should have setModel method');
+    expect(typeof aiService.sendMessage).to.equal('function');
+    expect(typeof aiService.executeToolCall).to.equal('function');
+    expect(typeof aiService.getAvailableTools).to.equal('function');
+    expect(typeof aiService.setModel).to.equal('function');
     
     // Verify tools are available
     const availableTools = aiService.getAvailableTools();
-    assert(Array.isArray(availableTools), 'Should return array of available tools');
-    assert(availableTools.length > 0, 'Should have built-in tools available');
+    expect(Array.isArray(availableTools)).to.be.true;
+    expect(availableTools.length).to.be.greaterThan(0);
   });
 
   it('should handle AI model configuration', () => {
@@ -118,8 +118,8 @@ describe('Sidebar Provider AI Integration Tests', () => {
     aiService.setModel(newModelConfig);
     
     const currentModel = aiService.getCurrentModel();
-    assert(currentModel, 'Should have model configuration after setting');
-    assert.strictEqual(currentModel.model, 'codellama', 'Should update model name');
-    assert.strictEqual(currentModel.temperature, 0.7, 'Should update temperature');
+    expect(currentModel).to.exist;
+    expect(currentModel!.model).to.equal('codellama');
+    expect(currentModel!.temperature).to.equal(0.7);
   });
 });

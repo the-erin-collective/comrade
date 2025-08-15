@@ -49,6 +49,11 @@ export interface ExecutionContext {
     level: SecurityLevel;
     allowDangerous: boolean;
   };
+  session?: {
+    id: string;
+    state: any;
+    metadata: any;
+  };
 }
 
 export enum SecurityLevel {

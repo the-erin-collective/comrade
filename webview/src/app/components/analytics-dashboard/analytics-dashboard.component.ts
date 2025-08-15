@@ -732,6 +732,9 @@ export interface AnalyticsReport {
   `]
 })
 export class AnalyticsDashboardComponent implements OnInit, OnDestroy {
+  // Expose Math for template
+  Math = Math;
+  
   analyticsReport = signal<AnalyticsReport | null>(null);
   isLoading = signal(false);
   

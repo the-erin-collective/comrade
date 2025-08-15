@@ -51,6 +51,7 @@ export interface ChatMessage {
   content: string;
   timestamp?: Date;
   metadata?: Record<string, any>;
+  tool_calls?: any[];
 }
 
 export interface ChatOptions {
@@ -64,6 +65,10 @@ export interface ChatOptions {
   stream?: boolean;
   timeout?: number;
   tools?: ChatTool[];
+  metadata?: {
+    sessionId?: string;
+    [key: string]: any;
+  };
 }
 
 export interface ChatTool {
@@ -506,35 +511,35 @@ export class ChatBridge implements IChatBridge {
     const body = this.buildOpenAIRequestBody(agent, messages, enhancedOptions);
 
     return this.executeWithRetry(async () => {
-      const response = await this.makeHttpRequest(endpoint, {
+      let response = await this.makeHttpRequest(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
         timeout: options?.timeout || agent.config.timeout || this.httpTimeout
       });
 
-      const chatResponse = await this.parseOpenAIResponse(response);
+      let chatResponse = await this.parseOpenAIResponse(response);
 
       // Handle tool calls if present
       if (chatResponse.finishReason === 'tool_calls' && chatResponse.toolCalls) {
-        response = await this.handleToolCalls(agent, messages, chatResponse, options);
+        chatResponse = await this.handleToolCalls(agent, messages, chatResponse, options);
         
         // Add assistant's tool call messages to session
         const sessionId = options?.metadata?.sessionId as string || 'default';
         const session = this.sessionManager?.getSession(sessionId);
         session?.addMessage({
           role: 'assistant',
-          content: response.content,
-          tool_calls: response.toolCalls,
+          content: chatResponse.content,
+          tool_calls: chatResponse.toolCalls,
           timestamp: new Date()
         });
-      } else if (response.content) {
+      } else if (chatResponse.content) {
         // Add regular assistant message to session
         const sessionId = options?.metadata?.sessionId as string || 'default';
         const session = this.sessionManager?.getSession(sessionId);
         session?.addMessage({
           role: 'assistant',
-          content: response.content,
+          content: chatResponse.content,
           timestamp: new Date()
         });
       }
@@ -1337,12 +1342,12 @@ export class ChatBridge implements IChatBridge {
 
   private parseStreamChunk(chunk: string, format: 'openai' | 'ollama' | 'anthropic'): string | null {
     try {
-      if (!chunk.trim()) return null;
+      if (!chunk.trim()) {return null;}
 
       if (format === 'openai') {
         if (chunk.startsWith('data: ')) {
           const data = chunk.slice(6).trim();
-          if (data === '[DONE]') return null;
+          if (data === '[DONE]') {return null;}
           try {
             const parsed = JSON.parse(data);
             return parsed.choices?.[0]?.delta?.content || '';
@@ -1356,7 +1361,7 @@ export class ChatBridge implements IChatBridge {
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const data = line.slice(6).trim();
-            if (data === '[DONE]') return null;
+            if (data === '[DONE]') {return null;}
             try {
               const parsed = JSON.parse(data);
               return parsed.completion || '';
@@ -1522,7 +1527,7 @@ export class ChatBridge implements IChatBridge {
         buffer = lines.pop() || ''; // Keep incomplete line in buffer
 
         for (const line of lines) {
-          if (line.trim() === '') continue;
+          if (line.trim() === '') {continue;}
 
           try {
             const content = this.parseStreamChunk(line, format);
@@ -1607,7 +1612,7 @@ export class ChatBridge implements IChatBridge {
     // Clean up resources
     const cleanup = () => {
       clearInterval(memoryMonitor);
-      if (timeoutId) clearTimeout(timeoutId);
+      if (timeoutId) {clearTimeout(timeoutId);}
       if (controller && !controller.signal.aborted) {
         try {
           controller.abort();
@@ -1660,7 +1665,7 @@ export class ChatBridge implements IChatBridge {
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {break;}
 
         // Update tracking variables
         receivedChunks++;
@@ -2040,11 +2045,11 @@ export class ChatBridge implements IChatBridge {
   // Retry logic kept for future use
   // @ts-ignore - TS6133: 'isRetryableError' is declared but its value is never read
   private isRetryableError(error: ChatBridgeError): boolean {
-    if (Boolean((error as any).retryable)) return true;
-    if (error.code === 'NETWORK_ERROR') return true;
-    if (error.code === 'TIMEOUT') return true;
-    if (error.code === 'RATE_LIMIT_EXCEEDED') return true;
-    if (error.statusCode && error.statusCode >= 500) return true;
+    if (Boolean((error as any).retryable)) {return true;}
+    if (error.code === 'NETWORK_ERROR') {return true;}
+    if (error.code === 'TIMEOUT') {return true;}
+    if (error.code === 'RATE_LIMIT_EXCEEDED') {return true;}
+    if (error.statusCode && error.statusCode >= 500) {return true;}
     return false;
   }
 

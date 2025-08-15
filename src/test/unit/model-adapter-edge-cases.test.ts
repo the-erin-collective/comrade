@@ -49,7 +49,20 @@ describe('Model Adapter Edge Cases', () => {
           ok: true,
           json: async () => {
             throw new SyntaxError('Unexpected token in JSON');
-          }
+          },
+          headers: new Headers(),
+          status: 200,
+          statusText: 'OK',
+          type: 'basic',
+          url: '',
+          redirected: false,
+          body: null,
+          bodyUsed: false,
+          clone: () => ({} as Response),
+          arrayBuffer: async () => new ArrayBuffer(0),
+          blob: async () => new Blob([]),
+          formData: async () => new FormData(),
+          text: async () => ''
         } as Response);
 
         const result = await adapter.testConnection();

@@ -1408,24 +1408,58 @@ export class BuiltInTools {
     };
   }
 
+  private static toolsRegistered = false;
+
   /**
    * Register all built-in tools
    */
   public static registerAll(): void {
+    // Prevent duplicate registration
+    if (BuiltInTools.toolsRegistered) {
+      console.debug('Tools already registered, skipping...');
+      return;
+    }
+
     const toolManager = ToolManager.getInstance();
+    const toolRegistry = ToolRegistry.getInstance();
     
-    // Register file system tools
-    toolManager.registerTool(this.createReadFileToolDefinition());
-    toolManager.registerTool(this.createWriteFileToolDefinition());
-    toolManager.registerTool(this.createListFilesToolDefinition());
+    // Helper function to safely register a tool
+    const safeRegisterTool = (toolDef: ToolDefinition) => {
+      try {
+        if (!toolRegistry.getTool(toolDef.name)) {
+          toolManager.registerTool(toolDef);
+          console.debug(`Successfully registered tool: ${toolDef.name}`);
+        } else {
+          console.debug(`Tool '${toolDef.name}' is already registered, skipping...`);
+        }
+      } catch (error) {
+        console.warn(`Failed to register tool '${toolDef.name}':`, error);
+      }
+    };
     
-    // Register VS Code tools
-    toolManager.registerTool(this.createShowMessageToolDefinition());
-    
-    // Register Git tools
-    toolManager.registerTool(this.createGitStatusToolDefinition());
-    
-    // Register Web tools
-    toolManager.registerTool(this.createWebRequestToolDefinition());
+    try {
+      console.debug('Registering built-in tools...');
+      
+      // Register tools that don't have class-based implementations
+      const toolsToRegister = [
+        this.createGitStatusToolDefinition,
+        this.createWebRequestToolDefinition,
+        this.createShowMessageToolDefinition
+      ];
+      
+      toolsToRegister.forEach(createTool => {
+        try {
+          const toolDef = createTool();
+          safeRegisterTool(toolDef);
+        } catch (error) {
+          console.warn('Error creating tool definition:', error);
+        }
+      });
+      
+      BuiltInTools.toolsRegistered = true;
+      console.debug('Finished registering built-in tools');
+    } catch (error) {
+      console.error('Error during tool registration:', error);
+    }
   }
 }

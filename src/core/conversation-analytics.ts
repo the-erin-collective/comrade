@@ -734,13 +734,13 @@ export class ConversationAnalyticsService {
       // Map event types to user-friendly feature names
       switch (event.type) {
         case 'tool_executed':
-          feature = `Tool: ${event.data.toolName}`;
+          feature = event.type;
           break;
         case 'model_switched':
-          feature = 'Model Switching';
+          feature = event.type;
           break;
         case 'session_exported':
-          feature = 'Export Conversation';
+          feature = event.type;
           break;
         case 'feature_used':
           feature = event.data.feature;

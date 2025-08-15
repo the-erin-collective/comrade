@@ -1,4 +1,6 @@
 import { AIAgentService } from '../../core/ai-agent';
+import { expect } from 'chai';
+import * as sinon from 'sinon';
 
 describe('AIAgentService Streaming', () => {
   let agentService: AIAgentService;
@@ -8,7 +10,8 @@ describe('AIAgentService Streaming', () => {
     
     // Mock the model configuration
     agentService.setModel({
-      provider: 'mock',
+      name: 'test-model',
+      provider: 'custom',
       model: 'test-model',
       temperature: 0.7,
       maxTokens: 1000
@@ -38,16 +41,16 @@ describe('AIAgentService Streaming', () => {
     const response = await responsePromise;
     
     // Verify the response
-    expect(response).toBeDefined();
-    expect(response.content).toContain('simulated streaming response');
-    expect(chunks.length).toBeGreaterThan(0);
+    expect(response).to.exist;
+    expect(response.content).to.include('simulated streaming response');
+    expect(chunks.length).to.be.greaterThan(0);
     
     // Verify chunks form the complete response
     const streamedContent = chunks.map(c => c.content).join('');
-    expect(streamedContent).toBe(response.content);
+    expect(streamedContent).to.equal(response.content);
     
     // Verify the last chunk is marked as complete
-    expect(chunks[chunks.length - 1].isComplete).toBe(true);
+    expect(chunks[chunks.length - 1].isComplete).to.be.true;
   });
 
   it('should allow aborting a streaming response', async () => {
@@ -70,11 +73,16 @@ describe('AIAgentService Streaming', () => {
     );
 
     // Should reject with abort error
-    await expectAsync(responsePromise).toBeRejectedWithError('Streaming was aborted');
+    try {
+      await responsePromise;
+      expect.fail('Expected promise to be rejected');
+    } catch (error) {
+      expect((error as Error).message).to.include('Streaming was aborted');
+    }
     
     // Should have received some chunks before aborting
-    expect(chunks.length).toBeGreaterThan(0);
-    expect(chunks[chunks.length - 1].isComplete).toBe(false);
+    expect(chunks.length).to.be.greaterThan(0);
+    expect(chunks[chunks.length - 1].isComplete).to.be.false;
   });
 
   it('should prevent multiple concurrent streaming requests', async () => {
@@ -89,9 +97,12 @@ describe('AIAgentService Streaming', () => {
     );
     
     // Try to start a second streaming request (should fail)
-    await expectAsync(
-      agentService.sendMessage(sessionId, testMessage, () => {})
-    ).toBeRejectedWithError('A streaming operation is already in progress');
+    try {
+      await agentService.sendMessage(sessionId, testMessage, () => {});
+      expect.fail('Expected promise to be rejected');
+    } catch (error) {
+      expect((error as Error).message).to.include('A streaming operation is already in progress');
+    }
     
     // Clean up
     agentService.abortStreaming();
@@ -111,13 +122,13 @@ describe('AIAgentService Streaming', () => {
     
     // Get the conversation context
     const context = agentService.getConversationContext(sessionId);
-    expect(context).toBeDefined();
+    expect(context).to.exist;
     
     // Should have both user and assistant messages
-    expect(context!.messages.length).toBe(2);
-    expect(context!.messages[0].role).toBe('user');
-    expect(context!.messages[0].content).toBe(testMessage);
-    expect(context!.messages[1].role).toBe('assistant');
-    expect(context!.messages[1].content).toContain('simulated streaming response');
+    expect(context!.messages.length).to.equal(2);
+    expect(context!.messages[0].role).to.equal('user');
+    expect(context!.messages[0].content).to.equal(testMessage);
+    expect(context!.messages[1].role).to.equal('assistant');
+    expect(context!.messages[1].content).to.include('simulated streaming response');
   });
 });

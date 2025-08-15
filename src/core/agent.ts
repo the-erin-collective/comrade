@@ -36,6 +36,12 @@ export interface AgentConfig {
     allowedTools: string[];
     requireApproval: boolean;
   };
+  systemPrompt?: string;
+  maxHistoryLength?: number;
+  persistHistory?: boolean;
+  contextWindowSize?: number;
+  includeFileContents?: boolean;
+  includeWorkspaceContext?: boolean;
 }
 
 export interface IAgent {

@@ -291,7 +291,11 @@ export class ConfigurationValidator {
    * Validate agent configuration with schema-based validation
    */
   public static validateAgentConfiguration(config: any): ValidationResult {
-    return this.validateValue(config, this.AGENT_SCHEMA, 'agent');
+    // First, unwrap the entire config object if it's wrapped
+    const unwrappedConfig = this.unwrapValue(config);
+    
+    // Then validate using the schema
+    return this.validateValue(unwrappedConfig, this.AGENT_SCHEMA, '');
   }
 
   /**
@@ -309,40 +313,48 @@ export class ConfigurationValidator {
   }
 
   /**
-   * Apply default values to configuration
-   */
-  public static applyDefaults(config: any, schema: ConfigurationSchema): any {
-    if (!config || typeof config !== 'object') {
-      return schema.default !== undefined ? schema.default : {};
-    }
-
-    if (schema.type === 'array') {
-      if (!Array.isArray(config)) {
-        return schema.default !== undefined ? schema.default : [];
-      }
-      
-      if (schema.items) {
-        return config.map(item => this.applyDefaults(item, schema.items!));
-      }
-      return config;
-    }
-
-    if (schema.type === 'object' && schema.properties) {
-      const result = { ...config };
-      
-      for (const [key, propSchema] of Object.entries(schema.properties)) {
-        if (result[key] === undefined && propSchema.default !== undefined) {
-          result[key] = propSchema.default;
-        } else if (result[key] !== undefined) {
-          result[key] = this.applyDefaults(result[key], propSchema);
-        }
-      }
-      
-      return result;
-    }
-
-    return config;
+ * Apply default values to configuration
+ */
+public static applyDefaults(config: any, schema: ConfigurationSchema): any {
+  // Unwrap the config value before processing
+  const unwrappedConfig = this.unwrapValue(config);
+  
+  // Handle non-object or null values
+  if (!unwrappedConfig || typeof unwrappedConfig !== 'object') {
+    return schema.default !== undefined ? schema.default : 
+           (schema.type === 'array' ? [] : {});
   }
+
+  if (schema.type === 'array') {
+    if (!Array.isArray(unwrappedConfig)) {
+      return schema.default !== undefined ? schema.default : [];
+    }
+    
+    if (schema.items) {
+      return unwrappedConfig.map(item => this.applyDefaults(item, schema.items!));
+    }
+    return unwrappedConfig;
+  }
+
+  if (schema.type === 'object' && schema.properties) {
+    const result = { ...unwrappedConfig };
+    
+    for (const [key, propSchema] of Object.entries(schema.properties)) {
+      // Unwrap each property value before processing
+      const propValue = this.unwrapValue(result[key]);
+      
+      if (propValue === undefined && propSchema.default !== undefined) {
+        result[key] = propSchema.default;
+      } else if (propValue !== undefined) {
+        result[key] = this.applyDefaults(propValue, propSchema);
+      }
+    }
+    
+    return result;
+  }
+
+  return unwrappedConfig;
+}
 
   /**
    * Filter out invalid configurations
@@ -367,7 +379,12 @@ export class ConfigurationValidator {
   /**
    * Validate and sanitize agent configurations
    */
-  public static validateAndSanitizeAgents(agents: any[]): { valid: AgentConfigurationItem[], errors: ValidationError[], warnings: ValidationWarning[] } {
+
+  public static validateAndSanitizeAgents(agents: any[]): { 
+    valid: AgentConfigurationItem[], 
+    errors: ValidationError[], 
+    warnings: ValidationWarning[] 
+  } {
     const allErrors: ValidationError[] = [];
     const allWarnings: ValidationWarning[] = [];
     const validAgents: AgentConfigurationItem[] = [];
@@ -382,50 +399,57 @@ export class ConfigurationValidator {
       return { valid: [], errors: allErrors, warnings: allWarnings };
     }
 
-    // Check for duplicate IDs
+    // First, unwrap all agent configurations
+    const unwrappedAgents = agents.map(agent => this.unwrapValue(agent));
+
+    // Check for duplicate IDs and validate each agent
     const seenIds = new Set<string>();
     const duplicateIds = new Set<string>();
 
-    // Using forEach with index for validation
-    agents.forEach((agent) => {
-      if (agent && typeof agent === 'object' && agent.id) {
-        if (seenIds.has(agent.id)) {
-          duplicateIds.add(agent.id);
+    // First pass: collect all IDs and check for duplicates
+    unwrappedAgents.forEach((agent, index) => {
+      if (agent && typeof agent === 'object') {
+        const unwrappedId = this.unwrapValue(agent.id);
+        if (unwrappedId && typeof unwrappedId === 'string') {
+          if (seenIds.has(unwrappedId)) {
+            duplicateIds.add(unwrappedId);
+            allWarnings.push({
+              path: `agents[${index}].id`,
+              message: `Duplicate agent ID: ${unwrappedId}`,
+              code: 'DUPLICATE_ID',
+              value: unwrappedId
+            });
+          }
+          seenIds.add(unwrappedId);
         }
-        seenIds.add(agent.id);
       }
     });
 
-    // Using forEach with index for validation
-    agents.forEach((agent, index) => {
+    // Second pass: validate each agent
+    unwrappedAgents.forEach((agent, index) => {
       const validation = this.validateAgentConfiguration(agent);
+      
+      // Update paths to include array index
       allErrors.push(...validation.errors.map(err => ({
         ...err,
-        path: `agents[${index}].${err.path}`
+        path: `agents[${index}]${err.path ? '.' + err.path : ''}`
       })));
+      
       allWarnings.push(...validation.warnings.map(warn => ({
         ...warn,
-        path: `agents[${index}].${warn.path}`
+        path: `agents[${index}]${warn.path ? '.' + warn.path : ''}`
       })));
 
       if (validation.isValid && validation.filteredConfig) {
-        const sanitizedAgent = validation.filteredConfig as AgentConfigurationItem;
-        
-        // Add warning for duplicate IDs
-        if (duplicateIds.has(sanitizedAgent.id)) {
-          allWarnings.push({
-            path: `agents[${index}].id`,
-            message: `Duplicate agent ID: ${sanitizedAgent.id}`,
-            code: 'DUPLICATE_ID',
-            value: sanitizedAgent.id
-          });
-        }
-
-        validAgents.push(sanitizedAgent);
+        validAgents.push(validation.filteredConfig as AgentConfigurationItem);
       }
     });
 
-    return { valid: validAgents, errors: allErrors, warnings: allWarnings };
+    return { 
+      valid: validAgents, 
+      errors: allErrors, 
+      warnings: allWarnings 
+    };
   }
 
   /**
@@ -434,10 +458,13 @@ export class ConfigurationValidator {
   private static validateValue(value: any, schema: ConfigurationSchema, path: string): ValidationResult {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
-    let filteredConfig = value;
+    
+    // Unwrap the value before any validation
+    const unwrappedValue = this.unwrapValue(value);
+    let filteredConfig = unwrappedValue;
 
     // Handle null/undefined values
-    if (value === null || value === undefined) {
+    if (unwrappedValue === null || unwrappedValue === undefined) {
       if (schema.required) {
         errors.push({
           path,
@@ -454,19 +481,19 @@ export class ConfigurationValidator {
       return { isValid: true, errors, warnings, filteredConfig };
     }
 
-    // Type validation
-    if (!this.validateType(value, schema.type)) {
+    // Type validation on unwrapped value
+    if (!this.validateType(unwrappedValue, schema.type)) {
       errors.push({
         path,
-        message: `Expected ${schema.type}, got ${typeof value}`,
+        message: `Expected ${schema.type}, got ${typeof unwrappedValue}`,
         code: 'INVALID_TYPE',
-        value
+        value: unwrappedValue
       });
       return { isValid: false, errors, warnings };
     }
 
-    // Apply defaults first
-    filteredConfig = this.applyDefaults(value, schema);
+    // Apply defaults to unwrapped value
+    filteredConfig = this.applyDefaults(unwrappedValue, schema);
 
     // Specific validations based on type
     switch (schema.type) {
@@ -522,20 +549,105 @@ export class ConfigurationValidator {
     };
   }
 
+  private static unwrapValue(value: any): any {
+    // Handle null/undefined
+    if (value === null || value === undefined) {
+      return value;
+    }
+    
+    // Handle primitive values
+    const type = typeof value;
+    if (type !== 'object' && type !== 'function') {
+      return value;
+    }
+    
+    // Handle VS Code configuration value objects (comprehensive patterns)
+    if (value && typeof value === 'object') {
+      // Pattern 1: { value: actualValue }
+      if ('value' in value && Object.keys(value).length === 1) {
+        return this.unwrapValue(value.value);
+      }
+      
+      // Pattern 2: { defaultValue: x, globalValue: y, workspaceValue: z, ... }
+      const configKeys = ['defaultValue', 'globalValue', 'workspaceValue', 'workspaceFolderValue'];
+      const hasConfigKeys = configKeys.some(key => key in value);
+      
+      if (hasConfigKeys) {
+        // Use the most specific value available (workspace > global > default)
+        const actualValue = value.workspaceFolderValue ?? 
+                           value.workspaceValue ?? 
+                           value.globalValue ?? 
+                           value.defaultValue;
+        return this.unwrapValue(actualValue);
+      }
+      
+      // Pattern 3: Check if this looks like a VS Code configuration object
+      // These objects often have internal properties starting with underscore
+      const keys = Object.keys(value);
+      const hasInternalKeys = keys.some(key => key.startsWith('_'));
+      const hasConfigMethods = typeof value.get === 'function' || typeof value.has === 'function';
+      
+      if (hasInternalKeys || hasConfigMethods) {
+        // This looks like a VS Code configuration object, try to extract the actual value
+        // Look for common value properties
+        const possibleValueKeys = ['value', 'effectiveValue', 'inspectValue', 'globalValue', 'workspaceValue'];
+        for (const key of possibleValueKeys) {
+          if (key in value && value[key] !== undefined) {
+            return this.unwrapValue(value[key]);
+          }
+        }
+        
+        // If no obvious value property, try to find the first non-internal property
+        const nonInternalKey = keys.find(key => !key.startsWith('_') && typeof value[key] !== 'function');
+        if (nonInternalKey) {
+          return this.unwrapValue(value[nonInternalKey]);
+        }
+      }
+    }
+    
+    // Handle arrays
+    if (Array.isArray(value)) {
+      return value.map(item => this.unwrapValue(item));
+    }
+    
+    // Handle Date, RegExp, etc. - don't unwrap these
+    if (value instanceof Date || value instanceof RegExp) {
+      return value;
+    }
+    
+    // Handle nested objects - only unwrap if it looks like a plain object
+    if (value && typeof value === 'object' && value.constructor === Object) {
+      const result: Record<string, any> = {};
+      for (const key in value) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          result[key] = this.unwrapValue(value[key]);
+        }
+      }
+      return result;
+    }
+    
+    // For other object types (classes, etc.), return as-is
+    return value;
+  }
+
   private static validateType(value: any, expectedType: string): boolean {
+    // First unwrap the value
+    const unwrappedValue = this.unwrapValue(value);
+    
+    // Then validate the type
     switch (expectedType) {
       case 'string':
-        return typeof value === 'string';
+        return typeof unwrappedValue === 'string';
       case 'number':
-        return typeof value === 'number' && !isNaN(value);
+        return typeof unwrappedValue === 'number' && !isNaN(unwrappedValue);
       case 'boolean':
-        return typeof value === 'boolean';
+        return typeof unwrappedValue === 'boolean';
       case 'array':
-        return Array.isArray(value);
+        return Array.isArray(unwrappedValue);
       case 'object':
-        return typeof value === 'object' && value !== null && !Array.isArray(value);
+        return typeof unwrappedValue === 'object' && unwrappedValue !== null && !Array.isArray(unwrappedValue);
       case 'integer':
-        return typeof value === 'number' && Number.isInteger(value);
+        return typeof unwrappedValue === 'number' && Number.isInteger(unwrappedValue);
       default:
         return false;
     }

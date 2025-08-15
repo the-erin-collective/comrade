@@ -26,6 +26,28 @@ class MockModelAdapter extends AbstractModelAdapter {
     this.responseIndex = 0;
   }
 
+  protected async _sendStreamingRequest(
+    prompt: string,
+    callback: (chunk: { content: string; isComplete: boolean }) => void,
+    signal: AbortSignal
+  ): Promise<void> {
+    const response = this.mockResponses[this.responseIndex] || 'Mock response';
+    this.responseIndex = (this.responseIndex + 1) % this.mockResponses.length;
+    
+    // Simulate streaming by sending chunks
+    const chunks = response.split(' ');
+    for (let i = 0; i < chunks.length; i++) {
+      if (signal.aborted) {
+        throw new Error('Request was aborted');
+      }
+      callback({
+        content: chunks[i] + (i < chunks.length - 1 ? ' ' : ''),
+        isComplete: i === chunks.length - 1
+      });
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  }
+
   formatPrompt(messages: ChatMessage[], tools: Tool[]): string {
     const messageText = messages.map(m => `${m.role}: ${m.content}`).join('\n');
     const toolText = tools.length > 0 ? `\nTools: ${this.formatToolsAsJson(tools)}` : '';

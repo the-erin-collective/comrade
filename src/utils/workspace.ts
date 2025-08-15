@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+
+// Extension context is provided by the extension activation
 import * as os from 'os';
 
 /**
@@ -174,7 +176,12 @@ export async function handleWorkspaceInitialization(workspaceUri?: vscode.Uri): 
         
         // Initialize configuration defaults
         const { ConfigurationManager } = await import('../core/config');
-        const configManager = ConfigurationManager.getInstance();
+// Get the secret storage from the extension context
+        const secretStorage = vscode.extensions.getExtension('comrade')?.exports?.getSecretStorage?.();
+        if (!secretStorage) {
+          throw new Error('Failed to access secret storage. Make sure the extension is properly activated.');
+        }
+        const configManager = ConfigurationManager.getInstance(secretStorage);
         if (configManager) {
           await configManager.initializeDefaultConfiguration();
         }

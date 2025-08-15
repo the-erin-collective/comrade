@@ -123,7 +123,11 @@ describe('OpenAI Function Calling Integration Tests', () => {
       } as Response;
 
       // Spy on makeHttpRequest to verify tools are included in the request
-      const makeHttpRequestSpy = sandbox.stub(chatBridge as any, 'makeHttpRequest').callsFake(async (..._args: any[]) => {
+      const makeHttpRequestSpy = sandbox.stub(chatBridge as any, 'makeHttpRequest').callsFake(async (...args: any[]) => {
+        const [url, options] = args;
+        if (options && options.body) {
+          const requestBody = JSON.parse(options.body);
+        }
         return mockResponse;
       });
 

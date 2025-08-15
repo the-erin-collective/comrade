@@ -607,7 +607,7 @@ describe('AI Conversation Flow Integration Tests', () => {
       try {
         await streamingPromise;
         // If we get here, streaming completed normally (which is also valid)
-        assert(streamingCompleted === true, 'If streaming completed, it should be marked complete');
+        assert(streamingCompleted, 'If streaming completed, it should be marked complete');
       } catch (error) {
         // Streaming was aborted
         assert(error instanceof Error, 'Should throw error when aborted');

@@ -298,7 +298,7 @@ export interface PerformanceMetrics {
                       @for (model of getModelList(); track model) {
                         <div class="metric-item">
                           <span class="metric-label">{{ model }}:</span>
-                          <span class="metric-value">{{ performanceMetrics()!.tokenUsage.byModel[model]?.toLocaleString() || 0 }}</span>
+                          <span class="metric-value">{{ performanceMetrics()!.tokenUsage.byModel[model].toLocaleString() || 0 }}</span>
                         </div>
                       }
                     </mat-card-content>
@@ -324,9 +324,9 @@ export interface PerformanceMetrics {
                           <div class="tool-metric">
                             <strong>{{ tool }}</strong>
                             <div class="tool-stats">
-                              <span>{{ performanceMetrics()!.toolPerformance.byTool[tool]?.count || 0 }} calls</span>
-                              <span>{{ (performanceMetrics()!.toolPerformance.byTool[tool]?.successRate || 0).toFixed(1) }}% success</span>
-                              <span>{{ (performanceMetrics()!.toolPerformance.byTool[tool]?.averageTime || 0).toFixed(0) }}ms avg</span>
+                              <span>{{ performanceMetrics()!.toolPerformance.byTool[tool].count || 0 }} calls</span>
+                              <span>{{ (performanceMetrics()!.toolPerformance.byTool[tool].successRate || 0).toFixed(1) }}% success</span>
+                              <span>{{ (performanceMetrics()!.toolPerformance.byTool[tool].averageTime || 0).toFixed(0) }}ms avg</span>
                             </div>
                           </div>
                         }
@@ -662,7 +662,7 @@ export class DebugPanelComponent implements OnInit, OnDestroy {
   }
 
   async loadDebugData(): Promise<void> {
-    if (!this.conversationId) return;
+    if (!this.conversationId) {return;}
 
     this.isLoading.set(true);
     try {
