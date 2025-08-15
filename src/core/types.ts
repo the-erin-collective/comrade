@@ -132,3 +132,172 @@ export abstract class BaseTool implements Tool {
     }
   }
 }
+/**
+ * P
+rovider and Agent Management Types
+ * 
+ * New provider-agent architecture types for improved configuration management
+ */
+
+/**
+ * Base provider interface
+ */
+export interface Provider {
+  id: string;
+  name: string;
+  type: 'cloud' | 'local-network';
+  provider: 'openai' | 'anthropic' | 'google' | 'azure' | 'ollama' | 'custom';
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Cloud provider configuration
+ */
+export interface CloudProvider extends Provider {
+  type: 'cloud';
+  apiKey: string;
+  endpoint?: never;
+}
+
+/**
+ * Local network provider configuration
+ */
+export interface LocalNetworkProvider extends Provider {
+  type: 'local-network';
+  endpoint: string;
+  localHostType: 'ollama' | 'custom';
+  apiKey?: string;
+}
+
+/**
+ * Union type for all provider variants
+ */
+export type ProviderConfig = CloudProvider | LocalNetworkProvider;
+
+/**
+ * Updated Agent interface that references providers
+ */
+export interface Agent {
+  id: string;
+  name: string;
+  providerId: string;
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+  timeout?: number;
+  systemPrompt?: string;
+  capabilities: AgentCapabilities;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Agent capabilities interface
+ */
+export interface AgentCapabilities {
+  hasVision: boolean;
+  hasToolUse: boolean;
+  reasoningDepth: 'basic' | 'intermediate' | 'advanced';
+  speed: 'fast' | 'medium' | 'slow';
+  costTier: 'low' | 'medium' | 'high';
+}
+
+/**
+ * Form data interfaces
+ */
+export interface ProviderFormData {
+  name: string;
+  type: 'cloud' | 'local-network';
+  provider: 'openai' | 'anthropic' | 'google' | 'azure' | 'ollama' | 'custom';
+  endpoint?: string;
+  apiKey?: string;
+  localHostType?: 'ollama' | 'custom';
+}
+
+export interface AgentFormData {
+  name: string;
+  providerId: string;
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+  timeout?: number;
+  systemPrompt?: string;
+  capabilities?: Partial<AgentCapabilities>;
+}
+
+/**
+ * Validation result interfaces
+ */
+export interface ValidationResult {
+  valid: boolean;
+  error?: string;
+  warnings?: string[];
+}
+
+export interface ProviderValidationResult extends ValidationResult {
+  availableModels?: string[];
+  connectionStatus?: 'connected' | 'disconnected' | 'unknown';
+  responseTime?: number;
+}
+
+export interface AgentValidationResult extends ValidationResult {
+  providerStatus?: 'active' | 'inactive' | 'not_found';
+  modelAvailable?: boolean;
+  estimatedCost?: 'low' | 'medium' | 'high';
+}
+
+/**
+ * Combined types for display purposes
+ */
+export interface AgentWithProvider {
+  agent: Agent;
+  provider: ProviderConfig;
+}
+
+/**
+ * Statistics interfaces
+ */
+export interface ProviderStats {
+  totalProviders: number;
+  activeProviders: number;
+  providersByType: {
+    cloud: number;
+    'local-network': number;
+  };
+  providersByProvider: Record<string, number>;
+}
+
+export interface AgentStats {
+  totalAgents: number;
+  activeAgents: number;
+  agentsByProvider: Record<string, number>;
+  agentsByCapability: {
+    vision: number;
+    toolUse: number;
+    streaming: number;
+  };
+}
+
+/**
+ * Migration and connection test interfaces
+ */
+export interface MigrationData {
+  providersCreated: Provider[];
+  agentsUpdated: Agent[];
+  errors: string[];
+  warnings: string[];
+}
+
+export interface ConnectionTestResult {
+  success: boolean;
+  responseTime?: number;
+  error?: string;
+  availableModels?: string[];
+  serverInfo?: {
+    version?: string;
+    status?: string;
+  };
+}

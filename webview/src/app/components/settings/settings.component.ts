@@ -2,7 +2,8 @@ import { Component, ChangeDetectionStrategy, signal, output } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MessageService } from '../../services/message.service';
-import { ModelListComponent } from './model-list/model-list.component';
+import { ProviderManagementComponent } from '../provider-management/provider-management.component';
+
 
 interface AgentConfig {
   id: string;
@@ -35,7 +36,7 @@ interface AgentConfig {
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, ModelListComponent],
+  imports: [CommonModule, FormsModule, ProviderManagementComponent],
   template: `
     <div class="settings-container">
       <div class="settings-header">
@@ -48,16 +49,16 @@ interface AgentConfig {
       <div class="settings-tabs">
         <button 
           class="settings-tab" 
-          [class.active]="activeTab() === 'models'"
-          (click)="setActiveTab('models')"
+          [class.active]="activeTab() === 'providers'"
+          (click)="setActiveTab('providers')"
         >
-          Model Management
+          Provider Management
         </button>
         <button 
           class="settings-tab" 
           [class.active]="activeTab() === 'agents'"
           (click)="setActiveTab('agents')">
-          Agent Configuration
+          Agent Management
         </button>
         <button 
           class="settings-tab" 
@@ -68,8 +69,10 @@ interface AgentConfig {
       </div>
 
       <div class="settings-content">
-        @if (activeTab() === 'models') {
-          <model-list></model-list>
+        @if (activeTab() === 'providers') {
+          <div class="settings-section">
+            <app-provider-management></app-provider-management>
+          </div>
         } @else if (activeTab() === 'agents') {
           <!-- Agent Configuration Section -->
           <div class="settings-section">
@@ -252,9 +255,15 @@ interface AgentConfig {
     .settings-container {
       display: flex;
       flex-direction: column;
-      height: 100%;
+      height: 100vh;
       background: var(--background-color);
       color: var(--text-color);
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1000;
     }
     
     .settings-header {
@@ -295,6 +304,7 @@ interface AgentConfig {
       flex: 1;
       padding: 1.5rem;
       overflow-y: auto;
+      min-height: 0;
     }
     
     .close-btn {
@@ -314,6 +324,39 @@ interface AgentConfig {
         color: var(--text-color);
       }
     }
+
+    .settings-section {
+      margin-bottom: 2rem;
+    }
+
+    .section-description {
+      margin-bottom: 1.5rem;
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 3rem 2rem;
+      border: 2px dashed var(--border-color);
+      border-radius: 8px;
+      background: var(--background-secondary);
+    }
+
+    .empty-state h4 {
+      margin: 0 0 1rem 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-color);
+    }
+
+    .empty-state p {
+      margin: 0;
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.5;
+    }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -323,7 +366,7 @@ export class SettingsComponent {
   public agents = signal<AgentConfig[]>([]);
   public showAgentForm = signal(false);
   public editingAgent = signal<AgentConfig | null>(null);
-  public activeTab = signal<'models' | 'agents' | 'general'>('models');
+  public activeTab = signal<'providers' | 'agents' | 'general'>('providers');
   public availableModels = signal<string[]>([]);
   public loadingModels = signal(false);
   public modelError = signal<string | null>(null);
@@ -649,7 +692,7 @@ export class SettingsComponent {
     this.maxHistory.set(100);
   }
 
-  public setActiveTab(tab: 'models' | 'agents' | 'general') {
+  public setActiveTab(tab: 'providers' | 'agents' | 'general') {
     this.activeTab.set(tab);
   }
 

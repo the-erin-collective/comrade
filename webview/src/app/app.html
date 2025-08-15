@@ -1,25 +1,27 @@
 <div id="app">
-  @if (!showHistory() && !isInitializing()) {
+  @if (!showHistory() && !showSettings() && !isInitializing()) {
     <app-session-tabs></app-session-tabs>
   }
   
-  <!-- Progress Indicator -->
-  <app-progress-indicator
-    [progressState]="progressState()"
-    variant="inline"
-    (operationCancelled)="onOperationCancelled()">
-  </app-progress-indicator>
+  @if (!showSettings()) {
+    <!-- Progress Indicator -->
+    <app-progress-indicator
+      [progressState]="progressState()"
+      variant="inline"
+      (operationCancelled)="onOperationCancelled()">
+    </app-progress-indicator>
 
-  <!-- Error Handler -->
-  <app-error-handler
-    [errorState]="errorState()"
-    [timeoutState]="timeoutState()"
-    (errorDismissed)="onErrorDismissed()"
-    (operationRetried)="onOperationRetried()"
-    (configurationOpened)="onConfigurationOpened($event)"
-    (timeoutExtended)="onTimeoutExtended()"
-    (operationCancelled)="onOperationCancelled()">
-  </app-error-handler>
+    <!-- Error Handler -->
+    <app-error-handler
+      [errorState]="errorState()"
+      [timeoutState]="timeoutState()"
+      (errorDismissed)="onErrorDismissed()"
+      (operationRetried)="onOperationRetried()"
+      (configurationOpened)="onConfigurationOpened($event)"
+      (timeoutExtended)="onTimeoutExtended()"
+      (operationCancelled)="onOperationCancelled()">
+    </app-error-handler>
+  }
 
   <div class="main-content">
     @if (isInitializing()) {

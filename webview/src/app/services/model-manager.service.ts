@@ -237,4 +237,18 @@ export class ModelManagerService {
     
     return capabilities;
   }
+
+  /**
+   * @deprecated Use AgentManagerService.getAgentCapabilities() instead
+   * This method is maintained for backward compatibility during migration
+   */
+  async getLegacyModelCapabilities(modelId: string): Promise<{
+    hasVision: boolean;
+    hasToolUse: boolean;
+    maxInputTokens: number;
+    supportsStreaming: boolean;
+  }> {
+    console.warn('ModelManagerService.getLegacyModelCapabilities() is deprecated. Use AgentManagerService.getAgentCapabilities() instead.');
+    return this.getModelCapabilities(modelId);
+  }
 }

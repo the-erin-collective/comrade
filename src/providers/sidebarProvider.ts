@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
 import { AIAgentService, AIResponse, ToolCall, AIToolResult } from '../core/ai-agent';
+import { ProviderConfig, Agent } from '../core/types';
 
 export interface WebviewMessage {
-  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult' | 'aiResponse' | 'toolExecution' | 'aiTyping' | 'aiProcessing';
+  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult' | 'aiResponse' | 'toolExecution' | 'aiTyping' | 'aiProcessing' | 'providerValidationResult' | 'connectionTestResult';
   payload: any;
 }
 
@@ -43,7 +44,7 @@ export interface AIProcessingMessage extends WebviewMessage {
 }
 
 export interface ExtensionMessage {
-  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'debug' | 'fetchOllamaModels' | 'fetchCloudModels' | 'updateConfig' | 'getConfig';
+  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'debug' | 'fetchOllamaModels' | 'fetchCloudModels' | 'updateConfig' | 'getConfig' | 'validateProvider' | 'testProviderConnection';
   payload: any;
 }
 
@@ -215,6 +216,12 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
         break;
       case 'getConfig':
         this._handleGetConfig(message.payload);
+        break;
+      case 'validateProvider':
+        this._handleValidateProvider(message.payload);
+        break;
+      case 'testProviderConnection':
+        this._handleTestProviderConnection(message.payload);
         break;
       default:
         console.warn('Unknown message type:', message.type);
@@ -494,57 +501,172 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
     return models;
   }
 
-  private async _handleUpdateConfig(payload: { agents: any[]; settings: any }) {
+  private async _handleUpdateConfig(payload: { 
+    operation: 'addProvider' | 'updateProvider' | 'deleteProvider' | 'toggleProvider' | 'addAgent' | 'updateAgent' | 'deleteAgent' | 'toggleAgent';
+    provider?: any;
+    providerId?: string;
+    updates?: any;
+    isActive?: boolean;
+    agent?: any;
+    agentId?: string;
+    agents?: any[]; 
+    settings?: any;
+  }) {
     console.log('SidebarProvider: Updating configuration:', payload);
     
     try {
-      // Save agents to VS Code configuration
-      if (payload.agents) {
-        await vscode.workspace.getConfiguration('comrade').update('agents', payload.agents, vscode.ConfigurationTarget.Global);
+      const config = vscode.workspace.getConfiguration('comrade');
+      
+      if (payload.operation === 'addProvider') {
+        // Add new provider
+        const providers: ProviderConfig[] = config.get('providers', []);
+        providers.push(payload.provider);
+        await config.update('providers', providers, vscode.ConfigurationTarget.Global);
+        
+        this.postMessage({
+          type: 'configUpdateResult',
+          payload: { 
+            success: true, 
+            operation: 'add',
+            provider: payload.provider
+          }
+        });
+        
+      } else if (payload.operation === 'updateProvider') {
+        // Update existing provider
+        const providers: ProviderConfig[] = config.get('providers', []);
+        const index = providers.findIndex((p: ProviderConfig) => p.id === payload.providerId);
+        if (index !== -1) {
+          providers[index] = { ...providers[index], ...payload.updates, updatedAt: new Date() } as ProviderConfig;
+          await config.update('providers', providers, vscode.ConfigurationTarget.Global);
+          
+          this.postMessage({
+            type: 'configUpdateResult',
+            payload: { 
+              success: true, 
+              operation: 'update',
+              provider: providers[index]
+            }
+          });
+        } else {
+          throw new Error('Provider not found');
+        }
+        
+      } else if (payload.operation === 'deleteProvider') {
+        // Delete provider and associated agents
+        const providers = config.get('providers', []);
+        const agents = config.get('agents', []);
+        
+        const updatedProviders = providers.filter((p: any) => p.id !== payload.providerId);
+        const updatedAgents = agents.filter((a: any) => a.providerId !== payload.providerId);
+        
+        await config.update('providers', updatedProviders, vscode.ConfigurationTarget.Global);
+        await config.update('agents', updatedAgents, vscode.ConfigurationTarget.Global);
+        
+        this.postMessage({
+          type: 'configUpdateResult',
+          payload: { 
+            success: true, 
+            operation: 'delete',
+            providerId: payload.providerId
+          }
+        });
+        
+      } else if (payload.operation === 'toggleProvider') {
+        // Toggle provider status and cascade to agents
+        const providers: ProviderConfig[] = config.get('providers', []);
+        const agents: Agent[] = config.get('agents', []);
+        
+        const providerIndex = providers.findIndex((p: ProviderConfig) => p.id === payload.providerId);
+        if (providerIndex !== -1) {
+          providers[providerIndex].isActive = payload.isActive ?? false;
+          providers[providerIndex].updatedAt = new Date();
+          
+          // If deactivating provider, deactivate all associated agents
+          if (!payload.isActive) {
+            agents.forEach((agent: any) => {
+              if (agent.providerId === payload.providerId) {
+                agent.isActive = false;
+                agent.updatedAt = new Date();
+              }
+            });
+          }
+          
+          await config.update('providers', providers, vscode.ConfigurationTarget.Global);
+          await config.update('agents', agents, vscode.ConfigurationTarget.Global);
+          
+          this.postMessage({
+            type: 'configUpdateResult',
+            payload: { 
+              success: true, 
+              operation: 'toggle',
+              provider: providers[providerIndex]
+            }
+          });
+        } else {
+          throw new Error('Provider not found');
+        }
+        
+      } else if (payload.agents) {
+        // Legacy agent update support
+        await config.update('agents', payload.agents, vscode.ConfigurationTarget.Global);
         console.log('SidebarProvider: Agents saved to VS Code configuration');
+        
+        this.postMessage({
+          type: 'configUpdateResult',
+          payload: { success: true }
+        });
       }
       
       // Save other settings if needed
       if (payload.settings) {
-        // You can add more settings here as needed
         console.log('SidebarProvider: Additional settings:', payload.settings);
       }
-      
-      // Send confirmation back to webview
-      this.postMessage({
-        type: 'configUpdateResult',
-        payload: { success: true }
-      });
       
     } catch (error) {
       console.error('SidebarProvider: Error saving configuration:', error);
       this.postMessage({
         type: 'configUpdateResult',
-        payload: { success: false, error: error instanceof Error ? error.message : 'Failed to save configuration' }
+        payload: { 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Failed to save configuration',
+          operation: payload.operation
+        }
       });
     }
   }
 
-  private _handleGetConfig(payload: any) {
-    console.log('SidebarProvider: Getting current configuration');
+  private _handleGetConfig(payload: { section?: 'providers' | 'agents' | 'all' }) {
+    console.log('SidebarProvider: Getting current configuration:', payload);
     
     try {
-      // Get current agents from VS Code configuration
       const config = vscode.workspace.getConfiguration('comrade');
-      const agents = config.get('agents', []);
+      const section = payload?.section || 'all';
       
-      console.log('SidebarProvider: Current agents from config:', agents);
+      let responsePayload: any = { success: true };
+      
+      if (section === 'providers' || section === 'all') {
+        const providers = config.get('providers', []);
+        responsePayload.providers = providers;
+        console.log('SidebarProvider: Current providers from config:', providers);
+      }
+      
+      if (section === 'agents' || section === 'all') {
+        const agents = config.get('agents', []);
+        responsePayload.agents = agents;
+        console.log('SidebarProvider: Current agents from config:', agents);
+      }
+      
+      if (section === 'all') {
+        responsePayload.settings = {
+          // Add other settings here if needed
+        };
+      }
       
       // Send configuration back to webview
       this.postMessage({
         type: 'configResult',
-        payload: { 
-          success: true,
-          agents: agents,
-          settings: {
-            // Add other settings here if needed
-          }
-        }
+        payload: responsePayload
       });
       
     } catch (error) {
@@ -554,6 +676,7 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
         payload: { 
           success: false, 
           error: error instanceof Error ? error.message : 'Failed to get configuration',
+          providers: [],
           agents: []
         }
       });
@@ -843,6 +966,168 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
         </script>
       </body>
       </html>`;
+  }
+
+  /**
+   * Handle provider validation request
+   */
+  private async _handleValidateProvider(payload: { providerId: string }) {
+    console.log('SidebarProvider: Validating provider:', payload.providerId);
+    
+    try {
+      const config = vscode.workspace.getConfiguration('comrade');
+      const providers: ProviderConfig[] = config.get('providers', []);
+      const provider = providers.find((p: ProviderConfig) => p.id === payload.providerId);
+      
+      if (!provider) {
+        throw new Error('Provider not found');
+      }
+      
+      // Perform basic validation
+      let validationResult: any = {
+        valid: true,
+        connectionStatus: 'unknown'
+      };
+      
+      // Validate based on provider type
+      if (provider.type === 'cloud') {
+        if (!provider.apiKey || provider.apiKey.trim() === '') {
+          validationResult = {
+            valid: false,
+            error: 'API key is required for cloud providers'
+          };
+        }
+      } else if (provider.type === 'local-network') {
+        if (!provider.endpoint || provider.endpoint.trim() === '') {
+          validationResult = {
+            valid: false,
+            error: 'Endpoint is required for local network providers'
+          };
+        } else {
+          // Validate URL format
+          try {
+            new URL(provider.endpoint);
+          } catch {
+            validationResult = {
+              valid: false,
+              error: 'Invalid endpoint URL format'
+            };
+          }
+        }
+      }
+      
+      // Send validation result back to webview
+      this.postMessage({
+        type: 'providerValidationResult',
+        payload: {
+          providerId: payload.providerId,
+          result: validationResult
+        }
+      });
+      
+    } catch (error) {
+      console.error('SidebarProvider: Error validating provider:', error);
+      this.postMessage({
+        type: 'providerValidationResult',
+        payload: {
+          providerId: payload.providerId,
+          error: error instanceof Error ? error.message : 'Failed to validate provider'
+        }
+      });
+    }
+  }
+
+  /**
+   * Handle provider connection test request
+   */
+  private async _handleTestProviderConnection(payload: { provider: any }) {
+    console.log('SidebarProvider: Testing provider connection:', payload.provider);
+    
+    try {
+      const provider = payload.provider;
+      let connectionResult: any = {
+        success: false,
+        error: 'Connection test not implemented for this provider type'
+      };
+      
+      if (provider.type === 'local-network' && provider.localHostType === 'ollama') {
+        // Test Ollama connection
+        try {
+          const startTime = Date.now();
+          const response = await fetch(`${provider.endpoint}/api/tags`, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(provider.apiKey && { 'Authorization': `Bearer ${provider.apiKey}` })
+            }
+          });
+          
+          const responseTime = Date.now() - startTime;
+          
+          if (response.ok) {
+            const data: any = await response.json();
+            connectionResult = {
+              success: true,
+              responseTime,
+              availableModels: data.models?.map((m: any) => m.name) || [],
+              serverInfo: {
+                status: 'running'
+              }
+            };
+          } else {
+            connectionResult = {
+              success: false,
+              error: `HTTP ${response.status}: ${response.statusText}`,
+              responseTime
+            };
+          }
+        } catch (fetchError) {
+          connectionResult = {
+            success: false,
+            error: fetchError instanceof Error ? fetchError.message : 'Network error'
+          };
+        }
+      } else if (provider.type === 'cloud') {
+        // For cloud providers, we'll do a simple API key validation
+        // This is a placeholder - actual implementation would depend on the specific provider
+        if (provider.apiKey && provider.apiKey.length > 10) {
+          connectionResult = {
+            success: true,
+            responseTime: 0,
+            serverInfo: {
+              status: 'API key format appears valid'
+            }
+          };
+        } else {
+          connectionResult = {
+            success: false,
+            error: 'Invalid API key format'
+          };
+        }
+      }
+      
+      // Send connection test result back to webview
+      this.postMessage({
+        type: 'connectionTestResult',
+        payload: {
+          providerId: provider.id,
+          result: connectionResult
+        }
+      });
+      
+    } catch (error) {
+      console.error('SidebarProvider: Error testing provider connection:', error);
+      this.postMessage({
+        type: 'connectionTestResult',
+        payload: {
+          providerId: payload.provider?.id,
+          result: {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to test connection'
+          }
+        }
+      });
+    }
   }
 }
 
