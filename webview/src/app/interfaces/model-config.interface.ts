@@ -3,7 +3,7 @@
  */
 export interface ModelConfig {
   name: string;
-  provider: 'ollama' | 'openai' | 'anthropic' | 'huggingface' | 'custom';
+  provider: 'ollama' | 'openai' | 'anthropic' | 'google' | 'azure' | 'huggingface' | 'custom';
   model: string;
   endpoint?: string;
   apiKey?: string;

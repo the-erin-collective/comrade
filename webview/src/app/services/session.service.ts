@@ -269,8 +269,29 @@ export class SessionService {
     this.messageService.closeSession(sessionId);
   }
   
-  public sendMessage(sessionId: string, message: string, contextItems: any[] = []) {
-    this.messageService.sendChatMessage(sessionId, message, contextItems);
+  public async sendMessage(sessionId: string, message: string, contextItems: any[] = []): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Use the new message service with agent validation
+      const result = await this.messageService.sendChatMessageWithValidation(
+        sessionId,
+        message,
+        contextItems,
+        undefined, // No streaming callback for now
+        true // Enable agent validation
+      );
+
+      if (result.error) {
+        return { success: false, error: result.error };
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('SessionService: Error sending message:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to send message' 
+      };
+    }
   }
   
   public addMessageToSession(sessionId: string, message: ChatMessage) {

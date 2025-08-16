@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Store } from '@ngrx/store';
-import { Observable, map, filter, take, firstValueFrom } from 'rxjs';
+import { Observable, map, filter, take, firstValueFrom, catchError, of } from 'rxjs';
 import { 
   ProviderConfig, 
   ProviderFormData, 
@@ -10,7 +10,10 @@ import {
   CloudProvider,
   LocalNetworkProvider
 } from '../interfaces/provider-agent.interface';
-import { MessageService, ExtensionMessage } from './message.service';
+import { MessageService } from './message.service';
+import { ErrorHandlerService } from './error-handler.service';
+import { FormValidationService } from './form-validation.service';
+import { ProviderValidation, NetworkValidation } from '../utils/validation.utils';
 import * as ProviderActions from '../state/provider/provider.actions';
 import { 
   selectProviders, 
@@ -42,7 +45,9 @@ export class ProviderManagerService {
 
   constructor(
     private store: Store,
-    private messageService: MessageService
+    private messageService: MessageService,
+    private errorHandler: ErrorHandlerService,
+    private formValidation: FormValidationService
   ) {
     // Initialize observables after store is available
     this.providers$ = this.store.select(selectProviders);
@@ -148,74 +153,196 @@ export class ProviderManagerService {
    * Add a new provider
    */
   public async addProvider(providerData: ProviderFormData): Promise<void> {
-    // Validate form data
-    const validation = this.validateProviderFormData(providerData);
-    if (!validation.valid) {
-      this.store.dispatch(ProviderActions.addProviderFailure({ 
-        error: validation.error || 'Invalid provider data' 
-      }));
-      return;
-    }
-
-    // Create provider object
-    const provider = this.createProviderFromFormData(providerData);
-    
-    this.store.dispatch(ProviderActions.addProvider({ providerData }));
-    
-    this.messageService.sendMessage({
-      type: 'updateConfig',
-      payload: { 
-        operation: 'addProvider',
-        provider: provider
+    try {
+      // Get existing providers for validation
+      const existingProviders = await firstValueFrom(this.providers$);
+      
+      // Comprehensive validation
+      const validation = this.formValidation.validateProviderForm(
+        providerData, 
+        existingProviders
+      );
+      
+      if (!validation.valid) {
+        const errorId = this.errorHandler.handleValidationError(
+          [validation.error!], 
+          validation.warnings,
+          'Add Provider'
+        );
+        this.store.dispatch(ProviderActions.addProviderFailure({ 
+          error: validation.error || 'Invalid provider data' 
+        }));
+        return;
       }
-    });
+
+      // Show warnings if any
+      if (validation.warnings && validation.warnings.length > 0) {
+        validation.warnings.forEach(warning => {
+          this.errorHandler.addWarning(warning, 'Add Provider');
+        });
+      }
+
+      // Create provider object
+      const provider = this.createProviderFromFormData(providerData);
+      
+      this.store.dispatch(ProviderActions.addProvider({ providerData }));
+      
+      this.messageService.sendMessage({
+        type: 'updateConfig',
+        payload: { 
+          operation: 'addProvider',
+          provider: provider
+        }
+      });
+
+    } catch (error) {
+      this.errorHandler.handleProviderError(error, 'add');
+      this.store.dispatch(ProviderActions.addProviderFailure({ 
+        error: 'Failed to add provider due to an unexpected error' 
+      }));
+    }
   }
 
   /**
    * Update an existing provider
    */
   public async updateProvider(providerId: string, updates: Partial<ProviderConfig>): Promise<void> {
-    this.store.dispatch(ProviderActions.updateProvider({ providerId, updates }));
-    
-    this.messageService.sendMessage({
-      type: 'updateConfig',
-      payload: { 
-        operation: 'updateProvider',
-        providerId,
-        updates
+    try {
+      // Get current provider
+      const currentProvider = await firstValueFrom(this.getProviderById(providerId));
+      if (!currentProvider) {
+        const errorId = this.errorHandler.handleProviderError(
+          'Provider not found', 
+          'update', 
+          providerId
+        );
+        this.store.dispatch(ProviderActions.updateProviderFailure({ 
+          error: 'Provider not found' 
+        }));
+        return;
       }
-    });
+
+      // If updating critical fields, validate the entire configuration
+      if (updates.name || updates.apiKey || (updates as any).endpoint) {
+        const existingProviders = await firstValueFrom(this.providers$);
+        const updatedData = { ...currentProvider, ...updates };
+        
+        // Convert to form data format for validation
+        const formData: ProviderFormData = {
+          name: updatedData.name,
+          type: updatedData.type,
+          provider: updatedData.provider,
+          apiKey: 'apiKey' in updatedData ? updatedData.apiKey : undefined,
+          endpoint: updatedData.type === 'local-network' ? updatedData.endpoint : undefined,
+          localHostType: updatedData.type === 'local-network' ? updatedData.localHostType : undefined
+        };
+
+        const validation = this.formValidation.validateProviderForm(
+          formData, 
+          existingProviders, 
+          providerId
+        );
+        
+        if (!validation.valid) {
+          const errorId = this.errorHandler.handleValidationError(
+            [validation.error!], 
+            validation.warnings,
+            'Update Provider'
+          );
+          this.store.dispatch(ProviderActions.updateProviderFailure({ 
+            error: validation.error || 'Invalid provider data' 
+          }));
+          return;
+        }
+
+        // Show warnings if any
+        if (validation.warnings && validation.warnings.length > 0) {
+          validation.warnings.forEach(warning => {
+            this.errorHandler.addWarning(warning, 'Update Provider');
+          });
+        }
+      }
+
+      this.store.dispatch(ProviderActions.updateProvider({ providerId, updates }));
+      
+      this.messageService.sendMessage({
+        type: 'updateConfig',
+        payload: { 
+          operation: 'updateProvider',
+          providerId,
+          updates
+        }
+      });
+
+    } catch (error) {
+      this.errorHandler.handleProviderError(error, 'update', providerId);
+      this.store.dispatch(ProviderActions.updateProviderFailure({ 
+        error: 'Failed to update provider due to an unexpected error' 
+      }));
+    }
   }
 
   /**
    * Delete a provider
    */
   public async deleteProvider(providerId: string): Promise<void> {
-    this.store.dispatch(ProviderActions.deleteProvider({ providerId }));
-    
-    this.messageService.sendMessage({
-      type: 'updateConfig',
-      payload: { 
-        operation: 'deleteProvider',
-        providerId
-      }
-    });
+    try {
+      // Get current provider for context
+      const provider = await firstValueFrom(this.getProviderById(providerId));
+      const providerName = provider?.name || providerId;
+
+      this.store.dispatch(ProviderActions.deleteProvider({ providerId }));
+      
+      this.messageService.sendMessage({
+        type: 'updateConfig',
+        payload: { 
+          operation: 'deleteProvider',
+          providerId
+        }
+      });
+
+    } catch (error) {
+      this.errorHandler.handleProviderError(error, 'delete', providerId);
+      this.store.dispatch(ProviderActions.deleteProviderFailure({ 
+        error: 'Failed to delete provider due to an unexpected error' 
+      }));
+    }
   }
 
   /**
    * Toggle provider active/inactive status
    */
   public async toggleProviderStatus(providerId: string, isActive: boolean): Promise<void> {
-    this.store.dispatch(ProviderActions.toggleProvider({ providerId, isActive }));
-    
-    this.messageService.sendMessage({
-      type: 'updateConfig',
-      payload: { 
-        operation: 'toggleProvider',
-        providerId,
-        isActive
+    try {
+      // Get current provider for context
+      const provider = await firstValueFrom(this.getProviderById(providerId));
+      const providerName = provider?.name || providerId;
+
+      // Warn about deactivating providers with dependent agents
+      if (!isActive && provider) {
+        this.errorHandler.addWarning(
+          `Deactivating provider "${providerName}" will also deactivate all dependent agents`,
+          'Toggle Provider'
+        );
       }
-    });
+
+      this.store.dispatch(ProviderActions.toggleProvider({ providerId, isActive }));
+      
+      this.messageService.sendMessage({
+        type: 'updateConfig',
+        payload: { 
+          operation: 'toggleProvider',
+          providerId,
+          isActive
+        }
+      });
+
+    } catch (error) {
+      this.errorHandler.handleProviderError(error, 'toggle', providerId);
+      this.store.dispatch(ProviderActions.toggleProviderFailure({ 
+        error: 'Failed to toggle provider due to an unexpected error' 
+      }));
+    }
   }
 
   /**
@@ -250,65 +377,181 @@ export class ProviderManagerService {
    * Test provider connection
    */
   public async testProviderConnection(provider: ProviderConfig): Promise<ConnectionTestResult> {
-    return new Promise((resolve) => {
-      // Set up a one-time message listener for the test result
-      const subscription = this.messageService.messages$.pipe(
-        filter(message => message.type === 'connectionTestResult' && 
-                          message.payload?.providerId === provider.id),
-        take(1)
-      ).subscribe(message => {
-        resolve(message.payload.result);
-      });
-
-      // Send test request
-      this.messageService.sendMessage({
-        type: 'testProviderConnection',
-        payload: { provider }
-      });
-
-      // Cleanup subscription after timeout
-      setTimeout(() => {
-        subscription.unsubscribe();
-        resolve({
-          success: false,
-          error: 'Connection test timeout'
+    try {
+      return new Promise((resolve, reject) => {
+        const timeout = 30000; // 30 second timeout
+        
+        // Set up a one-time message listener for the test result
+        const subscription = this.messageService.messages$.pipe(
+          filter(message => message.type === 'connectionTestResult' && 
+                            message.payload?.providerId === provider.id),
+          take(1),
+          catchError(error => {
+            this.errorHandler.handleConnectionError(
+              error, 
+              provider.type === 'local-network' ? provider.endpoint : undefined,
+              'connection test'
+            );
+            return of({ payload: { result: { success: false, error: error.message } } });
+          })
+        ).subscribe(message => {
+          const result = message.payload.result;
+          
+          // Log connection test results
+          if (result.success) {
+            this.errorHandler.addInfo(
+              `Connection test successful for provider "${provider.name}"`,
+              'Connection Test',
+              result.responseTime ? `Response time: ${result.responseTime}ms` : undefined
+            );
+          } else {
+            this.errorHandler.handleConnectionError(
+              result.error || 'Connection test failed',
+              provider.type === 'local-network' ? provider.endpoint : undefined,
+              'connection test'
+            );
+          }
+          
+          resolve(result);
         });
-      }, 30000); // 30 second timeout
-    });
+
+        // Send test request
+        this.messageService.sendMessage({
+          type: 'testProviderConnection',
+          payload: { provider }
+        });
+
+        // Cleanup subscription after timeout
+        setTimeout(() => {
+          subscription.unsubscribe();
+          const timeoutResult = {
+            success: false,
+            error: 'Connection test timeout - the server may be unreachable or overloaded'
+          };
+          
+          this.errorHandler.handleConnectionError(
+            timeoutResult.error,
+            provider.type === 'local-network' ? provider.endpoint : undefined,
+            'connection test'
+          );
+          
+          resolve(timeoutResult);
+        }, timeout);
+      });
+
+    } catch (error) {
+      this.errorHandler.handleConnectionError(
+        error,
+        provider.type === 'local-network' ? provider.endpoint : undefined,
+        'connection test'
+      );
+      
+      return {
+        success: false,
+        error: 'Failed to initiate connection test'
+      };
+    }
   }
 
   /**
    * Fetch available models for a provider
    */
   public async fetchAvailableModels(providerId: string): Promise<void> {
-    const provider = await firstValueFrom(this.getProviderById(providerId));
-    if (!provider) {
+    try {
+      const provider = await firstValueFrom(this.getProviderById(providerId));
+      if (!provider) {
+        const errorId = this.errorHandler.handleProviderError(
+          'Provider not found',
+          'fetch models',
+          providerId
+        );
+        this.store.dispatch(ProviderActions.loadModelsForProviderFailure({
+          providerId,
+          error: 'Provider not found'
+        }));
+        return;
+      }
+
+      if (!provider.isActive) {
+        const errorId = this.errorHandler.handleProviderError(
+          'Cannot fetch models from inactive provider',
+          'fetch models',
+          provider.name
+        );
+        this.store.dispatch(ProviderActions.loadModelsForProviderFailure({
+          providerId,
+          error: 'Provider is not active'
+        }));
+        return;
+      }
+
+      this.store.dispatch(ProviderActions.loadModelsForProvider({ providerId }));
+
+      if (provider.type === 'local-network' && provider.localHostType === 'ollama') {
+        // Validate endpoint before making request
+        const endpointValidation = ProviderValidation.validateEndpoint(provider.endpoint);
+        if (!endpointValidation.valid) {
+          const errorId = this.errorHandler.handleProviderError(
+            `Invalid endpoint: ${endpointValidation.error}`,
+            'fetch models',
+            provider.name
+          );
+          this.store.dispatch(ProviderActions.loadModelsForProviderFailure({
+            providerId,
+            error: endpointValidation.error!
+          }));
+          return;
+        }
+
+        this.messageService.sendMessage({
+          type: 'fetchOllamaModels',
+          payload: { 
+            networkAddress: provider.endpoint,
+            providerId: providerId
+          }
+        });
+      } else if (provider.type === 'cloud') {
+        // Validate API key before making request
+        const apiKeyValidation = ProviderValidation.validateApiKey(provider.provider, provider.apiKey);
+        if (!apiKeyValidation.valid) {
+          const errorId = this.errorHandler.handleProviderError(
+            `Invalid API key: ${apiKeyValidation.error}`,
+            'fetch models',
+            provider.name
+          );
+          this.store.dispatch(ProviderActions.loadModelsForProviderFailure({
+            providerId,
+            error: apiKeyValidation.error!
+          }));
+          return;
+        }
+
+        this.messageService.sendMessage({
+          type: 'fetchCloudModels',
+          payload: { 
+            provider: provider.provider,
+            apiKey: provider.apiKey,
+            providerId: providerId
+          }
+        });
+      } else {
+        const errorId = this.errorHandler.handleProviderError(
+          'Unsupported provider type for model fetching',
+          'fetch models',
+          provider.name
+        );
+        this.store.dispatch(ProviderActions.loadModelsForProviderFailure({
+          providerId,
+          error: 'Unsupported provider type'
+        }));
+      }
+
+    } catch (error) {
+      this.errorHandler.handleProviderError(error, 'fetch models', providerId);
       this.store.dispatch(ProviderActions.loadModelsForProviderFailure({
         providerId,
-        error: 'Provider not found'
+        error: 'Failed to fetch models due to an unexpected error'
       }));
-      return;
-    }
-
-    this.store.dispatch(ProviderActions.loadModelsForProvider({ providerId }));
-
-    if (provider.type === 'local-network' && provider.localHostType === 'ollama') {
-      this.messageService.sendMessage({
-        type: 'fetchOllamaModels',
-        payload: { 
-          networkAddress: provider.endpoint,
-          providerId: providerId
-        }
-      });
-    } else if (provider.type === 'cloud') {
-      this.messageService.sendMessage({
-        type: 'fetchCloudModels',
-        payload: { 
-          provider: provider.provider,
-          apiKey: provider.apiKey,
-          providerId: providerId
-        }
-      });
     }
   }
 
@@ -343,45 +586,28 @@ export class ProviderManagerService {
   }
 
   /**
-   * Validate provider form data
+   * Enhanced error handling for message responses
    */
-  private validateProviderFormData(data: ProviderFormData): ValidationResult {
-    if (!data.name?.trim()) {
-      return { valid: false, error: 'Provider name is required' };
+  private handleMessageError(message: any, operation: string, context?: string): void {
+    if (message.payload?.error) {
+      this.errorHandler.handleProviderError(
+        message.payload.error,
+        operation,
+        context
+      );
     }
+  }
 
-    if (!data.type) {
-      return { valid: false, error: 'Provider type is required' };
+  /**
+   * Enhanced success handling for message responses
+   */
+  private handleMessageSuccess(message: any, operation: string, context?: string): void {
+    if (message.payload?.success) {
+      this.errorHandler.addInfo(
+        `${operation} completed successfully${context ? ` for ${context}` : ''}`,
+        `Provider ${operation}`
+      );
     }
-
-    if (!data.provider) {
-      return { valid: false, error: 'Provider selection is required' };
-    }
-
-    if (data.type === 'cloud') {
-      if (!data.apiKey?.trim()) {
-        return { valid: false, error: 'API key is required for cloud providers' };
-      }
-    }
-
-    if (data.type === 'local-network') {
-      if (!data.endpoint?.trim()) {
-        return { valid: false, error: 'Endpoint is required for local network providers' };
-      }
-
-      // Validate endpoint format
-      try {
-        new URL(data.endpoint);
-      } catch {
-        return { valid: false, error: 'Invalid endpoint URL format' };
-      }
-
-      if (!data.localHostType) {
-        return { valid: false, error: 'Local host type is required for local network providers' };
-      }
-    }
-
-    return { valid: true };
   }
 
   /**

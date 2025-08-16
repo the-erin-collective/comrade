@@ -5,6 +5,8 @@
 import * as vscode from 'vscode';
 import { AgentConfig, AgentCapabilities, LLMProvider, IAgent } from './agent';
 import { ConfigurationValidator } from './config-validator';
+import { ProviderConfig, Agent } from './types';
+import { ProviderManagerService as ProviderManager } from './provider-manager';
 
 export interface AgentConfigurationItem {
   id: string;
@@ -30,6 +32,7 @@ export interface MCPServerConfig {
 
 export interface ComradeConfiguration {
   agents: AgentConfigurationItem[];
+  providers: ProviderConfig[];
   assignmentDefaultMode: 'speed' | 'structure';
   mcpServers: MCPServerConfig[];
   contextMaxFiles: number;
@@ -39,6 +42,7 @@ export interface ComradeConfiguration {
 export class ConfigurationManager {
   private static instance: ConfigurationManager | null = null;
   private secretStorage: vscode.SecretStorage;
+  private providerManager: ProviderManager;
 
   /**
    * Get the singleton instance of ConfigurationManager
@@ -59,6 +63,7 @@ export class ConfigurationManager {
 
   constructor(secretStorage: vscode.SecretStorage) {
     this.secretStorage = secretStorage;
+    this.providerManager = ProviderManager.getInstance(secretStorage);
   }
 
   /**
@@ -173,6 +178,7 @@ export class ConfigurationManager {
   private getDefaultConfiguration(): ComradeConfiguration {
     return {
       agents: [],
+      providers: [],
       assignmentDefaultMode: 'speed',
       mcpServers: [],
       contextMaxFiles: 100,
@@ -703,6 +709,7 @@ export class ConfigurationManager {
     
     // Use unwrap to properly handle VS Code configuration objects
     const agents = this.unwrap(config.get<AgentConfigurationItem[]>('agents')) || [];
+    const providers = this.unwrap(config.get<ProviderConfig[]>('providers')) || [];
     const defaultMode = this.unwrap(config.get<'speed' | 'structure'>('assignment.defaultMode')) || 'speed';
     const contextMaxFiles = this.unwrap(config.get<number>('context.maxFiles')) || 10;
     const contextMaxTokens = this.unwrap(config.get<number>('context.maxTokens')) || 4000;
@@ -710,6 +717,7 @@ export class ConfigurationManager {
     
     return {
       agents: Array.isArray(agents) ? agents : [],
+      providers: Array.isArray(providers) ? providers : [],
       assignmentDefaultMode: defaultMode,
       contextMaxFiles: typeof contextMaxFiles === 'number' ? contextMaxFiles : 10,
       contextMaxTokens: typeof contextMaxTokens === 'number' ? contextMaxTokens : 4000,
@@ -731,10 +739,353 @@ export class ConfigurationManager {
   }
 
   /**
+   * Provider Management Methods
+   * These methods delegate to the ProviderManagerService for the new architecture
+   */
+
+  /**
+   * Get all configured providers
+   */
+  public getProviders(): ProviderConfig[] {
+    return this.providerManager.getProviders();
+  }
+
+  /**
+   * Get active providers only
+   */
+  public getActiveProviders(): ProviderConfig[] {
+    return this.providerManager.getActiveProviders();
+  }
+
+  /**
+   * Get provider by ID
+   */
+  public getProviderById(id: string): ProviderConfig | null {
+    return this.providerManager.getProviderById(id);
+  }
+
+  /**
+   * Add a new provider
+   */
+  public async addProvider(providerData: any): Promise<ProviderConfig> {
+    return await this.providerManager.addProvider(providerData);
+  }
+
+  /**
+   * Update an existing provider
+   */
+  public async updateProvider(id: string, updates: any): Promise<ProviderConfig> {
+    return await this.providerManager.updateProvider(id, updates);
+  }
+
+  /**
+   * Delete a provider
+   */
+  public async deleteProvider(id: string): Promise<void> {
+    await this.providerManager.deleteProvider(id);
+  }
+
+  /**
+   * Toggle provider active status
+   */
+  public async toggleProviderStatus(id: string, isActive: boolean): Promise<ProviderConfig> {
+    return await this.providerManager.toggleProviderStatus(id, isActive);
+  }
+
+  /**
+   * Validate provider configuration
+   */
+  public async validateProvider(provider: ProviderConfig): Promise<any> {
+    return await this.providerManager.validateProvider(provider);
+  }
+
+  /**
+   * Test provider connection
+   */
+  public async testProviderConnection(provider: ProviderConfig): Promise<any> {
+    return await this.providerManager.testProviderConnection(provider);
+  }
+
+  /**
+   * Fetch available models for a provider
+   */
+  public async fetchAvailableModels(providerId: string): Promise<string[]> {
+    return await this.providerManager.fetchAvailableModels(providerId);
+  }
+
+  /**
+   * Get provider API key
+   */
+  public async getProviderApiKey(providerId: string): Promise<string | undefined> {
+    return await this.providerManager.getProviderApiKey(providerId);
+  }
+
+  /**
+   * New Agent Management Methods for Provider-Agent Architecture
+   */
+
+  /**
+   * Get all agents in the new format
+   */
+  public getNewAgents(): Agent[] {
+    const config = vscode.workspace.getConfiguration('comrade');
+    const agents = config.get<Agent[]>('newAgents', []);
+    return Array.isArray(agents) ? agents : [];
+  }
+
+  /**
+   * Get active agents in the new format
+   */
+  public getActiveNewAgents(): Agent[] {
+    return this.getNewAgents().filter(agent => agent.isActive);
+  }
+
+  /**
+   * Get agent by ID in the new format
+   */
+  public getNewAgentById(id: string): Agent | null {
+    const agents = this.getNewAgents();
+    return agents.find(agent => agent.id === id) || null;
+  }
+
+  /**
+   * Get agents by provider ID
+   */
+  public getAgentsByProvider(providerId: string): Agent[] {
+    return this.getNewAgents().filter(agent => agent.providerId === providerId);
+  }
+
+  /**
+   * Add a new agent in the new format
+   */
+  public async addNewAgent(agentData: any): Promise<Agent> {
+    // Validate that the provider exists and is active
+    const provider = this.getProviderById(agentData.providerId);
+    if (!provider) {
+      throw new Error(`Provider with ID ${agentData.providerId} not found`);
+    }
+
+    if (!provider.isActive) {
+      throw new Error(`Provider ${provider.name} is not active`);
+    }
+
+    // Create agent object
+    const agent: Agent = {
+      id: ConfigurationValidator.generateUniqueId('agent'),
+      name: agentData.name,
+      providerId: agentData.providerId,
+      model: agentData.model,
+      temperature: agentData.temperature,
+      maxTokens: agentData.maxTokens,
+      timeout: agentData.timeout,
+      systemPrompt: agentData.systemPrompt,
+      capabilities: agentData.capabilities || {
+        hasVision: false,
+        hasToolUse: false,
+        reasoningDepth: 'intermediate',
+        speed: 'medium',
+        costTier: 'medium',
+        maxTokens: 4000,
+        supportedLanguages: ['en'],
+        specializations: ['code']
+      },
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    // Add to configuration
+    const currentAgents = this.getNewAgents();
+    const updatedAgents = [...currentAgents, agent];
+    await this.updateNewAgentsConfiguration(updatedAgents);
+
+    return agent;
+  }
+
+  /**
+   * Update an existing agent in the new format
+   */
+  public async updateNewAgent(id: string, updates: Partial<Agent>): Promise<Agent> {
+    const currentAgents = this.getNewAgents();
+    const agentIndex = currentAgents.findIndex(a => a.id === id);
+    
+    if (agentIndex === -1) {
+      throw new Error(`Agent with ID ${id} not found`);
+    }
+
+    // If provider is being changed, validate it exists and is active
+    if (updates.providerId && updates.providerId !== currentAgents[agentIndex].providerId) {
+      const provider = this.getProviderById(updates.providerId);
+      if (!provider) {
+        throw new Error(`Provider with ID ${updates.providerId} not found`);
+      }
+      if (!provider.isActive) {
+        throw new Error(`Provider ${provider.name} is not active`);
+      }
+    }
+
+    const updatedAgent = {
+      ...currentAgents[agentIndex],
+      ...updates,
+      updatedAt: new Date()
+    };
+
+    currentAgents[agentIndex] = updatedAgent;
+    await this.updateNewAgentsConfiguration(currentAgents);
+
+    return updatedAgent;
+  }
+
+  /**
+   * Delete an agent in the new format
+   */
+  public async deleteNewAgent(id: string): Promise<void> {
+    const currentAgents = this.getNewAgents();
+    const filteredAgents = currentAgents.filter(a => a.id !== id);
+    
+    if (filteredAgents.length === currentAgents.length) {
+      throw new Error(`Agent with ID ${id} not found`);
+    }
+
+    await this.updateNewAgentsConfiguration(filteredAgents);
+  }
+
+  /**
+   * Toggle agent active status in the new format
+   */
+  public async toggleNewAgentStatus(id: string, isActive: boolean): Promise<Agent> {
+    return await this.updateNewAgent(id, { isActive });
+  }
+
+  /**
+   * Deactivate all agents for a provider
+   */
+  public async deactivateAgentsByProvider(providerId: string): Promise<void> {
+    const agents = this.getAgentsByProvider(providerId);
+    for (const agent of agents) {
+      if (agent.isActive) {
+        await this.toggleNewAgentStatus(agent.id, false);
+      }
+    }
+  }
+
+  /**
+   * Delete all agents for a provider
+   */
+  public async deleteAgentsByProvider(providerId: string): Promise<void> {
+    const agents = this.getAgentsByProvider(providerId);
+    for (const agent of agents) {
+      await this.deleteNewAgent(agent.id);
+    }
+  }
+
+  /**
+   * Update agents configuration in VS Code settings
+   */
+  private async updateNewAgentsConfiguration(agents: Agent[]): Promise<void> {
+    const config = vscode.workspace.getConfiguration('comrade');
+    await config.update('newAgents', agents, vscode.ConfigurationTarget.Global);
+  }
+
+  /**
+   * Migration Methods
+   */
+
+  /**
+   * Migrate existing agent configurations to the new provider-agent architecture
+   */
+  public async migrateToProviderAgentArchitecture(): Promise<{ providersCreated: number; agentsUpdated: number; errors: string[] }> {
+    const errors: string[] = [];
+    let providersCreated = 0;
+    let agentsUpdated = 0;
+
+    try {
+      // Get existing agents
+      const existingAgents = this.getConfiguration().agents;
+      const providerMap = new Map<string, ProviderConfig>();
+
+      // Create providers from existing agent configurations
+      for (const agentConfig of existingAgents) {
+        try {
+          const providerKey = `${agentConfig.provider}-${agentConfig.endpoint || 'default'}`;
+          
+          if (!providerMap.has(providerKey)) {
+            // Create provider
+            const providerData = {
+              name: `${agentConfig.provider.charAt(0).toUpperCase() + agentConfig.provider.slice(1)} Provider`,
+              type: agentConfig.provider === 'ollama' ? 'local-network' as const : 'cloud' as const,
+              provider: agentConfig.provider,
+              endpoint: agentConfig.endpoint,
+              localHostType: agentConfig.provider === 'ollama' ? 'ollama' as const : undefined
+            };
+
+            const provider = await this.addProvider(providerData);
+            providerMap.set(providerKey, provider);
+            providersCreated++;
+
+            // Migrate API key if it exists
+            const apiKey = await this.getApiKey(agentConfig.id);
+            if (apiKey && provider.type === 'cloud') {
+              await this.providerManager.storeProviderApiKey(provider.id, apiKey);
+            }
+          }
+        } catch (error) {
+          errors.push(`Failed to create provider for agent ${agentConfig.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      }
+
+      // Create new agents that reference providers
+      for (const agentConfig of existingAgents) {
+        try {
+          const providerKey = `${agentConfig.provider}-${agentConfig.endpoint || 'default'}`;
+          const provider = providerMap.get(providerKey);
+
+          if (provider) {
+            const newAgentData = {
+              name: agentConfig.name,
+              providerId: provider.id,
+              model: agentConfig.model,
+              temperature: agentConfig.temperature,
+              maxTokens: agentConfig.maxTokens,
+              timeout: agentConfig.timeout,
+              capabilities: agentConfig.capabilities
+            };
+
+            await this.addNewAgent(newAgentData);
+            agentsUpdated++;
+          } else {
+            errors.push(`Could not find provider for agent ${agentConfig.name}`);
+          }
+        } catch (error) {
+          errors.push(`Failed to migrate agent ${agentConfig.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      }
+
+      return { providersCreated, agentsUpdated, errors };
+    } catch (error) {
+      errors.push(`Migration failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return { providersCreated, agentsUpdated, errors };
+    }
+  }
+
+  /**
+   * Check if migration is needed
+   */
+  public needsMigration(): boolean {
+    const existingAgents = this.getConfiguration().agents;
+    const newAgents = this.getNewAgents();
+    const providers = this.getProviders();
+
+    // Migration is needed if we have old agents but no new agents or providers
+    return existingAgents.length > 0 && newAgents.length === 0 && providers.length === 0;
+  }
+
+  /**
    * Dispose of resources
    */
   public dispose(): void {
-    // Implementation for disposing resources
-    // This is a placeholder - implement based on actual requirements
+    if (this.providerManager) {
+      this.providerManager.dispose();
+    }
   }
 }

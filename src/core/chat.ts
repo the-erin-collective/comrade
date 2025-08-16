@@ -290,6 +290,9 @@ export class ChatBridge implements IChatBridge {
   }
 
   async sendMessage(agent: IAgent, messages: ChatMessage[], options?: ChatOptions): Promise<ChatResponse> {
+    // Validate agent availability with new provider-agent architecture
+    await this.validateAgentWithProvider(agent);
+    
     // Get or create session
     const sessionId = options?.metadata?.sessionId as string || 'default';
     let session = this.sessionManager?.getSession(sessionId);
@@ -457,6 +460,56 @@ export class ChatBridge implements IChatBridge {
 
       console.error('Connection validation error:', error);
       return [false, errorMsg];
+    }
+  }
+
+  /**
+   * Validate agent with provider in the new architecture
+   */
+  private async validateAgentWithProvider(agent: IAgent): Promise<void> {
+    try {
+      // Import here to avoid circular dependencies
+      const { getAgentRegistry } = await import('../extension');
+      const agentRegistry = getAgentRegistry();
+      
+      // Check if we should use the new architecture
+      if (agentRegistry.shouldUseNewArchitecture()) {
+        const validation = await agentRegistry.validateAgentWithProvider(agent.id);
+        
+        if (!validation.isValid) {
+          throw new ChatBridgeError(
+            `Agent validation failed: ${validation.errors.join('; ')}`,
+            'agent_validation_failed',
+            agent.provider,
+            undefined,
+            undefined,
+            'Please check your agent and provider configuration in the settings.'
+          );
+        }
+        
+        if (!validation.isConnected) {
+          throw new ChatBridgeError(
+            'Agent provider is not connected',
+            'provider_not_connected',
+            agent.provider,
+            undefined,
+            undefined,
+            'Please check your provider connection settings.'
+          );
+        }
+      }
+    } catch (error) {
+      // If validation fails, re-throw the error
+      if (error instanceof ChatBridgeError) {
+        throw error;
+      }
+      
+      // For other errors, create a generic validation error
+      throw new ChatBridgeError(
+        `Agent validation error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'agent_validation_error',
+        agent.provider
+      );
     }
   }
 

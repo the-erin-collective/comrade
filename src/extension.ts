@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { registerHelloWorldCommand } from './commands/helloWorld';
 import { ConfigurationManager } from './core/config';
 import { AgentRegistry } from './core/registry';
+import { ProviderManagerService } from './core/provider-manager';
 import { PersonalityManager } from './core/personality';
 import { ConfigurationAutoReloadManager } from './core/config-auto-reload';
 import { registerContextExampleCommands } from './examples/context-runner-usage';
@@ -21,6 +22,7 @@ let statusBarManager: StatusBarManager;
 let autoReloadManager: ConfigurationAutoReloadManager;
 let chatBridge: ChatBridge;
 let aiSessionManager: AISessionManager;
+let providerManager: ProviderManagerService;
 
 // Track sidebar revelation state
 let sidebarHasBeenRevealed = false;
@@ -33,9 +35,44 @@ export async function activate(context: vscode.ExtensionContext) {
         // Initialize configuration system with secure storage
         configurationManager = ConfigurationManager.getInstance(context.secrets);
         
+        // Initialize provider manager
+        providerManager = ProviderManagerService.getInstance(context.secrets);
+        
         // Initialize agent registry
         agentRegistry = AgentRegistry.getInstance(configurationManager);
         await agentRegistry.initialize();
+        
+        // Check if migration is needed and perform it
+        if (configurationManager.needsMigration()) {
+            console.log('Migration needed - migrating to provider-agent architecture');
+            try {
+                const migrationResult = await configurationManager.migrateToProviderAgentArchitecture();
+                console.log('Migration completed:', migrationResult);
+                
+                if (migrationResult.errors.length > 0) {
+                    console.warn('Migration completed with errors:', migrationResult.errors);
+                    vscode.window.showWarningMessage(
+                        `Configuration migration completed with ${migrationResult.errors.length} errors. Check the output panel for details.`,
+                        'View Details'
+                    ).then(selection => {
+                        if (selection === 'View Details') {
+                            vscode.window.showInformationMessage(
+                                `Migration Results:\n- Providers created: ${migrationResult.providersCreated}\n- Agents updated: ${migrationResult.agentsUpdated}\n- Errors: ${migrationResult.errors.join(', ')}`
+                            );
+                        }
+                    });
+                } else {
+                    vscode.window.showInformationMessage(
+                        `Configuration successfully migrated to new provider-agent architecture. Created ${migrationResult.providersCreated} providers and updated ${migrationResult.agentsUpdated} agents.`
+                    );
+                }
+            } catch (error) {
+                console.error('Migration failed:', error);
+                vscode.window.showErrorMessage(
+                    `Failed to migrate configuration: ${error instanceof Error ? error.message : 'Unknown error'}`
+                );
+            }
+        }
         
         // Initialize personality system for each workspace
         personalityManager = PersonalityManager.getInstance();
@@ -224,13 +261,97 @@ Last Reload: ${stats.lastReloadTime ? stats.lastReloadTime.toLocaleString() : 'N
         
         vscode.window.showInformationMessage(message);
     });
+
+    // Command to show provider stats
+    const showProviderStatsCommand = vscode.commands.registerCommand('comrade.showProviderStats', () => {
+        const providers = configurationManager.getProviders();
+        const activeProviders = configurationManager.getActiveProviders();
+        
+        const providersByType = providers.reduce((acc, provider) => {
+            acc[provider.type] = (acc[provider.type] || 0) + 1;
+            return acc;
+        }, {} as Record<string, number>);
+        
+        const providersByProvider = providers.reduce((acc, provider) => {
+            acc[provider.provider] = (acc[provider.provider] || 0) + 1;
+            return acc;
+        }, {} as Record<string, number>);
+        
+        const message = `Provider Stats:
+Total Providers: ${providers.length}
+Active Providers: ${activeProviders.length}
+
+By Type:
+${Object.entries(providersByType).map(([type, count]) => `${type}: ${count}`).join('\n')}
+
+By Provider:
+${Object.entries(providersByProvider).map(([provider, count]) => `${provider}: ${count}`).join('\n')}`;
+        
+        vscode.window.showInformationMessage(message);
+    });
+
+    // Command to test all provider connections
+    const testAllProvidersCommand = vscode.commands.registerCommand('comrade.testAllProviders', async () => {
+        const providers = configurationManager.getActiveProviders();
+        
+        if (providers.length === 0) {
+            vscode.window.showInformationMessage('No active providers configured.');
+            return;
+        }
+        
+        vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: 'Testing provider connections...',
+            cancellable: false
+        }, async (progress) => {
+            const results: { name: string; success: boolean; error?: string; responseTime?: number }[] = [];
+            
+            for (let i = 0; i < providers.length; i++) {
+                const provider = providers[i];
+                progress.report({ 
+                    message: `Testing ${provider.name}...`,
+                    increment: (i / providers.length) * 100
+                });
+                
+                try {
+                    const result = await configurationManager.testProviderConnection(provider);
+                    results.push({ 
+                        name: provider.name, 
+                        success: result.success, 
+                        error: result.error,
+                        responseTime: result.responseTime
+                    });
+                } catch (error) {
+                    results.push({ 
+                        name: provider.name, 
+                        success: false, 
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+            }
+            
+            // Show results
+            const successCount = results.filter(r => r.success).length;
+            const message = `Provider connection test completed: ${successCount}/${results.length} providers connected`;
+            
+            if (successCount === results.length) {
+                vscode.window.showInformationMessage(message);
+            } else {
+                const failedProviders = results.filter(r => !r.success);
+                const details = failedProviders.map(r => `${r.name}: ${r.error || 'Connection failed'}`).join('\n');
+                vscode.window.showWarningMessage(`${message}\n\nFailed providers:\n${details}`);
+            }
+        });
+    });
     
     context.subscriptions.push(
         openAgentConfigCommand,
         testAgentConnectivityCommand,
         showRegistryStatsCommand,
         reloadConfigurationCommand,
-        showAutoReloadStatsCommand
+        showAutoReloadStatsCommand,
+        showProviderStatsCommand,
+        testAllProvidersCommand
     );
 }
 
@@ -463,6 +584,10 @@ export function getPersonalityManager(): PersonalityManager {
 
 export function getStatusBarManager(): StatusBarManager {
     return statusBarManager;
+}
+
+export function getProviderManager(): ProviderManagerService {
+    return providerManager;
 }
 
 /**

@@ -13,13 +13,15 @@ import { ErrorHandlerComponent } from './components/error-handler/error-handler.
 import { ProgressIndicatorComponent } from './components/progress-indicator/progress-indicator.component';
 import { SettingsComponent } from './components/settings/settings.component';
 import { SessionHistoryComponent } from './components/session-history/session-history.component';
+import { MigrationStatusComponent } from './components/migration-status/migration-status.component';
 import { SessionService } from './services/session.service';
 import { MessageService } from './services/message.service';
+import { MigrationExecutorService } from './services/migration-executor.service';
 import { ConversationSession, ContextItem, PhaseAlert, ErrorState, ProgressState, TimeoutState } from './models/session.model';
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule, SessionTabsComponent, ChatOutputComponent, InputAreaComponent, ErrorHandlerComponent, ProgressIndicatorComponent, SettingsComponent, SessionHistoryComponent],
+  imports: [CommonModule, FormsModule, SessionTabsComponent, ChatOutputComponent, InputAreaComponent, ErrorHandlerComponent, ProgressIndicatorComponent, SettingsComponent, SessionHistoryComponent, MigrationStatusComponent],
   templateUrl: './app.html',
   styleUrl: './app.css'
 })
@@ -49,6 +51,7 @@ export class App {
   constructor(
     private sessionService: SessionService,
     private messageService: MessageService,
+    private migrationExecutor: MigrationExecutorService,
     private store: Store<any>
   ) {
     console.log('App constructor called - Angular is running!');
@@ -69,6 +72,9 @@ export class App {
       
       // Setup event listeners
       this.setupEventListeners();
+      
+      // Check and execute migration if needed
+      await this.checkMigration();
       
       // Load available agents from configuration
       this.loadAvailableAgents();
@@ -126,6 +132,61 @@ export class App {
     window.addEventListener('showSettings', () => {
       this.showSettings.set(true);
     });
+  }
+
+  private async checkMigration() {
+    try {
+      console.log('App: Checking if migration is needed...');
+      this.initializationMessage.set('Checking configuration migration...');
+      
+      // Subscribe to migration status for user feedback
+      this.migrationExecutor.migrationStatus$
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(status => {
+          if (status.isRunning) {
+            this.initializationMessage.set(status.currentStep);
+          }
+          
+          if (status.isComplete) {
+            if (status.hasErrors) {
+              console.error('App: Migration completed with errors:', status.currentStep);
+              // Show error but don't block initialization
+              this.phaseAlert.set({
+                message: `Configuration migration failed: ${status.currentStep}`,
+                actionButton: {
+                  text: 'Continue',
+                  action: () => this.phaseAlert.set(null)
+                },
+                type: 'warning',
+                dismissible: true
+              });
+            } else if (status.results && status.results.providersCreated.length > 0) {
+              console.log('App: Migration completed successfully');
+              // Show success message
+              this.phaseAlert.set({
+                message: `Configuration migrated successfully! Created ${status.results.providersCreated.length} providers and updated ${status.results.agentsUpdated.length} agents.`,
+                actionButton: {
+                  text: 'Great!',
+                  action: () => this.phaseAlert.set(null)
+                },
+                type: 'success',
+                dismissible: true
+              });
+            }
+          }
+        });
+      
+      // Check and execute migration if needed
+      const migrationExecuted = await this.migrationExecutor.checkAndExecuteMigration();
+      
+      if (!migrationExecuted) {
+        console.log('App: No migration needed');
+      }
+      
+    } catch (error) {
+      console.error('App: Migration check failed:', error);
+      // Don't block initialization for migration errors
+    }
   }
 
   private loadAvailableAgents() {
@@ -239,10 +300,53 @@ export class App {
     return session.type === 'conversation' ? session as ConversationSession : null;
   }
 
-  public onMessageSubmit(data: { message: string; contextItems: ContextItem[] }) {
+  public async onMessageSubmit(data: { message: string; contextItems: ContextItem[] }) {
     const activeSession = this.activeSession();
-    if (activeSession) {
-      this.sessionService.sendMessage(activeSession.id, data.message, data.contextItems);
+    if (!activeSession) {
+      console.error('No active session for message submission');
+      return;
+    }
+
+    try {
+      // Show loading state
+      this.isLoading.set(true);
+      this.loadingMessage.set('Checking agent availability...');
+
+      // Use the session service which now includes agent validation
+      const result = await this.sessionService.sendMessage(
+        activeSession.id,
+        data.message,
+        data.contextItems
+      );
+
+      if (!result.success) {
+        // Show error to user
+        this.errorState.set({
+          message: result.error || 'Failed to send message',
+          code: 'agent_availability_error',
+          recoverable: true,
+          suggestedFix: 'Please configure and activate at least one agent in the settings.',
+          configurationLink: 'settings',
+          timestamp: new Date(),
+          sessionId: activeSession.id
+        });
+      } else {
+        // Message sent successfully, update loading message
+        this.loadingMessage.set('Processing your message...');
+        // The actual response will be handled by the message service and session service
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      this.errorState.set({
+        message: error instanceof Error ? error.message : 'Failed to send message',
+        code: 'message_send_error',
+        recoverable: true,
+        suggestedFix: 'Please try again or check your configuration.',
+        timestamp: new Date(),
+        sessionId: activeSession.id
+      });
+    } finally {
+      this.isLoading.set(false);
     }
   }
 
@@ -336,21 +440,59 @@ export class App {
         }
         break;
 
+      case 'agentAvailabilityResult':
+        this.handleAgentAvailabilityResult(message.payload);
+        break;
+
+      case 'legacyConfigData':
+        console.log('App: Received legacy config data for migration');
+        // Migration executor will handle this automatically
+        break;
+
+      case 'migrationResult':
+        console.log('App: Received migration result:', message.payload);
+        // Migration executor will handle this automatically
+        break;
+
       default:
         console.log('Unhandled message type:', message.type);
     }
   }
 
-  private handleConfigResult(payload: { success: boolean; agents?: any[]; error?: string }) {
-    if (payload.success && payload.agents) {
-      console.log('App: Loaded agents from configuration:', payload.agents);
-      // Filter only enabled agents for the UI
-      const enabledAgents = payload.agents.filter(agent => agent.isEnabledForAssignment !== false);
-      this.availableAgents.set(enabledAgents);
-      console.log('App: Available agents updated:', enabledAgents.length);
+  private handleConfigResult(payload: { success: boolean; agents?: any[]; providers?: any[]; error?: string }) {
+    if (payload.success && payload.agents && payload.providers) {
+      console.log('App: Loaded configuration:', { agents: payload.agents.length, providers: payload.providers.length });
+      
+      // Filter agents that are active and have active providers
+      const activeAgents = payload.agents.filter(agent => {
+        if (!agent.isActive) {return false;}
+        
+        const provider = payload.providers!.find(p => p.id === agent.providerId);
+        return provider && provider.isActive;
+      });
+      
+      this.availableAgents.set(activeAgents);
+      console.log('App: Available active agents updated:', activeAgents.length);
     } else {
-      console.log('App: No agents found or error loading config:', payload.error);
+      console.log('App: No configuration found or error loading config:', payload.error);
       this.availableAgents.set([]);
+    }
+  }
+
+  private handleAgentAvailabilityResult(payload: { hasActiveAgents: boolean; activeAgentCount: number; error?: string }) {
+    console.log('App: Agent availability result:', payload);
+    
+    if (!payload.hasActiveAgents && payload.error) {
+      // Show error message about agent availability
+      this.errorState.set({
+        message: payload.error,
+        code: 'no_active_agents',
+        recoverable: true,
+        suggestedFix: 'Please configure and activate at least one agent in the settings.',
+        configurationLink: 'settings',
+        timestamp: new Date(),
+        sessionId: this.activeSession()?.id || 'unknown'
+      });
     }
   }
 

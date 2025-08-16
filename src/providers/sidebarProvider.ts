@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
 import { AIAgentService, AIResponse, ToolCall, AIToolResult } from '../core/ai-agent';
-import { ProviderConfig, Agent } from '../core/types';
+import { ProviderConfig, Agent, ProviderFormData, AgentFormData, ConnectionTestResult, ProviderValidationResult, AgentValidationResult } from '../core/types';
+import { getConfigurationManager, getAgentRegistry } from '../extension';
 
 export interface WebviewMessage {
-  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult' | 'aiResponse' | 'toolExecution' | 'aiTyping' | 'aiProcessing' | 'providerValidationResult' | 'connectionTestResult';
+  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult' | 'aiResponse' | 'toolExecution' | 'aiTyping' | 'aiProcessing' | 'providerValidationResult' | 'connectionTestResult' | 'agentValidationResult' | 'agentAvailabilityResult' | 'legacyConfigData' | 'migrationResult' | 'streamChunk';
   payload: any;
 }
 
@@ -44,7 +45,7 @@ export interface AIProcessingMessage extends WebviewMessage {
 }
 
 export interface ExtensionMessage {
-  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'debug' | 'fetchOllamaModels' | 'fetchCloudModels' | 'updateConfig' | 'getConfig' | 'validateProvider' | 'testProviderConnection';
+  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'debug' | 'fetchOllamaModels' | 'fetchCloudModels' | 'updateConfig' | 'getConfig' | 'validateProvider' | 'testProviderConnection' | 'validateAgent' | 'checkAgentAvailability' | 'getLegacyConfig' | 'saveMigrationResults' | 'executeMigration';
   payload: any;
 }
 
@@ -108,10 +109,23 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
    * Handle sending a message from the webview to the AI agent
    * @param payload - The message payload containing session ID and message content
    */
-  private async _handleSendMessage(payload: { sessionId: string; message: string; contextItems?: any[] }) {
-    const { sessionId, message, contextItems = [] } = payload;
+  private async _handleSendMessage(payload: { sessionId: string; message: string; contextItems?: any[]; messageId?: string; stream?: boolean }) {
+    const { sessionId, message, contextItems = [], messageId, stream = false } = payload;
     
     try {
+      // Check agent availability before processing
+      const availability = await this._checkAgentAvailabilityInternal();
+      if (!availability.hasActiveAgents) {
+        this.showError(sessionId, {
+          message: availability.error || 'No active agents are configured',
+          code: 'no_active_agents',
+          recoverable: true,
+          suggestedFix: 'Please configure at least one active agent in the settings before sending messages.',
+          configurationLink: 'settings'
+        });
+        return;
+      }
+
       // Show typing indicator
       this._showAITyping(sessionId, true);
       this._showAIProcessing(sessionId, 'thinking', 'Processing your message...');
@@ -136,8 +150,33 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
         // TODO: Process context items and add to conversation
       }
 
-      // Get response from AI
-      const response = await this._aiAgentService.sendMessage(sessionId, message);
+      // Configure AI agent with active agent settings
+      await this._configureAIAgentWithActiveAgent();
+
+      // Get response from AI (with streaming support if requested)
+      let response;
+      if (stream && messageId) {
+        // Handle streaming response
+        response = await this._aiAgentService.sendMessage(
+          sessionId, 
+          message,
+          (chunk) => {
+            // Send streaming chunk to webview
+            this.postMessage({
+              type: 'streamChunk',
+              payload: {
+                messageId,
+                content: chunk.content,
+                done: chunk.isComplete,
+                error: (chunk as any).error
+              }
+            });
+          }
+        );
+      } else {
+        // Handle regular response
+        response = await this._aiAgentService.sendMessage(sessionId, message);
+      }
       
       // Process tool calls if any
       if (response.toolCalls && response.toolCalls.length > 0) {
@@ -151,12 +190,28 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
       const errorMessage = error instanceof Error ? error.message : 'Failed to process message';
       console.error('Error in _handleSendMessage:', error);
       
+      // Enhanced error handling based on error type
+      let errorCode = 'message_processing_error';
+      let suggestedFix = 'Please try again or check your AI model configuration.';
+      
+      if ((error as any).code === 'model_not_configured') {
+        errorCode = 'model_not_configured';
+        suggestedFix = 'Please configure an active agent with a valid provider in the settings.';
+      } else if ((error as any).code === 'connection_failed') {
+        errorCode = 'connection_failed';
+        suggestedFix = (error as any).suggestedFix || 'Check your provider connection settings and try again.';
+      } else if ((error as any).code === 'no_active_agents') {
+        errorCode = 'no_active_agents';
+        suggestedFix = 'Please activate at least one agent in the settings.';
+      }
+      
       // Show error to user
       this.showError(sessionId, {
         message: errorMessage,
-        code: 'message_processing_error',
+        code: errorCode,
         recoverable: true,
-        suggestedFix: 'Please try again or check your AI model configuration.'
+        suggestedFix,
+        configurationLink: errorCode === 'model_not_configured' || errorCode === 'no_active_agents' ? 'settings' : undefined
       });
       
     } finally {
@@ -222,6 +277,21 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
         break;
       case 'testProviderConnection':
         this._handleTestProviderConnection(message.payload);
+        break;
+      case 'validateAgent':
+        this._handleValidateAgent(message.payload);
+        break;
+      case 'checkAgentAvailability':
+        this._handleCheckAgentAvailability(message.payload);
+        break;
+      case 'getLegacyConfig':
+        this._handleGetLegacyConfig(message.payload);
+        break;
+      case 'saveMigrationResults':
+        this._handleSaveMigrationResults(message.payload);
+        break;
+      case 'executeMigration':
+        this._handleExecuteMigration(message.payload);
         break;
       default:
         console.warn('Unknown message type:', message.type);
@@ -968,70 +1038,211 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
       </html>`;
   }
 
+
+
+
+
   /**
-   * Handle provider validation request
+   * Internal method to check agent availability
    */
-  private async _handleValidateProvider(payload: { providerId: string }) {
-    console.log('SidebarProvider: Validating provider:', payload.providerId);
+  private async _checkAgentAvailabilityInternal(): Promise<{ hasActiveAgents: boolean; activeAgentCount: number; error?: string }> {
+    try {
+      const config = vscode.workspace.getConfiguration('comrade');
+      const agents: Agent[] = config.get('agents', []);
+      const providers: ProviderConfig[] = config.get('providers', []);
+      
+      // Find active agents with active providers
+      const activeAgents = agents.filter((agent: Agent) => {
+        if (!agent.isActive) return false;
+        
+        const provider = providers.find((p: ProviderConfig) => p.id === agent.providerId);
+        return provider && provider.isActive;
+      });
+      
+      const hasActiveAgents = activeAgents.length > 0;
+      
+      if (!hasActiveAgents) {
+        let error = 'No active agents are configured.';
+        
+        if (agents.length === 0) {
+          error = 'No agents are configured. Please add at least one agent in the settings.';
+        } else if (providers.length === 0) {
+          error = 'No providers are configured. Please add at least one provider in the settings.';
+        } else {
+          const inactiveAgents = agents.filter((a: Agent) => !a.isActive).length;
+          const inactiveProviders = providers.filter((p: ProviderConfig) => !p.isActive).length;
+          
+          if (inactiveAgents === agents.length) {
+            error = 'All agents are inactive. Please activate at least one agent in the settings.';
+          } else if (inactiveProviders === providers.length) {
+            error = 'All providers are inactive. Please activate at least one provider in the settings.';
+          } else {
+            error = 'No agents have active providers. Please ensure your agents are using active providers.';
+          }
+        }
+        
+        return {
+          hasActiveAgents: false,
+          activeAgentCount: 0,
+          error
+        };
+      }
+      
+      return {
+        hasActiveAgents: true,
+        activeAgentCount: activeAgents.length
+      };
+      
+    } catch (error) {
+      console.error('Error in _checkAgentAvailabilityInternal:', error);
+      return {
+        hasActiveAgents: false,
+        activeAgentCount: 0,
+        error: error instanceof Error ? error.message : 'Failed to check agent availability'
+      };
+    }
+  }
+
+  /**
+   * Configure AI agent service with the first available active agent
+   */
+  private async _configureAIAgentWithActiveAgent(): Promise<void> {
+    try {
+      const config = vscode.workspace.getConfiguration('comrade');
+      const agents: Agent[] = config.get('agents', []);
+      const providers: ProviderConfig[] = config.get('providers', []);
+      
+      // Find the first active agent with an active provider
+      const activeAgent = agents.find((agent: Agent) => {
+        if (!agent.isActive) return false;
+        
+        const provider = providers.find((p: ProviderConfig) => p.id === agent.providerId);
+        return provider && provider.isActive;
+      });
+      
+      if (!activeAgent) {
+        throw new Error('No active agents available');
+      }
+      
+      // Find the associated provider
+      const provider = providers.find((p: ProviderConfig) => p.id === activeAgent.providerId);
+      if (!provider) {
+        throw new Error('Provider not found for active agent');
+      }
+      
+      // Configure the AI agent service with the provider and agent settings
+      const modelConfig = this._createModelConfigFromProviderAgent(provider, activeAgent);
+      this._aiAgentService.setModel(modelConfig);
+      
+      console.log('SidebarProvider: Configured AI agent service', {
+        agentId: activeAgent.id,
+        agentName: activeAgent.name,
+        providerId: provider.id,
+        providerName: provider.name,
+        model: activeAgent.model
+      });
+      
+    } catch (error) {
+      console.error('SidebarProvider: Error configuring AI agent:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create model configuration from provider and agent
+   */
+  private _createModelConfigFromProviderAgent(provider: ProviderConfig, agent: Agent): any {
+    const baseConfig = {
+      model: agent.model,
+      temperature: agent.temperature,
+      maxTokens: agent.maxTokens,
+      timeout: agent.timeout
+    };
+    
+    if (provider.type === 'cloud') {
+      return {
+        ...baseConfig,
+        provider: provider.provider,
+        apiKey: (provider as any).apiKey
+      };
+    } else if (provider.type === 'local-network') {
+      return {
+        ...baseConfig,
+        provider: provider.provider,
+        endpoint: (provider as any).endpoint,
+        ...((provider as any).apiKey && { apiKey: (provider as any).apiKey })
+      };
+    }
+    
+    // This should never happen due to TypeScript's exhaustive checking
+    const _exhaustiveCheck: never = provider;
+    throw new Error(`Unsupported provider type: ${(_exhaustiveCheck as any).type}`);
+  }
+
+  /**
+   * Handle request for legacy configuration data for migration
+   */
+  private _handleGetLegacyConfig(payload: { force?: boolean }) {
+    console.log('SidebarProvider: Getting legacy configuration for migration:', payload);
     
     try {
       const config = vscode.workspace.getConfiguration('comrade');
-      const providers: ProviderConfig[] = config.get('providers', []);
-      const provider = providers.find((p: ProviderConfig) => p.id === payload.providerId);
       
-      if (!provider) {
-        throw new Error('Provider not found');
-      }
+      // Get legacy agent configurations (AgentConfigurationItem format)
+      const legacyAgents = config.get('agents', []);
       
-      // Perform basic validation
-      let validationResult: any = {
-        valid: true,
-        connectionStatus: 'unknown'
-      };
+      console.log('SidebarProvider: Found legacy agents:', legacyAgents.length);
       
-      // Validate based on provider type
-      if (provider.type === 'cloud') {
-        if (!provider.apiKey || provider.apiKey.trim() === '') {
-          validationResult = {
-            valid: false,
-            error: 'API key is required for cloud providers'
-          };
-        }
-      } else if (provider.type === 'local-network') {
-        if (!provider.endpoint || provider.endpoint.trim() === '') {
-          validationResult = {
-            valid: false,
-            error: 'Endpoint is required for local network providers'
-          };
-        } else {
-          // Validate URL format
-          try {
-            new URL(provider.endpoint);
-          } catch {
-            validationResult = {
-              valid: false,
-              error: 'Invalid endpoint URL format'
-            };
-          }
-        }
-      }
-      
-      // Send validation result back to webview
+      // Send legacy data to webview for migration processing
       this.postMessage({
-        type: 'providerValidationResult',
+        type: 'legacyConfigData',
         payload: {
-          providerId: payload.providerId,
-          result: validationResult
+          legacyAgents: legacyAgents,
+          timestamp: new Date().toISOString()
         }
       });
       
     } catch (error) {
-      console.error('SidebarProvider: Error validating provider:', error);
+      console.error('SidebarProvider: Error getting legacy configuration:', error);
+      this.postMessage({
+        type: 'legacyConfigData',
+        payload: {
+          legacyAgents: [],
+          error: error instanceof Error ? error.message : 'Failed to get legacy configuration'
+        }
+      });
+    }
+  }
+
+  /**
+   * New Provider-Agent Architecture Message Handlers
+   */
+
+  /**
+   * Handle provider validation request
+   */
+  private async _handleValidateProvider(payload: { provider: ProviderConfig }) {
+    try {
+      const configManager = getConfigurationManager();
+      const result = await configManager.validateProvider(payload.provider);
+      
       this.postMessage({
         type: 'providerValidationResult',
         payload: {
-          providerId: payload.providerId,
-          error: error instanceof Error ? error.message : 'Failed to validate provider'
+          providerId: payload.provider.id,
+          result
+        }
+      });
+    } catch (error) {
+      this.postMessage({
+        type: 'providerValidationResult',
+        payload: {
+          providerId: payload.provider.id,
+          result: {
+            valid: false,
+            error: error instanceof Error ? error.message : 'Validation failed',
+            connectionStatus: 'unknown'
+          }
         }
       });
     }
@@ -1040,91 +1251,184 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
   /**
    * Handle provider connection test request
    */
-  private async _handleTestProviderConnection(payload: { provider: any }) {
-    console.log('SidebarProvider: Testing provider connection:', payload.provider);
-    
+  private async _handleTestProviderConnection(payload: { provider: ProviderConfig }) {
     try {
-      const provider = payload.provider;
-      let connectionResult: any = {
-        success: false,
-        error: 'Connection test not implemented for this provider type'
-      };
+      const configManager = getConfigurationManager();
+      const result = await configManager.testProviderConnection(payload.provider);
       
-      if (provider.type === 'local-network' && provider.localHostType === 'ollama') {
-        // Test Ollama connection
-        try {
-          const startTime = Date.now();
-          const response = await fetch(`${provider.endpoint}/api/tags`, {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(provider.apiKey && { 'Authorization': `Bearer ${provider.apiKey}` })
-            }
-          });
-          
-          const responseTime = Date.now() - startTime;
-          
-          if (response.ok) {
-            const data: any = await response.json();
-            connectionResult = {
-              success: true,
-              responseTime,
-              availableModels: data.models?.map((m: any) => m.name) || [],
-              serverInfo: {
-                status: 'running'
-              }
-            };
-          } else {
-            connectionResult = {
-              success: false,
-              error: `HTTP ${response.status}: ${response.statusText}`,
-              responseTime
-            };
-          }
-        } catch (fetchError) {
-          connectionResult = {
-            success: false,
-            error: fetchError instanceof Error ? fetchError.message : 'Network error'
-          };
-        }
-      } else if (provider.type === 'cloud') {
-        // For cloud providers, we'll do a simple API key validation
-        // This is a placeholder - actual implementation would depend on the specific provider
-        if (provider.apiKey && provider.apiKey.length > 10) {
-          connectionResult = {
-            success: true,
-            responseTime: 0,
-            serverInfo: {
-              status: 'API key format appears valid'
-            }
-          };
-        } else {
-          connectionResult = {
-            success: false,
-            error: 'Invalid API key format'
-          };
-        }
-      }
-      
-      // Send connection test result back to webview
       this.postMessage({
         type: 'connectionTestResult',
         payload: {
-          providerId: provider.id,
-          result: connectionResult
+          providerId: payload.provider.id,
+          result
+        }
+      });
+    } catch (error) {
+      this.postMessage({
+        type: 'connectionTestResult',
+        payload: {
+          providerId: payload.provider.id,
+          result: {
+            success: false,
+            error: error instanceof Error ? error.message : 'Connection test failed'
+          }
+        }
+      });
+    }
+  }
+
+  /**
+   * Handle agent validation request
+   */
+  private async _handleValidateAgent(payload: { agentId: string }) {
+    try {
+      const agentRegistry = getAgentRegistry();
+      const result = await agentRegistry.validateAgentWithProvider(payload.agentId);
+      
+      this.postMessage({
+        type: 'agentValidationResult',
+        payload: {
+          agentId: payload.agentId,
+          result: {
+            valid: result.isValid,
+            error: result.errors.join('; ') || undefined,
+            warnings: result.warnings,
+            providerStatus: result.isConnected ? 'active' : 'inactive'
+          }
+        }
+      });
+    } catch (error) {
+      this.postMessage({
+        type: 'agentValidationResult',
+        payload: {
+          agentId: payload.agentId,
+          result: {
+            valid: false,
+            error: error instanceof Error ? error.message : 'Validation failed'
+          }
+        }
+      });
+    }
+  }
+
+  /**
+   * Handle agent availability check request
+   */
+  private async _handleCheckAgentAvailability(payload: { agentId?: string }) {
+    try {
+      const agentRegistry = getAgentRegistry();
+      
+      if (payload.agentId) {
+        // Check specific agent
+        const agentWithProvider = agentRegistry.getAgentWithProvider(payload.agentId);
+        const isAvailable = agentWithProvider && 
+                           agentWithProvider.agent.isActive && 
+                           agentWithProvider.provider.isActive;
+        
+        this.postMessage({
+          type: 'agentAvailabilityResult',
+          payload: {
+            agentId: payload.agentId,
+            available: isAvailable,
+            error: isAvailable ? undefined : 'Agent or provider is not active'
+          }
+        });
+      } else {
+        // Check overall agent availability
+        const availability = await this._checkAgentAvailabilityInternal();
+        
+        this.postMessage({
+          type: 'agentAvailabilityResult',
+          payload: {
+            hasActiveAgents: availability.hasActiveAgents,
+            activeAgentCount: availability.activeAgentCount,
+            error: availability.error
+          }
+        });
+      }
+    } catch (error) {
+      this.postMessage({
+        type: 'agentAvailabilityResult',
+        payload: {
+          agentId: payload.agentId,
+          available: false,
+          error: error instanceof Error ? error.message : 'Availability check failed'
+        }
+      });
+    }
+  }
+
+  /**
+   * Handle migration execution request
+   */
+  private async _handleExecuteMigration(payload: any) {
+    try {
+      const configManager = getConfigurationManager();
+      const result = await configManager.migrateToProviderAgentArchitecture();
+      
+      this.postMessage({
+        type: 'migrationResult',
+        payload: result
+      });
+    } catch (error) {
+      this.postMessage({
+        type: 'migrationResult',
+        payload: {
+          providersCreated: 0,
+          agentsUpdated: 0,
+          errors: [error instanceof Error ? error.message : 'Migration failed']
+        }
+      });
+    }
+  }
+
+  /**
+   * Handle saving migration results to VS Code configuration
+   */
+  private async _handleSaveMigrationResults(payload: { providers: any[], agents: any[] }) {
+    console.log('SidebarProvider: Saving migration results:', payload);
+    
+    try {
+      const config = vscode.workspace.getConfiguration('comrade');
+      
+      // Save providers to new configuration structure
+      if (payload.providers && payload.providers.length > 0) {
+        await config.update('providers', payload.providers, vscode.ConfigurationTarget.Global);
+        console.log('SidebarProvider: Saved', payload.providers.length, 'providers');
+      }
+      
+      // Save agents to new configuration structure
+      if (payload.agents && payload.agents.length > 0) {
+        await config.update('agents', payload.agents, vscode.ConfigurationTarget.Global);
+        console.log('SidebarProvider: Saved', payload.agents.length, 'agents');
+      }
+      
+      // Create backup of old configuration
+      const legacyAgents = config.get('agents', []);
+      if (legacyAgents.length > 0) {
+        const backupKey = `agents_backup_${Date.now()}`;
+        await config.update(backupKey, legacyAgents, vscode.ConfigurationTarget.Global);
+        console.log('SidebarProvider: Created backup of legacy agents at', backupKey);
+      }
+      
+      // Send success response
+      this.postMessage({
+        type: 'migrationResult',
+        payload: {
+          success: true,
+          providersCreated: payload.providers.length,
+          agentsUpdated: payload.agents.length,
+          timestamp: new Date().toISOString()
         }
       });
       
     } catch (error) {
-      console.error('SidebarProvider: Error testing provider connection:', error);
+      console.error('SidebarProvider: Error saving migration results:', error);
       this.postMessage({
-        type: 'connectionTestResult',
+        type: 'migrationResult',
         payload: {
-          providerId: payload.provider?.id,
-          result: {
-            success: false,
-            error: error instanceof Error ? error.message : 'Failed to test connection'
-          }
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to save migration results'
         }
       });
     }

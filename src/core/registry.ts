@@ -5,6 +5,7 @@
 import * as vscode from 'vscode';
 import { IAgent, AgentCapabilities, PhaseType, LLMProvider } from './agent';
 import { ConfigurationManager, AgentConfigurationItem } from './config';
+import { Agent, ProviderConfig, AgentWithProvider } from './types';
 
 export class AgentRegistry {
   private static instance: AgentRegistry;
@@ -49,8 +50,14 @@ export class AgentRegistry {
 
   /**
    * Get all registered agents with empty list handling
+   * Automatically chooses between old and new architecture
    */
   public getAllAgents(): IAgent[] {
+    // If we should use the new architecture, return empty array and let getAllAgentsAuto handle it
+    if (this.shouldUseNewArchitecture()) {
+      return [];
+    }
+    
     const agents = Array.from(this.agents.values());
     
     if (agents.length === 0) {
@@ -80,8 +87,14 @@ export class AgentRegistry {
 
   /**
    * Get agents enabled for auto-assignment with empty list handling
+   * Automatically chooses between old and new architecture
    */
   public getAutoAssignmentEnabledAgents(): IAgent[] {
+    // If we should use the new architecture, return empty array and let getActiveAgentsAuto handle it
+    if (this.shouldUseNewArchitecture()) {
+      return [];
+    }
+    
     const allAgents = this.getAllAgents();
     
     if (allAgents.length === 0) {
@@ -358,8 +371,10 @@ export class AgentRegistry {
   private setupConfigurationListener(): void {
     this.configurationChangeListener = vscode.workspace.onDidChangeConfiguration(async (event) => {
       if (event.affectsConfiguration('comrade.agents') || 
+          event.affectsConfiguration('comrade.newAgents') ||
+          event.affectsConfiguration('comrade.providers') ||
           event.affectsConfiguration('comrade.mcp.servers')) {
-        console.log('Agent configuration changed, reloading agents...');
+        console.log('Configuration changed, reloading agents...');
         await this.loadAgentsFromConfiguration();
       }
     });
@@ -838,6 +853,253 @@ export class AgentRegistry {
         });
       }
     }
+  }
+
+  /**
+   * New Provider-Agent Architecture Methods
+   */
+
+  /**
+   * Get all agents in the new format with their providers
+   */
+  public getAgentsWithProviders(): AgentWithProvider[] {
+    const agents = this.configManager.getNewAgents();
+    const providers = this.configManager.getProviders();
+    
+    return agents.map(agent => {
+      const provider = providers.find(p => p.id === agent.providerId);
+      if (!provider) {
+        console.warn(`Provider not found for agent ${agent.name} (providerId: ${agent.providerId})`);
+      }
+      return {
+        agent,
+        provider: provider!
+      };
+    }).filter(item => item.provider); // Filter out agents without valid providers
+  }
+
+  /**
+   * Get active agents with their providers
+   */
+  public getActiveAgentsWithProviders(): AgentWithProvider[] {
+    return this.getAgentsWithProviders().filter(item => 
+      item.agent.isActive && item.provider.isActive
+    );
+  }
+
+  /**
+   * Get agent with provider by agent ID
+   */
+  public getAgentWithProvider(agentId: string): AgentWithProvider | null {
+    const agent = this.configManager.getNewAgentById(agentId);
+    if (!agent) {
+      return null;
+    }
+
+    const provider = this.configManager.getProviderById(agent.providerId);
+    if (!provider) {
+      return null;
+    }
+
+    return { agent, provider };
+  }
+
+  /**
+   * Get agents by provider ID
+   */
+  public getAgentsByProviderId(providerId: string): Agent[] {
+    return this.configManager.getAgentsByProvider(providerId);
+  }
+
+  /**
+   * Create agent instance from new agent format
+   */
+  public async createAgentInstanceFromNew(agentWithProvider: AgentWithProvider): Promise<IAgent> {
+    const { agent, provider } = agentWithProvider;
+    
+    // Get API key for the provider if needed
+    const apiKey = provider.type === 'cloud' 
+      ? await this.configManager.getProviderApiKey(provider.id)
+      : undefined;
+
+    // Create agent configuration in the old format for compatibility
+    const agentConfig: AgentConfigurationItem = {
+      id: agent.id,
+      name: agent.name,
+      provider: provider.provider as LLMProvider,
+      model: agent.model,
+      endpoint: provider.type === 'local-network' ? (provider as any).endpoint : undefined,
+      temperature: agent.temperature,
+      maxTokens: agent.maxTokens,
+      timeout: agent.timeout,
+      capabilities: {
+        ...agent.capabilities,
+        maxTokens: agent.maxTokens || 4000,
+        supportedLanguages: ['en'],
+        specializations: ['code']
+      },
+      isEnabledForAssignment: agent.isActive
+    };
+
+    // Store API key temporarily if needed
+    if (apiKey) {
+      await this.configManager.storeApiKey(agent.id, apiKey);
+    }
+
+    try {
+      return await this.configManager.createAgentInstance(agentConfig);
+    } finally {
+      // Clean up temporary API key storage
+      if (apiKey) {
+        await this.configManager.removeApiKey(agent.id);
+      }
+    }
+  }
+
+  /**
+   * Get all agent instances from the new format
+   */
+  public async getAllNewAgentInstances(): Promise<IAgent[]> {
+    const agentsWithProviders = this.getAgentsWithProviders();
+    const agentInstances: IAgent[] = [];
+
+    for (const agentWithProvider of agentsWithProviders) {
+      try {
+        const instance = await this.createAgentInstanceFromNew(agentWithProvider);
+        agentInstances.push(instance);
+      } catch (error) {
+        console.error(`Failed to create agent instance for ${agentWithProvider.agent.name}:`, error);
+      }
+    }
+
+    return agentInstances;
+  }
+
+  /**
+   * Get active agent instances from the new format
+   */
+  public async getActiveNewAgentInstances(): Promise<IAgent[]> {
+    const activeAgentsWithProviders = this.getActiveAgentsWithProviders();
+    const agentInstances: IAgent[] = [];
+
+    for (const agentWithProvider of activeAgentsWithProviders) {
+      try {
+        const instance = await this.createAgentInstanceFromNew(agentWithProvider);
+        agentInstances.push(instance);
+      } catch (error) {
+        console.error(`Failed to create agent instance for ${agentWithProvider.agent.name}:`, error);
+      }
+    }
+
+    return agentInstances;
+  }
+
+  /**
+   * Check if we should use the new provider-agent architecture
+   */
+  public shouldUseNewArchitecture(): boolean {
+    const providers = this.configManager.getProviders();
+    const newAgents = this.configManager.getNewAgents();
+    
+    // Use new architecture if we have providers or new agents
+    return providers.length > 0 || newAgents.length > 0;
+  }
+
+  /**
+   * Get all agents (automatically chooses between old and new architecture)
+   */
+  public async getAllAgentsAuto(): Promise<IAgent[]> {
+    if (this.shouldUseNewArchitecture()) {
+      return await this.getAllNewAgentInstances();
+    } else {
+      return this.getAllAgents();
+    }
+  }
+
+  /**
+   * Get active agents (automatically chooses between old and new architecture)
+   */
+  public async getActiveAgentsAuto(): Promise<IAgent[]> {
+    if (this.shouldUseNewArchitecture()) {
+      return await this.getActiveNewAgentInstances();
+    } else {
+      return this.getAutoAssignmentEnabledAgents();
+    }
+  }
+
+  /**
+   * Handle provider deactivation - deactivate dependent agents
+   */
+  public async handleProviderDeactivation(providerId: string): Promise<void> {
+    try {
+      await this.configManager.deactivateAgentsByProvider(providerId);
+      console.log(`Deactivated all agents for provider ${providerId}`);
+    } catch (error) {
+      console.error(`Failed to deactivate agents for provider ${providerId}:`, error);
+    }
+  }
+
+  /**
+   * Handle provider deletion - delete dependent agents
+   */
+  public async handleProviderDeletion(providerId: string): Promise<void> {
+    try {
+      await this.configManager.deleteAgentsByProvider(providerId);
+      console.log(`Deleted all agents for provider ${providerId}`);
+    } catch (error) {
+      console.error(`Failed to delete agents for provider ${providerId}:`, error);
+    }
+  }
+
+  /**
+   * Validate agent with provider
+   */
+  public async validateAgentWithProvider(agentId: string): Promise<{
+    isValid: boolean;
+    isConnected: boolean;
+    errors: string[];
+    warnings: string[];
+  }> {
+    const agentWithProvider = this.getAgentWithProvider(agentId);
+    if (!agentWithProvider) {
+      return {
+        isValid: false,
+        isConnected: false,
+        errors: [`Agent with ID ${agentId} not found or has no valid provider`],
+        warnings: []
+      };
+    }
+
+    const { agent, provider } = agentWithProvider;
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    // Check if provider is active
+    if (!provider.isActive) {
+      errors.push(`Provider ${provider.name} is not active`);
+    }
+
+    // Check if agent is active
+    if (!agent.isActive) {
+      warnings.push(`Agent ${agent.name} is not active`);
+    }
+
+    // Validate provider connection
+    try {
+      const connectionTest = await this.configManager.testProviderConnection(provider);
+      if (!connectionTest.success) {
+        errors.push(`Provider connection failed: ${connectionTest.error}`);
+      }
+    } catch (error) {
+      errors.push(`Failed to test provider connection: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+
+    return {
+      isValid: errors.length === 0,
+      isConnected: errors.length === 0,
+      errors,
+      warnings
+    };
   }
 
   /**

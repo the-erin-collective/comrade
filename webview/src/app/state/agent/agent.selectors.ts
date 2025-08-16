@@ -1,6 +1,7 @@
 import { createFeatureSelector, createSelector } from '@ngrx/store';
 import { AgentState } from './agent.state';
-import { Agent } from '../../interfaces/provider-agent.interface';
+import { Agent, AgentWithProvider } from '../../interfaces/provider-agent.interface';
+import { selectProviders } from '../provider/provider.selectors';
 
 /**
  * Feature selector for agent state
@@ -266,6 +267,37 @@ export const selectActiveAgentsGroupedByProvider = createSelector(
       acc[agent.providerId].push(agent);
       return acc;
     }, {} as Record<string, Agent[]>);
+  }
+);
+
+/**
+ * Combined selectors with provider information
+ */
+export const selectAgentsWithProviders = createSelector(
+  selectAgents,
+  selectProviders,
+  (agents: Agent[], providers) => {
+    return agents.map(agent => {
+      const provider = providers.find(p => p.id === agent.providerId);
+      return {
+        agent,
+        provider: provider || null
+      };
+    }).filter(item => item.provider !== null) as AgentWithProvider[];
+  }
+);
+
+export const selectActiveAgentsWithProviders = createSelector(
+  selectActiveAgents,
+  selectProviders,
+  (agents: Agent[], providers) => {
+    return agents.map(agent => {
+      const provider = providers.find(p => p.id === agent.providerId);
+      return {
+        agent,
+        provider: provider || null
+      };
+    }).filter(item => item.provider !== null) as AgentWithProvider[];
   }
 );
 

@@ -1,10 +1,11 @@
-import { Component, ChangeDetectionStrategy, signal, computed, inject } from '@angular/core';
+import { Component, ChangeDetectionStrategy, signal, computed, inject, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Store } from '@ngrx/store';
-import { Observable } from 'rxjs';
+import { Observable, Subject, combineLatest } from 'rxjs';
+import { takeUntil, debounceTime, distinctUntilChanged } from 'rxjs/operators';
 
-import { ProviderConfig, ProviderFormData, CloudProvider, LocalNetworkProvider } from '../../interfaces/provider-agent.interface';
+import { ProviderConfig, ProviderFormData, CloudProvider, LocalNetworkProvider, ConnectionTestResult } from '../../interfaces/provider-agent.interface';
 import { 
   selectProviders, 
   selectProvidersLoading, 
@@ -14,11 +15,15 @@ import {
   selectHasProviders
 } from '../../state/provider/provider.selectors';
 import * as ProviderActions from '../../state/provider/provider.actions';
+import { ErrorHandlerService } from '../../services/error-handler.service';
+import { FormValidationService } from '../../services/form-validation.service';
+import { ProviderManagerService } from '../../services/provider-manager.service';
+import { ErrorNotificationComponent } from '../error-notification/error-notification.component';
 
 @Component({
   selector: 'app-provider-management',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, ErrorNotificationComponent],
   template: `
     <div class="provider-management">
       <div class="section-header">
@@ -27,6 +32,9 @@ import * as ProviderActions from '../../state/provider/provider.actions';
           Manage AI providers and their connection settings. Providers handle authentication and endpoints for your AI agents.
         </p>
       </div>
+
+      <!-- Error Notifications -->
+      <app-error-notification></app-error-notification>
 
       <!-- Provider Statistics -->
       @if (hasProviders$ | async) {
@@ -1288,9 +1296,20 @@ import * as ProviderActions from '../../state/provider/provider.actions';
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class ProviderManagementComponent {
+export class ProviderManagementComponent implements OnInit, OnDestroy {
+  private destroy$ = new Subject<void>();
   private store = inject(Store);
   private fb = inject(FormBuilder);
+
+  ngOnInit(): void {
+    // Load providers on component initialization
+    this.store.dispatch(ProviderActions.loadProviders());
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
 
   // Observable selectors
   providers$ = this.store.select(selectProviders);
@@ -1309,6 +1328,14 @@ export class ProviderManagementComponent {
   providerToDelete = signal<ProviderConfig | null>(null);
 
   // Provider form data
+  providerForm: ProviderFormData = {
+    name: '',
+    type: 'cloud',
+    provider: 'openai',
+    apiKey: '',
+    endpoint: '',
+    localHostType: 'ollama'
+  };
   providerForm: ProviderFormData = {
     name: '',
     type: 'cloud',

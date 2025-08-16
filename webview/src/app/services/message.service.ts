@@ -1,13 +1,14 @@
 import { Injectable } from '@angular/core';
 import { Subject, Observable } from 'rxjs';
+import { filter, take } from 'rxjs/operators';
 
 export interface WebviewMessage {
-  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult' | 'aiResponse' | 'toolExecution' | 'aiTyping' | 'aiProcessing' | 'streamChunk' | 'providerValidationResult' | 'connectionTestResult' | 'agentConfigResult' | 'agentUpdateResult' | 'agentValidationResult';
+  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult' | 'aiResponse' | 'toolExecution' | 'aiTyping' | 'aiProcessing' | 'streamChunk' | 'providerValidationResult' | 'connectionTestResult' | 'agentConfigResult' | 'agentUpdateResult' | 'agentValidationResult' | 'agentAvailabilityResult' | 'legacyConfigData' | 'migrationResult';
   payload: any;
 }
 
 export interface ExtensionMessage {
-  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'fetchOllamaModels' | 'fetchCloudModels' | 'updateConfig' | 'getConfig' | 'cancelMessage' | 'validateProvider' | 'testProviderConnection' | 'validateAgent';
+  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'fetchOllamaModels' | 'fetchCloudModels' | 'updateConfig' | 'getConfig' | 'cancelMessage' | 'validateProvider' | 'testProviderConnection' | 'validateAgent' | 'checkAgentAvailability' | 'fetchModelsForProvider' | 'getLegacyConfig' | 'saveMigrationResults';
   payload: any;
 }
 
@@ -252,5 +253,75 @@ export class MessageService {
   public showSettings() {
     // Emit a custom event that the app component can listen to
     window.dispatchEvent(new CustomEvent('showSettings'));
+  }
+
+  /**
+   * Check if there are any active agents available for messaging
+   * @returns Promise that resolves with availability status
+   */
+  public checkAgentAvailability(): Promise<{ hasActiveAgents: boolean; activeAgentCount: number; error?: string }> {
+    return new Promise((resolve) => {
+      // Set up a one-time message listener for the availability result
+      const subscription = this.messages$.pipe(
+        filter(message => message.type === 'agentAvailabilityResult'),
+        take(1)
+      ).subscribe(message => {
+        resolve(message.payload);
+      });
+
+      // Send availability check request
+      this.sendMessage({
+        type: 'checkAgentAvailability',
+        payload: {}
+      });
+
+      // Cleanup subscription after timeout
+      setTimeout(() => {
+        subscription.unsubscribe();
+        resolve({
+          hasActiveAgents: false,
+          activeAgentCount: 0,
+          error: 'Agent availability check timeout'
+        });
+      }, 5000); // 5 second timeout
+    });
+  }
+
+  /**
+   * Send a chat message with agent availability validation
+   * @param sessionId The session ID
+   * @param message The message to send
+   * @param contextItems Optional context items
+   * @param onChunk Optional callback for streaming chunks
+   * @param validateAgents Whether to validate agent availability before sending (default: true)
+   */
+  public async sendChatMessageWithValidation(
+    sessionId: string, 
+    message: string, 
+    contextItems: any[] = [],
+    onChunk?: (chunk: { content: string; isComplete: boolean; error?: string }) => void,
+    validateAgents: boolean = true
+  ): Promise<{ messageId?: string; error?: string }> {
+    
+    // Check agent availability if validation is enabled
+    if (validateAgents) {
+      try {
+        const availability = await this.checkAgentAvailability();
+        
+        if (!availability.hasActiveAgents) {
+          return {
+            error: availability.error || 'No active agents are configured. Please configure at least one active agent in the settings to send messages.'
+          };
+        }
+      } catch (error) {
+        return {
+          error: 'Failed to check agent availability. Please try again or check your configuration.'
+        };
+      }
+    }
+
+    // If validation passes or is disabled, send the message normally
+    const messageId = this.sendChatMessage(sessionId, message, contextItems, onChunk);
+    return { messageId };
   }
 }

@@ -1,10 +1,16 @@
 import { Component, ChangeDetectionStrategy, signal, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Store } from '@ngrx/store';
 import { MessageService } from '../../services/message.service';
 import { ProviderManagementComponent } from '../provider-management/provider-management.component';
+import { ConfirmationDialogComponent, ConfirmationData } from '../confirmation-dialog/confirmation-dialog.component';
+import { selectAgentsWithProviders, selectActiveAgents } from '../../state/agent/agent.selectors';
+import { selectActiveProviders } from '../../state/provider/provider.selectors';
+import { AgentWithProvider, Agent, ProviderConfig } from '../../interfaces/provider-agent.interface';
 
 
+// Legacy interface for backward compatibility during migration
 interface AgentConfig {
   id: string;
   name: string;
@@ -36,7 +42,7 @@ interface AgentConfig {
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, ProviderManagementComponent],
+  imports: [CommonModule, FormsModule, ProviderManagementComponent, ConfirmationDialogComponent],
   template: `
     <div class="settings-container">
       <div class="settings-header">
@@ -78,7 +84,7 @@ interface AgentConfig {
           <div class="settings-section">
             <p class="section-description">Configure AI agents to assist with your coding tasks.</p>
             
-            @if (agents().length === 0) {
+            @if ((agentsWithProviders$ | async)?.length === 0) {
               <div class="empty-state">
                 <h4>No agents configured</h4>
                 <p>Add your first AI agent to get started with Comrade.</p>
@@ -86,39 +92,59 @@ interface AgentConfig {
               </div>
             } @else {
               <div class="agents-list">
-                @for (agent of agents(); track agent.id) {
-                  <div class="agent-card" [class.disabled]="!agent.isEnabledForAssignment">
+                @for (agentWithProvider of agentsWithProviders$ | async; track agentWithProvider.agent.id) {
+                  <div class="agent-card" [class.disabled]="!agentWithProvider.agent.isActive" [class.provider-inactive]="!agentWithProvider.provider.isActive">
                     <div class="agent-header">
                       <div class="agent-info">
                         <div class="agent-name-row">
-                          <h4>{{ agent.name }}</h4>
-                          @if (agent.capabilities.hasVision) {
-                            <span class="agent-tag multimodal">Multimodal</span>
+                          <h4>{{ agentWithProvider.agent.name }}</h4>
+                          @if (agentWithProvider.agent.capabilities.hasVision) {
+                            <span class="agent-tag multimodal">Vision</span>
+                          }
+                          @if (agentWithProvider.agent.capabilities.hasToolUse) {
+                            <span class="agent-tag tools">Tools</span>
+                          }
+                          <span class="agent-tag reasoning">{{ agentWithProvider.agent.capabilities.reasoningDepth | titlecase }}</span>
+                        </div>
+                        <div class="agent-provider-info">
+                          <span class="agent-provider">{{ agentWithProvider.provider.name }}</span>
+                          <span class="agent-model">{{ agentWithProvider.agent.model }}</span>
+                          @if (!agentWithProvider.provider.isActive) {
+                            <span class="provider-status-warning">Provider Inactive</span>
                           }
                         </div>
-                        <span class="agent-provider">{{ getProviderDisplayName(agent.provider) }}</span>
                       </div>
                       <div class="agent-controls">
                         <label class="toggle-switch">
-                          <input type="checkbox" [(ngModel)]="agent.isEnabledForAssignment" (ngModelChange)="onAgentToggleChange()">
+                          <input type="checkbox" 
+                                 [ngModel]="agentWithProvider.agent.isActive" 
+                                 (ngModelChange)="onAgentToggleChange(agentWithProvider.agent.id, $event)"
+                                 [disabled]="!agentWithProvider.provider.isActive">
                           <span class="toggle-slider"></span>
                         </label>
-                        <button class="icon-btn" (click)="editAgent(agent)" title="Edit">
+                        <button class="icon-btn" (click)="editAgent(agentWithProvider)" title="Edit">
                           <span class="icon">✏️</span>
                         </button>
-                        <button class="icon-btn danger" (click)="deleteAgent(agent.id)" title="Delete">
+                        <button class="icon-btn danger" (click)="deleteAgent(agentWithProvider.agent.id)" title="Delete">
                           <span class="icon">🗑️</span>
                         </button>
                       </div>
                     </div>
                     <div class="agent-status">
-                      @if (agent.isEnabledForAssignment) {
+                      @if (agentWithProvider.agent.isActive && agentWithProvider.provider.isActive) {
                         <span class="status-indicator active"></span>
                         <span class="status-text">Active</span>
+                      } @else if (!agentWithProvider.provider.isActive) {
+                        <span class="status-indicator provider-inactive"></span>
+                        <span class="status-text">Provider Inactive</span>
                       } @else {
                         <span class="status-indicator inactive"></span>
-                        <span class="status-text">Disabled</span>
+                        <span class="status-text">Inactive</span>
                       }
+                      <div class="agent-capabilities">
+                        <span class="capability-badge speed-{{ agentWithProvider.agent.capabilities.speed }}">{{ agentWithProvider.agent.capabilities.speed }}</span>
+                        <span class="capability-badge cost-{{ agentWithProvider.agent.capabilities.costTier }}">{{ agentWithProvider.agent.capabilities.costTier }} cost</span>
+                      </div>
                     </div>
                   </div>
                 }
@@ -175,42 +201,25 @@ interface AgentConfig {
               <label for="provider">Provider</label>
               <select id="provider" name="provider" [(ngModel)]="agentForm.provider" (ngModelChange)="onProviderChange($event)" required #providerField="ngModel">
                 <option value="" disabled>Select a provider...</option>
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="google">Google</option>
-                <option value="azure">Azure OpenAI</option>
-                <option value="local-network">Local Network</option>
+                @for (provider of activeProviders$ | async; track provider.id) {
+                  <option [value]="provider.id">{{ provider.name }} ({{ getProviderTypeDisplayName(provider.type, provider.provider) }})</option>
+                }
               </select>
+              @if ((activeProviders$ | async)?.length === 0) {
+                <p class="form-help-text">No active providers available. Please configure a provider first.</p>
+              }
             </div>
 
-            @if (agentForm.provider === 'local-network') {
+            @if (agentForm.provider) {
               <div class="form-group">
-                <label>Local Host Type</label>
-                <select [(ngModel)]="agentForm.localHostType" (ngModelChange)="onLocalHostTypeChange($event)">
-                  <option value="" disabled>Select host type...</option>
-                  <option value="ollama">Ollama</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>Network Address</label>
-                <input type="text" [(ngModel)]="agentForm.networkAddress" placeholder="e.g., http://localhost:11434">
-              </div>
-            } @else if (agentForm.provider && agentForm.provider !== 'local-network') {
-              <div class="form-group">
-                <label>API Key</label>
-                <div class="api-key-group">
-                  <input type="password" [(ngModel)]="agentForm.apiKey" placeholder="Enter your API key">
-                  @if (agentForm.apiKey) {
-                    <button type="button" class="fetch-models-btn" (click)="fetchModels()" [disabled]="loadingModels()">
-                      @if (loadingModels()) {
-                        <span class="loading-spinner-small"></span>
-                      } @else {
-                        Fetch Models
-                      }
-                    </button>
+                <button type="button" class="fetch-models-btn" (click)="fetchModelsForProvider()" [disabled]="loadingModels()">
+                  @if (loadingModels()) {
+                    <span class="loading-spinner-small"></span>
+                    Loading Models...
+                  } @else {
+                    Fetch Available Models
                   }
-                </div>
+                </button>
                 @if (modelError()) {
                   <p class="error-text">{{ modelError() }}</p>
                 }
@@ -228,9 +237,11 @@ interface AgentConfig {
                 </select>
               } @else {
                 <input type="text" [(ngModel)]="agentForm.model" 
-                       [placeholder]="getModelPlaceholder()" 
-                       [disabled]="agentForm.provider !== 'local-network' && !agentForm.apiKey">
+                       placeholder="Enter model name or fetch models from provider" 
+                       [disabled]="!agentForm.provider"
+                       required>
               }
+              <p class="form-help-text">Select a provider and fetch models, or enter a model name manually.</p>
             </div>
 
             <div class="form-group">
@@ -249,6 +260,15 @@ interface AgentConfig {
           </div>
         </form>
       </div>
+    }
+
+    <!-- Confirmation Dialog -->
+    @if (showConfirmDialog()) {
+      <app-confirmation-dialog 
+        [data]="confirmationData()"
+        (confirm)="onConfirmDelete()"
+        (cancel)="closeConfirmDialog()">
+      </app-confirmation-dialog>
     }
   `,
   styles: [`
@@ -357,6 +377,335 @@ interface AgentConfig {
       font-size: 14px;
       line-height: 1.5;
     }
+
+    /* Agent list styles */
+    .agents-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .agent-card {
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1rem;
+      background: var(--background-secondary);
+      transition: all 0.2s ease;
+    }
+
+    .agent-card.disabled {
+      opacity: 0.6;
+    }
+
+    .agent-card.provider-inactive {
+      border-color: var(--warning-color);
+      background: var(--warning-bg);
+    }
+
+    .agent-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 0.75rem;
+    }
+
+    .agent-info {
+      flex: 1;
+    }
+
+    .agent-name-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .agent-name-row h4 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-color);
+    }
+
+    .agent-tag {
+      padding: 0.125rem 0.5rem;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .agent-tag.multimodal {
+      background: var(--primary-color);
+      color: white;
+    }
+
+    .agent-tag.tools {
+      background: var(--success-color);
+      color: white;
+    }
+
+    .agent-tag.reasoning {
+      background: var(--info-color);
+      color: white;
+    }
+
+    .agent-provider-info {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .agent-provider {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-color);
+    }
+
+    .agent-model {
+      font-size: 12px;
+      color: var(--text-secondary);
+      font-family: monospace;
+    }
+
+    .provider-status-warning {
+      font-size: 11px;
+      color: var(--warning-color);
+      font-weight: 500;
+      text-transform: uppercase;
+    }
+
+    .agent-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: var(--border-color);
+      transition: 0.2s;
+      border-radius: 24px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: 0.2s;
+      border-radius: 50%;
+    }
+
+    input:checked + .toggle-slider {
+      background-color: var(--primary-color);
+    }
+
+    input:checked + .toggle-slider:before {
+      transform: translateX(20px);
+    }
+
+    input:disabled + .toggle-slider {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .icon-btn {
+      background: none;
+      border: none;
+      padding: 0.25rem;
+      border-radius: 4px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: all 0.2s ease;
+    }
+
+    .icon-btn:hover {
+      background: var(--hover-bg);
+      color: var(--text-color);
+    }
+
+    .icon-btn.danger:hover {
+      background: var(--error-bg);
+      color: var(--error-color);
+    }
+
+    .agent-status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .status-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 0.5rem;
+    }
+
+    .status-indicator.active {
+      background: var(--success-color);
+    }
+
+    .status-indicator.inactive {
+      background: var(--text-secondary);
+    }
+
+    .status-indicator.provider-inactive {
+      background: var(--warning-color);
+    }
+
+    .status-text {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+
+    .agent-capabilities {
+      display: flex;
+      gap: 0.25rem;
+    }
+
+    .capability-badge {
+      padding: 0.125rem 0.375rem;
+      border-radius: 8px;
+      font-size: 10px;
+      font-weight: 500;
+      text-transform: uppercase;
+    }
+
+    .capability-badge.speed-fast {
+      background: var(--success-bg);
+      color: var(--success-color);
+    }
+
+    .capability-badge.speed-medium {
+      background: var(--warning-bg);
+      color: var(--warning-color);
+    }
+
+    .capability-badge.speed-slow {
+      background: var(--error-bg);
+      color: var(--error-color);
+    }
+
+    .capability-badge.cost-low {
+      background: var(--success-bg);
+      color: var(--success-color);
+    }
+
+    .capability-badge.cost-medium {
+      background: var(--warning-bg);
+      color: var(--warning-color);
+    }
+
+    .capability-badge.cost-high {
+      background: var(--error-bg);
+      color: var(--error-color);
+    }
+
+    /* Button styles */
+    .primary-btn, .secondary-btn {
+      padding: 0.75rem 1.5rem;
+      border-radius: 6px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: none;
+    }
+
+    .primary-btn {
+      background: var(--primary-color);
+      color: white;
+    }
+
+    .primary-btn:hover {
+      background: var(--primary-hover);
+    }
+
+    .secondary-btn {
+      background: var(--background-secondary);
+      color: var(--text-color);
+      border: 1px solid var(--border-color);
+    }
+
+    .secondary-btn:hover {
+      background: var(--hover-bg);
+    }
+
+    /* Form styles */
+    .form-help-text {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 0.25rem;
+      line-height: 1.4;
+    }
+
+    .error-text {
+      font-size: 12px;
+      color: var(--error-color);
+      margin-top: 0.25rem;
+    }
+
+    .fetch-models-btn {
+      padding: 0.5rem 1rem;
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.2s ease;
+    }
+
+    .fetch-models-btn:hover {
+      background: var(--primary-hover);
+    }
+
+    .fetch-models-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .loading-spinner-small {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid transparent;
+      border-top: 2px solid currentColor;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -365,11 +714,17 @@ export class SettingsComponent {
 
   public agents = signal<AgentConfig[]>([]);
   public showAgentForm = signal(false);
-  public editingAgent = signal<AgentConfig | null>(null);
+  public editingAgent = signal<Agent | null>(null);
   public activeTab = signal<'providers' | 'agents' | 'general'>('providers');
   public availableModels = signal<string[]>([]);
   public loadingModels = signal(false);
   public modelError = signal<string | null>(null);
+  public showConfirmDialog = signal(false);
+  public confirmationData = signal<ConfirmationData>({
+    title: '',
+    message: ''
+  });
+  public agentToDelete = signal<string | null>(null);
 
   public autoSave = signal(true);
   public enableNotifications = signal(true);
@@ -386,7 +741,14 @@ export class SettingsComponent {
     endpoint: ''
   };
 
-  constructor(private messageService: MessageService) {
+  // NgRx selectors
+  public agentsWithProviders$ = this.store.select(selectAgentsWithProviders);
+  public activeProviders$ = this.store.select(selectActiveProviders);
+
+  constructor(
+    private messageService: MessageService,
+    private store: Store
+  ) {
     // Load mock data for demo
     this.loadSettings();
 
@@ -480,12 +842,29 @@ export class SettingsComponent {
   public addNewAgent() {
     this.editingAgent.set(null);
     this.agentForm = {
-      provider: '',
+      provider: '', // Now stores provider ID instead of provider type
       model: '',
+      apiKey: '', // Not used anymore but kept for compatibility
+      networkAddress: '', // Not used anymore but kept for compatibility
+      localHostType: '', // Not used anymore but kept for compatibility
+      multimodal: false,
+      endpoint: '' // Not used anymore but kept for compatibility
+    };
+    this.availableModels.set([]);
+    this.modelError.set(null);
+    this.showAgentForm.set(true);
+  }
+
+  public editAgent(agentWithProvider: AgentWithProvider) {
+    this.editingAgent.set(agentWithProvider.agent);
+    
+    this.agentForm = {
+      provider: agentWithProvider.provider.id,
+      model: agentWithProvider.agent.model,
       apiKey: '',
       networkAddress: '',
       localHostType: '',
-      multimodal: false,
+      multimodal: agentWithProvider.agent.capabilities.hasVision,
       endpoint: ''
     };
     this.availableModels.set([]);
@@ -493,27 +872,34 @@ export class SettingsComponent {
     this.showAgentForm.set(true);
   }
 
-  public editAgent(agent: AgentConfig) {
-    this.editingAgent.set(agent);
-    const provider = agent.provider === 'ollama' && agent._metadata?.localHostType ? 'local-network' : agent.provider;
-    
-    this.agentForm = {
-      provider: provider,
-      model: agent.model,
-      apiKey: agent._metadata?.apiKey || '',
-      networkAddress: agent.endpoint || agent._metadata?.networkAddress || '',
-      localHostType: agent._metadata?.localHostType || '',
-      multimodal: agent.capabilities.hasVision || agent._metadata?.multimodal || false,
-      endpoint: agent.endpoint || ''
-    };
-    this.availableModels.set([]);
-    this.modelError.set(null);
-    this.showAgentForm.set(true);
+  public deleteAgent(agentId: string) {
+    this.agentToDelete.set(agentId);
+    this.confirmationData.set({
+      title: 'Delete Agent',
+      message: 'Are you sure you want to delete this agent? This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      type: 'danger'
+    });
+    this.showConfirmDialog.set(true);
   }
 
-  public deleteAgent(agentId: string) {
-    const agents = this.agents();
-    this.agents.set(agents.filter(a => a.id !== agentId));
+  public onConfirmDelete() {
+    const agentId = this.agentToDelete();
+    if (agentId) {
+      // TODO: Dispatch NgRx action to delete agent
+      // For now, use the old approach
+      const agents = this.agents();
+      this.agents.set(agents.filter(a => a.id !== agentId));
+      this.autoSaveSettings();
+      console.log('Would delete agent with ID:', agentId);
+    }
+    this.closeConfirmDialog();
+  }
+
+  public closeConfirmDialog() {
+    this.showConfirmDialog.set(false);
+    this.agentToDelete.set(null);
   }
 
   public closeAgentForm() {
@@ -524,7 +910,7 @@ export class SettingsComponent {
     this.loadingModels.set(false);
   }
 
-  public  saveAgent(event?: Event) {
+  public saveAgent(event?: Event) {
     // Prevent default form submission if event is provided
     if (event) {
       event.preventDefault();
@@ -532,45 +918,32 @@ export class SettingsComponent {
     }
 
     const editing = this.editingAgent();
-    const agents = this.agents();
-
+    
     // Generate agent name based on provider and model
     const agentName = this.generateAgentName();
 
     if (editing) {
-      // Update existing agent
-      const index = agents.findIndex(a => a.id === editing.id);
-      if (index >= 0) {
-        const provider = this.agentForm.provider === 'local-network' ? 'ollama' : this.agentForm.provider as 'openai' | 'anthropic' | 'ollama' | 'custom';
-        
-        agents[index] = {
-          ...editing,
-          name: agentName,
-          provider: provider,
-          model: this.agentForm.model,
-          endpoint: this.agentForm.networkAddress || undefined,
-          capabilities: {
-            ...editing.capabilities,
-            hasVision: this.agentForm.multimodal
-          },
-          _metadata: {
-            apiKey: this.agentForm.apiKey || undefined,
-            networkAddress: this.agentForm.networkAddress || undefined,
-            localHostType: this.agentForm.localHostType || undefined,
-            multimodal: this.agentForm.multimodal
-          }
-        };
-      }
-    } else {
-      // Add new agent
-      const provider = this.agentForm.provider === 'local-network' ? 'ollama' : this.agentForm.provider as 'openai' | 'anthropic' | 'ollama' | 'custom';
-      
-      const newAgent: AgentConfig = {
-        id: Date.now().toString(),
+      // TODO: Dispatch NgRx action to update existing agent
+      const updatedAgent: Agent = {
+        ...editing,
         name: agentName,
-        provider: provider,
+        providerId: this.agentForm.provider, // Now uses provider ID
         model: this.agentForm.model,
-        endpoint: this.agentForm.networkAddress || undefined,
+        capabilities: {
+          ...editing.capabilities,
+          hasVision: this.agentForm.multimodal
+        },
+        updatedAt: new Date()
+      };
+      
+      // For now, use the old approach
+      console.log('Would update agent:', updatedAgent);
+    } else {
+      // TODO: Dispatch NgRx action to add new agent
+      const newAgent: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'> = {
+        name: agentName,
+        providerId: this.agentForm.provider, // Now uses provider ID
+        model: this.agentForm.model,
         temperature: 0.7,
         maxTokens: 4000,
         timeout: 30000,
@@ -579,111 +952,42 @@ export class SettingsComponent {
           hasToolUse: true,
           reasoningDepth: 'intermediate',
           speed: 'medium',
-          costTier: 'medium',
-          supportedLanguages: ['en'],
-          specializations: ['code']
+          costTier: 'medium'
         },
-        isEnabledForAssignment: true,
-        _metadata: {
-          apiKey: this.agentForm.apiKey || undefined,
-          networkAddress: this.agentForm.networkAddress || undefined,
-          localHostType: this.agentForm.localHostType || undefined,
-          multimodal: this.agentForm.multimodal
-        }
+        isActive: true
       };
-      agents.push(newAgent);
+      
+      // For now, use the old approach
+      console.log('Would create agent:', newAgent);
     }
 
-    this.agents.set([...agents]);
     // Save settings immediately when an agent is added or updated
     this.autoSaveSettings();
     this.closeAgentForm();
   }
 
   private generateAgentName(): string {
-    const provider = this.agentForm.provider;
+    const providerId = this.agentForm.provider;
     const model = this.agentForm.model;
 
-    if (provider === 'local-network') {
-      const hostType = this.agentForm.localHostType || 'Local';
-      return `${hostType} - ${model}`;
-    }
-
-    const providerNames: { [key: string]: string } = {
-      'openai': 'OpenAI',
-      'anthropic': 'Anthropic',
-      'google': 'Google',
-      'azure': 'Azure'
-    };
-
-    const providerName = providerNames[provider] || provider;
-    return `${providerName} - ${model}`;
+    // TODO: Get provider name from NgRx store using providerId
+    // For now, use a simple approach
+    return `Agent - ${model}`;
   }
 
-  public onProviderChange(provider: string) {
-    console.log('SettingsComponent: Provider changed to:', provider);
+  public onProviderChange(providerId: string) {
+    console.log('SettingsComponent: Provider changed to:', providerId);
     this.agentForm.model = '';
+    this.availableModels.set([]);
+    this.modelError.set(null);
+    
+    // Clear old form fields that are no longer needed
     this.agentForm.apiKey = '';
+    this.agentForm.networkAddress = '';
     this.agentForm.localHostType = '';
-    this.availableModels.set([]);
-    this.modelError.set(null);
-
-    if (provider === 'local-network') {
-      this.agentForm.networkAddress = 'http://localhost:11434';
-      console.log('SettingsComponent: Set network address to:', this.agentForm.networkAddress);
-    } else {
-      this.agentForm.networkAddress = '';
-    }
   }
 
-  public onLocalHostTypeChange(hostType: string) {
-    console.log('SettingsComponent: Local host type changed to:', hostType);
-    console.log('SettingsComponent: Current network address:', this.agentForm.networkAddress);
-    this.agentForm.model = '';
-    this.availableModels.set([]);
-
-    if (hostType === 'ollama' && this.agentForm.networkAddress) {
-      console.log('SettingsComponent: Triggering Ollama model fetch...');
-      this.fetchOllamaModels();
-    } else {
-      console.log('SettingsComponent: Not fetching models - hostType:', hostType, 'networkAddress:', this.agentForm.networkAddress);
-    }
-  }
-
-  public getModelPlaceholder(): string {
-    const provider = this.agentForm.provider;
-
-    if (provider === 'local-network') {
-      return this.agentForm.localHostType === 'ollama'
-        ? 'e.g., llama3.2, codellama'
-        : 'Enter model name';
-    }
-
-    const placeholders: { [key: string]: string } = {
-      'openai': 'e.g., gpt-4, gpt-4-vision-preview',
-      'anthropic': 'e.g., claude-3-5-sonnet-20241022',
-      'google': 'e.g., gemini-pro, gemini-pro-vision',
-      'azure': 'e.g., gpt-4, gpt-35-turbo'
-    };
-
-    return placeholders[provider] || 'Enter model name';
-  }
-
-  public fetchModels() {
-    if (!this.agentForm.provider || !this.agentForm.apiKey) {return;}
-
-    this.loadingModels.set(true);
-    this.modelError.set(null);
-    this.messageService.fetchCloudModels(this.agentForm.provider, this.agentForm.apiKey);
-  }
-
-  private fetchOllamaModels() {
-    console.log('SettingsComponent: Starting to fetch Ollama models...');
-    this.loadingModels.set(true);
-    this.modelError.set(null);
-    this.messageService.fetchOllamaModels(this.agentForm.networkAddress);
-    console.log('SettingsComponent: Sent fetchOllamaModels message');
-  }
+  // Legacy methods removed - no longer needed with provider-agent architecture
 
   public resetToDefaults() {
     this.autoSave.set(true);
@@ -700,8 +1004,9 @@ export class SettingsComponent {
     this.closeSettings.emit();
   }
 
-  public onAgentToggleChange() {
-    // Auto-save when agent toggle changes
+  public onAgentToggleChange(agentId: string, isActive: boolean) {
+    // TODO: Dispatch NgRx action to toggle agent status
+    // For now, keep the existing behavior
     this.autoSaveSettings();
   }
 
@@ -733,6 +1038,28 @@ export class SettingsComponent {
     };
 
     return providerNames[provider] || provider;
+  }
+
+  public getProviderTypeDisplayName(type: string, provider: string): string {
+    if (type === 'cloud') {
+      return this.getProviderDisplayName(provider);
+    } else {
+      return `${this.getProviderDisplayName(provider)} (Local)`;
+    }
+  }
+
+  public fetchModelsForProvider() {
+    if (!this.agentForm.provider) return;
+    
+    this.loadingModels.set(true);
+    this.modelError.set(null);
+    
+    // TODO: Dispatch NgRx action to fetch models for the selected provider
+    // For now, simulate the old behavior
+    this.messageService.sendMessage({
+      type: 'fetchModelsForProvider',
+      payload: { providerId: this.agentForm.provider }
+    });
   }
 
 

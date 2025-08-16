@@ -14,7 +14,7 @@ import { ContextItem, PhaseAlert } from '../../models/session.model';
         @if (availableAgents().length === 0) {
           <div class="info-message warning">
             <span class="info-icon">⚠️</span>
-            <span class="info-text">No agents configured.</span>
+            <span class="info-text">No active agents available for messaging.</span>
             <button class="info-link" (click)="openAgentSettings()" onclick="console.log('Raw onclick works!')">Configure agents</button>
           </div>
         } @else if (phaseAlert()) {
@@ -114,7 +114,7 @@ import { ContextItem, PhaseAlert } from '../../models/session.model';
                 }
               </select>
             } @else {
-              <span class="no-agent-text">No agents available</span>
+              <span class="no-agent-text">No active agents available</span>
             }
           </div>
 
@@ -304,7 +304,7 @@ export class InputAreaComponent implements AfterViewInit {
       const agent = this.availableAgents().find(a => a.id === this.selectedAgent());
       return agent ? `Ready with ${agent.name}` : 'Ready to assist';
     }
-    return 'Configure agents to get started';
+    return 'Configure and activate agents to get started';
   }
 
   public openAgentSettings(): void {
