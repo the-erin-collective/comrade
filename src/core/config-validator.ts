@@ -316,32 +316,39 @@ export class ConfigurationValidator {
  * Apply default values to configuration
  */
 public static applyDefaults(config: any, schema: ConfigurationSchema): any {
-  // Unwrap the config value before processing
-  const unwrappedConfig = this.unwrapValue(config);
+  // Don't unwrap here - the config should already be unwrapped by the caller
   
-  // Handle non-object or null values
-  if (!unwrappedConfig || typeof unwrappedConfig !== 'object') {
+  // Handle primitive values - don't process them, just return as-is or use default
+  if (schema.type === 'string' || schema.type === 'number' || schema.type === 'boolean') {
+    if (config === undefined || config === null) {
+      return schema.default !== undefined ? schema.default : config;
+    }
+    return config;
+  }
+  
+  // Handle non-object or null values for complex types
+  if (!config || typeof config !== 'object') {
     return schema.default !== undefined ? schema.default : 
            (schema.type === 'array' ? [] : {});
   }
 
   if (schema.type === 'array') {
-    if (!Array.isArray(unwrappedConfig)) {
+    if (!Array.isArray(config)) {
       return schema.default !== undefined ? schema.default : [];
     }
     
     if (schema.items) {
-      return unwrappedConfig.map(item => this.applyDefaults(item, schema.items!));
+      return config.map(item => this.applyDefaults(item, schema.items!));
     }
-    return unwrappedConfig;
+    return config;
   }
 
   if (schema.type === 'object' && schema.properties) {
-    const result = { ...unwrappedConfig };
+    const result = { ...config };
     
     for (const [key, propSchema] of Object.entries(schema.properties)) {
-      // Unwrap each property value before processing
-      const propValue = this.unwrapValue(result[key]);
+      // Don't unwrap here - just use the property value directly
+      const propValue = result[key];
       
       if (propValue === undefined && propSchema.default !== undefined) {
         result[key] = propSchema.default;
@@ -353,7 +360,7 @@ public static applyDefaults(config: any, schema: ConfigurationSchema): any {
     return result;
   }
 
-  return unwrappedConfig;
+  return config;
 }
 
   /**
@@ -563,7 +570,7 @@ public static applyDefaults(config: any, schema: ConfigurationSchema): any {
     
     // Handle VS Code configuration value objects (comprehensive patterns)
     if (value && typeof value === 'object') {
-      // Pattern 1: { value: actualValue }
+      // Pattern 1: { value: actualValue } - but only if it's the ONLY property
       if ('value' in value && Object.keys(value).length === 1) {
         return this.unwrapValue(value.value);
       }
@@ -582,12 +589,14 @@ public static applyDefaults(config: any, schema: ConfigurationSchema): any {
       }
       
       // Pattern 3: Check if this looks like a VS Code configuration object
-      // These objects often have internal properties starting with underscore
+      // These objects often have internal properties starting with underscore OR configuration methods
       const keys = Object.keys(value);
       const hasInternalKeys = keys.some(key => key.startsWith('_'));
       const hasConfigMethods = typeof value.get === 'function' || typeof value.has === 'function';
       
-      if (hasInternalKeys || hasConfigMethods) {
+      // Only unwrap if it has BOTH internal keys AND config methods, or if it's clearly a VS Code config object
+      if ((hasInternalKeys && hasConfigMethods) || 
+          (hasConfigMethods && keys.length > 10)) { // VS Code config objects typically have many properties
         // This looks like a VS Code configuration object, try to extract the actual value
         // Look for common value properties
         const possibleValueKeys = ['value', 'effectiveValue', 'inspectValue', 'globalValue', 'workspaceValue'];
@@ -615,15 +624,24 @@ public static applyDefaults(config: any, schema: ConfigurationSchema): any {
       return value;
     }
     
-    // Handle nested objects - only unwrap if it looks like a plain object
+    // Handle nested objects - be very conservative about unwrapping
     if (value && typeof value === 'object' && value.constructor === Object) {
-      const result: Record<string, any> = {};
-      for (const key in value) {
-        if (Object.prototype.hasOwnProperty.call(value, key)) {
-          result[key] = this.unwrapValue(value[key]);
-        }
+      const keys = Object.keys(value);
+      
+      // Don't unwrap objects that look like they have a specific structure (like AgentConfigurationItem)
+      // Check if this looks like a structured configuration object by looking for known properties
+      const knownConfigProps = ['id', 'name', 'provider', 'model', 'capabilities', 'temperature', 'maxTokens'];
+      const hasKnownProps = knownConfigProps.some(prop => prop in value);
+      
+      if (hasKnownProps) {
+        // This looks like a structured configuration object, don't unwrap it recursively
+        // Just return it as-is to preserve its structure
+        return value;
       }
-      return result;
+      
+      // For other plain objects, be very conservative - only unwrap if we're sure it's a wrapper
+      // Don't unwrap by default to avoid breaking structured objects
+      return value;
     }
     
     // For other object types (classes, etc.), return as-is
@@ -631,23 +649,21 @@ public static applyDefaults(config: any, schema: ConfigurationSchema): any {
   }
 
   private static validateType(value: any, expectedType: string): boolean {
-    // First unwrap the value
-    const unwrappedValue = this.unwrapValue(value);
-    
+    // Don't unwrap here - the value should already be unwrapped by the caller
     // Then validate the type
     switch (expectedType) {
       case 'string':
-        return typeof unwrappedValue === 'string';
+        return typeof value === 'string';
       case 'number':
-        return typeof unwrappedValue === 'number' && !isNaN(unwrappedValue);
+        return typeof value === 'number' && !isNaN(value);
       case 'boolean':
-        return typeof unwrappedValue === 'boolean';
+        return typeof value === 'boolean';
       case 'array':
-        return Array.isArray(unwrappedValue);
+        return Array.isArray(value);
       case 'object':
-        return typeof unwrappedValue === 'object' && unwrappedValue !== null && !Array.isArray(unwrappedValue);
+        return typeof value === 'object' && value !== null && !Array.isArray(value);
       case 'integer':
-        return typeof unwrappedValue === 'number' && Number.isInteger(unwrappedValue);
+        return typeof value === 'number' && Number.isInteger(value);
       default:
         return false;
     }

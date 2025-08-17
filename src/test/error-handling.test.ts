@@ -12,6 +12,14 @@ import { IAgent, AgentCapabilities, PhaseAgentMapping } from '../core/agent';
 
 // Mock progress reporter is defined inline in tests where needed
 
+// Helper to create a full ILogger mock
+const createTestLogger = (sb: sinon.SinonSandbox): ILogger => ({
+  debug: sb.stub(),
+  info: sb.stub(),
+  warn: sb.stub(),
+  error: sb.stub()
+});
+
 // Mock agent for testing
 class MockAgent implements IAgent {
   id = 'test-agent';
@@ -162,7 +170,7 @@ describe('Error Handling and Cancellation', () => {
   });
 
   it('should handle execution failure with error recovery', async () => {
-    const logger = { error: sandbox.stub() };
+    const logger: ILogger = createTestLogger(sandbox);
     const runner = new MockRunner(mockSession, mockAgent, 'test personality', logger);
     runner.setShouldFail(true);
 
@@ -183,7 +191,7 @@ describe('Error Handling and Cancellation', () => {
       // Verify error dialog was shown
       assert.ok(showErrorMessageStub.called);
       // Verify error was logged
-      assert.ok(logger.error.called);
+      sinon.assert.called(logger.error as sinon.SinonStub);
     } finally {
       // Restore original NODE_ENV
       process.env.NODE_ENV = originalNodeEnv;
@@ -191,7 +199,7 @@ describe('Error Handling and Cancellation', () => {
   });
 
   it('should handle cancellation before execution', async () => {
-    const logger = { error: sandbox.stub() };
+    const logger: ILogger = createTestLogger(sandbox);
     const runner = new MockRunner(mockSession, mockAgent, 'test personality', logger);
 
     // Cancel session before execution
@@ -205,7 +213,7 @@ describe('Error Handling and Cancellation', () => {
   });
 
   it('should handle cancellation during execution', async () => {
-    const logger = { error: sandbox.stub() };
+    const logger: ILogger = createTestLogger(sandbox);
     const runner = new MockRunner(mockSession, mockAgent, 'test personality', logger);
     runner.setExecutionDelay(100);
 
@@ -221,7 +229,7 @@ describe('Error Handling and Cancellation', () => {
   });
 
   it('should handle operation timeout', async () => {
-    const logger = { error: sandbox.stub() };
+    const logger: ILogger = createTestLogger(sandbox);
     const runner = new MockRunner(mockSession, mockAgent, 'test personality', logger);
 
     const timeout: OperationTimeout = {
@@ -240,7 +248,7 @@ describe('Error Handling and Cancellation', () => {
   });
 
   it('should handle timeout with extension option', async () => {
-    const logger = { error: sandbox.stub() };
+    const logger: ILogger = createTestLogger(sandbox);
     const runner = new MockRunner(mockSession, mockAgent, 'test personality', logger);
 
     const timeout: OperationTimeout = {
@@ -271,7 +279,7 @@ describe('Error Handling and Cancellation', () => {
   });
 
   it('should create recoverable error with suggested fix', async () => {
-    const logger = { error: sandbox.stub() };
+    const logger: ILogger = createTestLogger(sandbox);
     const runner = new MockRunner(mockSession, mockAgent, 'test personality', logger);
 
     // Force the runner to throw a recoverable error
@@ -297,7 +305,7 @@ describe('Error Handling and Cancellation', () => {
   });
 
   it('should create fatal error', async () => {
-    const logger = { error: sandbox.stub() };
+    const logger: ILogger = createTestLogger(sandbox);
     const runner = new MockRunner(mockSession, mockAgent, 'test personality', logger);
 
     // Force the runner to throw a fatal error
@@ -317,7 +325,7 @@ describe('Error Handling and Cancellation', () => {
   });
 
   it('should handle network error with specific recovery options', async () => {
-    const logger = { error: sandbox.stub() };
+    const logger: ILogger = createTestLogger(sandbox);
     const runner = new MockRunner(mockSession, mockAgent, 'test personality', logger);
 
     // Mock network error
@@ -338,7 +346,7 @@ describe('Error Handling and Cancellation', () => {
       assert.ok(callArgs[0].includes('Network error'));
       assert.ok(callArgs.includes('Configure'));
       // Verify error was logged
-      assert.ok(logger.error.called);
+      sinon.assert.called(logger.error as sinon.SinonStub);
     } finally {
       // Restore original NODE_ENV
       process.env.NODE_ENV = originalNodeEnv;
@@ -346,7 +354,7 @@ describe('Error Handling and Cancellation', () => {
   });
 
   it('should handle authentication error with configuration link', async () => {
-    const logger = { error: sandbox.stub() };
+    const logger: ILogger = createTestLogger(sandbox);
     const runner = new MockRunner(mockSession, mockAgent, 'test personality', logger);
 
     // Mock auth error
@@ -367,7 +375,7 @@ describe('Error Handling and Cancellation', () => {
       assert.ok(callArgs[0].includes('Authentication failed'));
       assert.ok(callArgs.includes('Configure'));
       // Verify error was logged
-      assert.ok(logger.error.called);
+      sinon.assert.called(logger.error as sinon.SinonStub);
     } finally {
       // Restore original NODE_ENV
       process.env.NODE_ENV = originalNodeEnv;
@@ -375,7 +383,7 @@ describe('Error Handling and Cancellation', () => {
   });
 
   it('should handle rate limit error with retry suggestion', async () => {
-    const logger = { error: sandbox.stub() };
+    const logger: ILogger = createTestLogger(sandbox);
     const runner = new MockRunner(mockSession, mockAgent, 'test personality', logger);
 
     // Mock rate limit error
@@ -396,7 +404,7 @@ describe('Error Handling and Cancellation', () => {
       assert.ok(callArgs[0].includes('Rate limit exceeded'));
       assert.ok(callArgs[0].includes('Wait 60 seconds'));
       // Verify error was logged
-      assert.ok(logger.error.called);
+      sinon.assert.called(logger.error as sinon.SinonStub);
     } finally {
       // Restore original NODE_ENV
       process.env.NODE_ENV = originalNodeEnv;

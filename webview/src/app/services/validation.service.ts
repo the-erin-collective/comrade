@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { ProviderFormData, CloudProvider, LocalNetworkProvider } from '../interfaces/provider-agent.interface';
+import { ProviderFormData } from '../interfaces/provider-agent.interface';
 
 export interface ValidationResult {
   isValid: boolean;
@@ -54,7 +54,7 @@ export class ValidationService {
     if (!formData.apiKey || formData.apiKey.trim().length === 0) {
       errors.push('API key is required for cloud providers');
     } else {
-      const apiKeyValidation = this.validateApiKey(formData.apiKey, formData.provider as CloudProvider);
+      const apiKeyValidation = this.validateApiKey(formData.apiKey, formData.provider);
       errors.push(...apiKeyValidation.errors);
     }
 
@@ -90,7 +90,7 @@ export class ValidationService {
   /**
    * Validates API key format for different cloud providers
    */
-  validateApiKey(apiKey: string, provider: CloudProvider): ValidationResult {
+  validateApiKey(apiKey: string, provider: string): ValidationResult {
     const errors: string[] = [];
 
     if (!apiKey || apiKey.trim().length === 0) {

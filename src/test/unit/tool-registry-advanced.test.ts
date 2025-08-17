@@ -329,7 +329,7 @@ describe('Advanced Tool Registry Tests', () => {
     });
 
     it('should handle concurrent tool executions', async () => {
-      const promises = [];
+      const promises: Promise<ToolResult>[] = [];
       
       for (let i = 0; i < 5; i++) {
         promises.push(registry.executeTool('async_tool', {
@@ -337,7 +337,7 @@ describe('Advanced Tool Registry Tests', () => {
         }));
       }
 
-      const results = await Promise.all(promises);
+      const results: ToolResult[] = await Promise.all(promises);
 
       results.forEach((result, index) => {
         assert.strictEqual(result.success, true);
@@ -530,14 +530,14 @@ describe('Advanced Tool Registry Tests', () => {
       registry.registerTool(concurrentTool);
 
       const startTime = Date.now();
-      const promises = [];
+      const promises: Promise<ToolResult>[] = [];
 
       // Execute 50 tools concurrently
       for (let i = 0; i < 50; i++) {
         promises.push(registry.executeTool('concurrent_tool', { id: i }));
       }
 
-      const results = await Promise.all(promises);
+      const results: ToolResult[] = await Promise.all(promises);
       const totalTime = Date.now() - startTime;
 
       // All should succeed
@@ -802,7 +802,7 @@ describe('Advanced Tool Registry Tests', () => {
       registry.registerTool(statsTool);
 
       // Execute tool multiple times with different outcomes
-      const results = [];
+      const results: ToolResult[] = [];
       
       for (let i = 0; i < 10; i++) {
         const result = await registry.executeTool('stats_tool', {

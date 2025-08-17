@@ -70,5 +70,21 @@ export class Logger {
   }
 }
 
-// Export a default instance
-export const logger = new Logger();
+// Resolve log level from environment for the default instance
+function resolveEnvLogLevel(): LogLevel {
+  const fromEnv = (process.env.COMRADE_LOG_LEVEL || '').toLowerCase();
+  if (fromEnv && (fromEnv === 'debug' || fromEnv === 'info' || fromEnv === 'warn' || fromEnv === 'error')) {
+    return fromEnv as LogLevel;
+  }
+
+  const debugFlag = (process.env.COMRADE_DEBUG || '').toLowerCase();
+  const isDebug = debugFlag === '1' || debugFlag === 'true';
+  if (isDebug) {
+    return 'debug';
+  }
+
+  return 'info';
+}
+
+// Export a default instance with env-gated level
+export const logger = new Logger({ level: resolveEnvLogLevel() });

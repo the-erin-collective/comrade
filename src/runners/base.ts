@@ -8,7 +8,10 @@ import { ISession } from '../core/session';
 import { WebFileSystem } from '../core/webcompat';
 
 export interface ILogger {
-  error(msg: string): void;
+  debug(msg: string, meta?: Record<string, any>): void;
+  info(msg: string, meta?: Record<string, any>): void;
+  warn(msg: string, meta?: Record<string, any>): void;
+  error(msg: string, meta?: Record<string, any>): void;
 }
 
 export interface RunnerResult {
@@ -60,8 +63,10 @@ export abstract class BaseRunner {
    */
   public async run(timeout?: OperationTimeout): Promise<RunnerResult> {
     try {
+      this.logger.debug('Run.start', { runner: this.getRunnerName(), timeout });
       // Check if session is cancelled before starting
       if (this.session.isCancelled()) {
+        this.logger.warn('Run.preStartCancelled', { runner: this.getRunnerName() });
         return {
           success: false,
           error: new Error('Session was cancelled before execution')
@@ -76,6 +81,7 @@ export abstract class BaseRunner {
           { runner: this.getRunnerName() }
         );
         error.suggestedFix = 'Check your configuration and try again';
+        this.logger.warn('Run.validationFailed', { runner: this.getRunnerName(), error: error.message, code: error.code });
         try {
           await this.handleError(error);
           return {
@@ -83,6 +89,7 @@ export abstract class BaseRunner {
             error
           };
         } catch (handledError) {
+          this.logger.error('Run.validationHandleError', { runner: this.getRunnerName(), error: (handledError as Error).message });
           return {
             success: false,
             error: handledError as Error
@@ -95,14 +102,17 @@ export abstract class BaseRunner {
 
       // Execute with timeout if specified
       let result: RunnerResult;
+      this.logger.debug('Run.execute.start', { runner: this.getRunnerName(), withTimeout: !!timeout });
       if (timeout) {
         result = await this.executeWithTimeout(timeout);
       } else {
         result = await this.execute();
       }
+      this.logger.debug('Run.execute.end', { runner: this.getRunnerName(), success: result?.success });
 
       // Check for cancellation after execution
       if (this.session.isCancelled()) {
+        this.logger.warn('Run.postExecuteCancelled', { runner: this.getRunnerName() });
         return {
           success: false,
           error: new Error('Session was cancelled during execution')
@@ -111,9 +121,11 @@ export abstract class BaseRunner {
 
       // Report completion
       this.session.reportProgress(`Completed ${this.getRunnerName()}`);
+      this.logger.debug('Run.end', { runner: this.getRunnerName(), result });
 
       return result;
     } catch (error) {
+      this.logger.error('Run.exception', { runner: this.getRunnerName(), error: (error as Error).message });
       try {
         await this.handleError(error as Error);
         return {
@@ -121,6 +133,7 @@ export abstract class BaseRunner {
           error: error as Error
         };
       } catch (handledError) {
+        this.logger.error('Run.handleError.exception', { runner: this.getRunnerName(), error: (handledError as Error).message });
         return {
           success: false,
           error: handledError as Error
@@ -306,7 +319,7 @@ export abstract class BaseRunner {
    */
   protected async defaultErrorHandler(error: Error): Promise<ErrorRecoveryOptions> {
     // Log the error
-    this.logger.error(`Error in ${this.getRunnerName()}: ${error.message}`);
+    this.logger.error('Runner.error', { runner: this.getRunnerName(), error: error.message });
 
     // Update session state
     this.session.error(`${this.getRunnerName()} failed: ${error.message}`);

@@ -852,10 +852,8 @@ export class ProviderManagementEnhancedComponent implements OnInit, OnDestroy {
       return;
     }
 
+    const formValue = this.providerFormGroup.value;
     try {
-      const formValue = this.providerFormGroup.value;
-      
-      const formValue = this.providerFormGroup.value;
       
       if (this.editingProvider()) {
         await this.providerManager.updateProvider(this.editingProvider()!.id, formValue);

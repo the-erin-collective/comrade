@@ -1,4 +1,3 @@
-import { describe, it, beforeEach } from 'mocha';
 import * as assert from 'assert';
 import * as path from 'path';
 import { ExecuteCommandTool } from '../../core/tools/command-execution';

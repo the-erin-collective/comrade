@@ -44,20 +44,24 @@ class MockWebviewPanel implements vscode.WebviewPanel {
     public viewType: string;
     public title: string;
     public iconPath?: vscode.Uri | { light: vscode.Uri; dark: vscode.Uri };
-    public options: vscode.WebviewPanelOptions;
-    public viewColumn?: vscode.ViewColumn;
+    public options: vscode.WebviewPanelOptions & vscode.WebviewOptions;
+    public viewColumn: vscode.ViewColumn;
     public active: boolean = true;
     public visible: boolean = true;
 
     private disposeHandlers: (() => void)[] = [];
     private viewStateChangeHandlers: ((e: vscode.WebviewPanelOnDidChangeViewStateEvent) => void)[] = [];
 
-    constructor(viewType: string, title: string, showOptions: vscode.ViewColumn, options: vscode.WebviewPanelOptions) {
+    constructor(viewType: string, title: string, showOptions: vscode.ViewColumn, options: vscode.WebviewPanelOptions & vscode.WebviewOptions) {
         this.webview = new MockWebview();
         this.viewType = viewType;
         this.title = title;
         this.viewColumn = showOptions;
         this.options = options;
+        // Apply webview-related options such as enableScripts if provided
+        if (typeof options.enableScripts !== 'undefined') {
+            this.webview.options = { ...this.webview.options, enableScripts: options.enableScripts };
+        }
     }
 
     onDidDispose = (handler: () => void) => {
@@ -80,14 +84,14 @@ class MockWebviewPanel implements vscode.WebviewPanel {
     };
 }
 
-suite('Settings UI Integration Tests', () => {
+describe('Settings UI Integration Tests', () => {
     let configManager: ConfigurationManager;
     let agentRegistry: AgentRegistry;
     let providerManager: ProviderManagerService;
     let mockSecretStorage: vscode.SecretStorage;
     let mockWebviewPanel: MockWebviewPanel;
 
-    setup(() => {
+    beforeEach(() => {
         // Create mock secret storage
         mockSecretStorage = {
             get: async (key: string) => undefined,
@@ -110,7 +114,7 @@ suite('Settings UI Integration Tests', () => {
         );
     });
 
-    teardown(() => {
+    afterEach(() => {
         // Reset instances for clean tests
         ConfigurationManager.resetInstance();
         AgentRegistry.resetInstance();
@@ -118,8 +122,8 @@ suite('Settings UI Integration Tests', () => {
         mockWebviewPanel.dispose();
     });
 
-    suite('Provider Setup and Configuration Workflow', () => {
-        test('Should complete full cloud provider setup workflow', async () => {
+    describe('Provider Setup and Configuration Workflow', () => {
+        it('Should complete full cloud provider setup workflow', async () => {
             // Simulate opening settings UI
             mockWebviewPanel.webview.html = getSettingsHTML();
             
@@ -155,11 +159,11 @@ suite('Settings UI Integration Tests', () => {
             assert.strictEqual(providers[0].id, newProvider.id);
 
             // Test 4: Test provider configuration validation
-            const validation = await providerManager.validateProviderConfig(newProvider);
-            assert.strictEqual(validation.isValid, true, 'Provider configuration should be valid');
+            const validation = await providerManager.validateProvider(newProvider);
+            assert.strictEqual(validation.valid, true, 'Provider configuration should be valid');
         });
 
-        test('Should complete full local network provider setup workflow', async () => {
+        it('Should complete full local network provider setup workflow', async () => {
             // Test local network provider setup
             const providerFormData: ProviderFormData = {
                 name: 'Local Ollama',
@@ -201,7 +205,7 @@ suite('Settings UI Integration Tests', () => {
             assert.strictEqual(providers[0].endpoint, 'http://localhost:11434');
         });
 
-        test('Should handle provider edit workflow', async () => {
+        it('Should handle provider edit workflow', async () => {
             // Create initial provider
             const initialProvider = await providerManager.addProvider({
                 name: 'Initial Provider',
@@ -234,7 +238,7 @@ suite('Settings UI Integration Tests', () => {
             assert.notStrictEqual(updatedProvider.updatedAt, initialProvider.updatedAt);
         });
 
-        test('Should handle provider toggle active/inactive', async () => {
+        it('Should handle provider toggle active/inactive', async () => {
             // Create provider
             const provider = await providerManager.addProvider({
                 name: 'Toggle Test Provider',
@@ -269,8 +273,8 @@ suite('Settings UI Integration Tests', () => {
         });
     });
 
-    suite('Agent Creation with Provider Selection and Model Loading', () => {
-        test('Should complete agent creation workflow with provider selection', async () => {
+    describe('Agent Creation with Provider Selection and Model Loading', () => {
+        it('Should complete agent creation workflow with provider selection', async () => {
             // First create a provider
             const provider = await providerManager.addProvider({
                 name: 'Test Provider for Agent',
@@ -339,7 +343,7 @@ suite('Settings UI Integration Tests', () => {
             assert.strictEqual(newAgent.capabilities.hasToolUse, true);
         });
 
-        test('Should handle agent creation with local network provider', async () => {
+        it('Should handle agent creation with local network provider', async () => {
             // Create local network provider
             const provider = await providerManager.addProvider({
                 name: 'Local Ollama Provider',
@@ -383,7 +387,7 @@ suite('Settings UI Integration Tests', () => {
             assert.strictEqual(newAgent.capabilities.costTier, 'low');
         });
 
-        test('Should prevent agent creation when no active providers exist', async () => {
+        it('Should prevent agent creation when no active providers exist', async () => {
             // Create inactive provider
             const inactiveProvider = await providerManager.addProvider({
                 name: 'Inactive Provider',
@@ -414,7 +418,7 @@ suite('Settings UI Integration Tests', () => {
             assert.strictEqual(activeProviders.length, 0, 'Agent creation should be blocked without active providers');
         });
 
-        test('Should handle agent edit workflow', async () => {
+        it('Should handle agent edit workflow', async () => {
             // Create provider and agent
             const provider = await providerManager.addProvider({
                 name: 'Edit Test Provider',
@@ -466,8 +470,8 @@ suite('Settings UI Integration Tests', () => {
         });
     });
 
-    suite('Provider Deletion with Dependent Agent Handling', () => {
-        test('Should handle provider deletion with dependent agents', async () => {
+    describe('Provider Deletion with Dependent Agent Handling', () => {
+        it('Should handle provider deletion with dependent agents', async () => {
             // Create provider
             const provider = await providerManager.addProvider({
                 name: 'Provider to Delete',
@@ -542,7 +546,7 @@ suite('Settings UI Integration Tests', () => {
             assert.strictEqual(dependentAgents.length, 0, 'Dependent agents should be deleted');
         });
 
-        test('Should handle provider deactivation with dependent agents', async () => {
+        it('Should handle provider deactivation with dependent agents', async () => {
             // Create provider and agents
             const provider = await providerManager.addProvider({
                 name: 'Provider to Deactivate',
@@ -583,7 +587,7 @@ suite('Settings UI Integration Tests', () => {
             assert.strictEqual(deactivatedAgent?.isActive, false);
         });
 
-        test('Should show proper warning dialog before provider deletion', async () => {
+        it('Should show proper warning dialog before provider deletion', async () => {
             // Create provider with multiple agents
             const provider = await providerManager.addProvider({
                 name: 'Provider with Many Agents',
@@ -642,7 +646,7 @@ suite('Settings UI Integration Tests', () => {
             assert.deepStrictEqual(warningData.dependentAgentNames, ['Agent 1', 'Agent 2']);
         });
 
-        test('Should handle cancellation of provider deletion', async () => {
+        it('Should handle cancellation of provider deletion', async () => {
             // Create provider and agent
             const provider = await providerManager.addProvider({
                 name: 'Provider to Cancel Delete',
@@ -688,8 +692,8 @@ suite('Settings UI Integration Tests', () => {
         });
     });
 
-    suite('Settings UI Full Sidebar Coverage', () => {
-        test('Should expand settings to fill entire sidebar height', async () => {
+    describe('Settings UI Full Sidebar Coverage', () => {
+        it('Should expand settings to fill entire sidebar height', async () => {
             // Simulate opening settings
             mockWebviewPanel.webview.simulateMessage({
                 type: 'openSettings',
@@ -707,7 +711,7 @@ suite('Settings UI Integration Tests', () => {
             assert.ok(settingsHTML.includes('height: 100vh'), 'Should fill full viewport height');
         });
 
-        test('Should hide chat view when settings are active', async () => {
+        it('Should hide chat view when settings are active', async () => {
             // Simulate settings activation
             mockWebviewPanel.webview.simulateMessage({
                 type: 'activateSettings',
@@ -725,7 +729,7 @@ suite('Settings UI Integration Tests', () => {
             assert.strictEqual(mockWebviewPanel.visible, true);
         });
 
-        test('Should provide clean dedicated settings experience', async () => {
+        it('Should provide clean dedicated settings experience', async () => {
             // Test tab navigation
             const tabs = ['providers', 'agents', 'general'];
             

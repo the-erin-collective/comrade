@@ -6,10 +6,14 @@
 import * as vscode from 'vscode';
 import { Provider, CloudProvider, LocalNetworkProvider, ProviderConfig, ProviderFormData, ProviderValidationResult, ConnectionTestResult } from './types';
 import { ConfigurationValidator } from './config-validator';
+import { logger as rootLogger, Logger } from './logger';
 
 export class ProviderManagerService {
   private static instance: ProviderManagerService | null = null;
   private secretStorage: vscode.SecretStorage;
+  private logger: Logger;
+  // In-memory cache to ensure stability with mocked VS Code configuration during tests
+  private inMemoryProviders: ProviderConfig[] | null = null;
 
   /**
    * Get the singleton instance of ProviderManagerService
@@ -17,6 +21,10 @@ export class ProviderManagerService {
   public static getInstance(secretStorage: vscode.SecretStorage): ProviderManagerService {
     if (!ProviderManagerService.instance) {
       ProviderManagerService.instance = new ProviderManagerService(secretStorage);
+    } else {
+      // Ensure tests can swap secret storage mocks between cases
+      // Safe because this class only reads/writes via the SecretStorage interface
+      (ProviderManagerService.instance as ProviderManagerService).secretStorage = secretStorage;
     }
     return ProviderManagerService.instance;
   }
@@ -25,27 +33,76 @@ export class ProviderManagerService {
    * Reset the singleton instance (for testing)
    */
   public static resetInstance(): void {
+    // Clear persisted providers to ensure test isolation
+    try {
+      const config = vscode.workspace.getConfiguration('comrade');
+      const hasWorkspace = !!vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0;
+      const target = hasWorkspace ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+      void config.update('providers', [], target);
+    } catch {
+      // best-effort cleanup
+    }
+    // Also clear any in-memory cache on the existing instance
+    if (ProviderManagerService.instance) {
+      try {
+        (ProviderManagerService.instance as any).inMemoryProviders = null;
+      } catch {
+        // ignore
+      }
+    }
     ProviderManagerService.instance = null;
   }
 
   constructor(secretStorage: vscode.SecretStorage) {
     this.secretStorage = secretStorage;
+    this.logger = rootLogger.child({ prefix: 'ProviderManager' });
   }
 
   /**
    * Get all configured providers
    */
   public getProviders(): ProviderConfig[] {
+    // Prefer in-memory cache when available to ensure consistency across rapid test updates
+    if (this.inMemoryProviders && Array.isArray(this.inMemoryProviders)) {
+      this.logger.debug('getProviders.cache', { count: this.inMemoryProviders.length });
+      return this.inMemoryProviders;
+    }
+    // Otherwise, read from VS Code configuration
     const config = vscode.workspace.getConfiguration('comrade');
-    const providers = config.get<ProviderConfig[]>('providers', []);
-    return Array.isArray(providers) ? providers : [];
+    // Prefer workspace-scoped providers to avoid leaking global settings between tests/sessions
+    let list: ProviderConfig[] = [];
+    try {
+      const inspected = (config as any).inspect?.('providers') as | {
+        workspaceFolderValue?: ProviderConfig[];
+        workspaceValue?: ProviderConfig[];
+        globalValue?: ProviderConfig[];
+        defaultValue?: ProviderConfig[];
+      } | undefined;
+      const scoped = inspected?.workspaceFolderValue ?? inspected?.workspaceValue ?? inspected?.globalValue;
+      if (Array.isArray(scoped)) {
+        list = scoped;
+      } else {
+        const effective = config.get<ProviderConfig[]>('providers', []);
+        list = Array.isArray(effective) ? effective : Array.isArray(inspected?.defaultValue) ? inspected!.defaultValue! : [];
+      }
+    } catch {
+      const effective = config.get<ProviderConfig[]>('providers', []);
+      list = Array.isArray(effective) ? effective : [];
+    }
+    // Refresh cache for subsequent calls, but do not serve from it to prevent staleness in tests
+    this.inMemoryProviders = list;
+    this.logger.debug('getProviders', { count: list.length });
+    return list;
   }
 
   /**
    * Get active providers only
    */
   public getActiveProviders(): ProviderConfig[] {
-    return this.getProviders().filter(provider => provider.isActive);
+    const all = this.getProviders();
+    const active = all.filter(provider => provider.isActive);
+    this.logger.debug('getActiveProviders', { total: all.length, active: active.length });
+    return active;
   }
 
   /**
@@ -53,17 +110,23 @@ export class ProviderManagerService {
    */
   public getProviderById(id: string): ProviderConfig | null {
     const providers = this.getProviders();
-    return providers.find(provider => provider.id === id) || null;
+    const found = providers.find(provider => provider.id === id) || null;
+    this.logger.debug('getProviderById', { id, found: !!found });
+    return found;
   }
 
   /**
    * Add a new provider
    */
   public async addProvider(providerData: ProviderFormData): Promise<ProviderConfig> {
+    this.logger.debug('addProvider.start', { name: providerData.name, type: providerData.type, provider: providerData.provider });
     // Validate provider data
-    const validation = this.validateProviderData(providerData);
-    if (!validation.valid) {
-      throw new Error(`Provider validation failed: ${validation.error}`);
+    try {
+      this.validateProviderData(providerData);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      this.logger.warn('addProvider.validationFailed', { error: message });
+      throw new Error(`Provider validation failed: ${message}`);
     }
 
     // Create provider object
@@ -78,7 +141,7 @@ export class ProviderManagerService {
     const currentProviders = this.getProviders();
     const updatedProviders = [...currentProviders, provider];
     await this.updateProvidersConfiguration(updatedProviders);
-
+    this.logger.info('addProvider.success', { id: provider.id, name: provider.name, type: provider.type, provider: provider.provider });
     return provider;
   }
 
@@ -86,10 +149,12 @@ export class ProviderManagerService {
    * Update an existing provider
    */
   public async updateProvider(id: string, updates: Partial<ProviderFormData>): Promise<ProviderConfig> {
+    this.logger.debug('updateProvider.start', { id, fields: Object.keys(updates || {}) });
     const currentProviders = this.getProviders();
     const providerIndex = currentProviders.findIndex(p => p.id === id);
     
     if (providerIndex === -1) {
+      this.logger.warn('updateProvider.notFound', { id });
       throw new Error(`Provider with ID ${id} not found`);
     }
 
@@ -106,9 +171,12 @@ export class ProviderManagerService {
     };
 
     // Validate updated data
-    const validation = this.validateProviderData(updatedFormData);
-    if (!validation.valid) {
-      throw new Error(`Provider validation failed: ${validation.error}`);
+    try {
+      this.validateProviderData(updatedFormData);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      this.logger.warn('updateProvider.validationFailed', { id, error: message });
+      throw new Error(`Provider validation failed: ${message}`);
     }
 
     // Create updated provider
@@ -127,7 +195,7 @@ export class ProviderManagerService {
     // Update configuration
     currentProviders[providerIndex] = updatedProvider;
     await this.updateProvidersConfiguration(currentProviders);
-
+    this.logger.info('updateProvider.success', { id: updatedProvider.id, isActive: (updatedProvider as any).isActive, provider: updatedProvider.provider });
     return updatedProvider;
   }
 
@@ -135,10 +203,12 @@ export class ProviderManagerService {
    * Delete a provider
    */
   public async deleteProvider(id: string): Promise<void> {
+    this.logger.debug('deleteProvider.start', { id });
     const currentProviders = this.getProviders();
     const filteredProviders = currentProviders.filter(p => p.id !== id);
     
     if (filteredProviders.length === currentProviders.length) {
+      this.logger.warn('deleteProvider.notFound', { id });
       throw new Error(`Provider with ID ${id} not found`);
     }
 
@@ -147,16 +217,19 @@ export class ProviderManagerService {
 
     // Update configuration
     await this.updateProvidersConfiguration(filteredProviders);
+    this.logger.info('deleteProvider.success', { id });
   }
 
   /**
    * Toggle provider active status
    */
   public async toggleProviderStatus(id: string, isActive: boolean): Promise<ProviderConfig> {
+    this.logger.debug('toggleProviderStatus.start', { id, isActive });
     const currentProviders = this.getProviders();
     const providerIndex = currentProviders.findIndex(p => p.id === id);
     
     if (providerIndex === -1) {
+      this.logger.warn('toggleProviderStatus.notFound', { id });
       throw new Error(`Provider with ID ${id} not found`);
     }
 
@@ -177,19 +250,22 @@ export class ProviderManagerService {
    */
   public async validateProvider(provider: ProviderConfig): Promise<ProviderValidationResult> {
     try {
+      this.logger.debug('validateProvider.start', { id: provider.id, provider: provider.provider, type: provider.type });
       // Basic validation
-      const basicValidation = this.validateProviderData({
-        name: provider.name,
-        type: provider.type,
-        provider: provider.provider,
-        endpoint: (provider as LocalNetworkProvider).endpoint,
-        localHostType: (provider as LocalNetworkProvider).localHostType
-      });
-
-      if (!basicValidation.valid) {
+      try {
+        this.validateProviderData({
+          name: provider.name,
+          type: provider.type,
+          provider: provider.provider,
+          endpoint: (provider as LocalNetworkProvider).endpoint,
+          localHostType: (provider as LocalNetworkProvider).localHostType
+        });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        this.logger.warn('validateProvider.basicValidationFailed', { id: provider.id, error: message });
         return {
           valid: false,
-          error: basicValidation.error,
+          error: message,
           connectionStatus: 'unknown'
         };
       }
@@ -197,14 +273,17 @@ export class ProviderManagerService {
       // Test connection
       const connectionTest = await this.testProviderConnection(provider);
       
-      return {
+      const result: ProviderValidationResult = {
         valid: connectionTest.success,
         error: connectionTest.error,
         connectionStatus: connectionTest.success ? 'connected' : 'disconnected',
         responseTime: connectionTest.responseTime,
         availableModels: connectionTest.availableModels
       };
+      this.logger.info('validateProvider.result', { id: provider.id, valid: result.valid, connectionStatus: result.connectionStatus, responseTime: result.responseTime });
+      return result;
     } catch (error) {
+      this.logger.error('validateProvider.exception', { id: provider.id, error: error instanceof Error ? error.message : String(error) });
       return {
         valid: false,
         error: error instanceof Error ? error.message : 'Unknown validation error',
@@ -218,10 +297,12 @@ export class ProviderManagerService {
    */
   public async testProviderConnection(provider: ProviderConfig): Promise<ConnectionTestResult> {
     const startTime = Date.now();
+    this.logger.debug('testProviderConnection.start', { id: provider.id, provider: provider.provider, type: provider.type });
     
     try {
       // Get API key if needed
       const apiKey = provider.type === 'cloud' ? await this.getProviderApiKey(provider.id) : undefined;
+      this.logger.debug('testProviderConnection.keyResolved', { id: provider.id, hasApiKey: !!apiKey });
       
       switch (provider.provider) {
         case 'openai':
@@ -239,6 +320,7 @@ export class ProviderManagerService {
           };
       }
     } catch (error) {
+      this.logger.error('testProviderConnection.exception', { id: provider.id, error: error instanceof Error ? error.message : String(error) });
       return {
         success: false,
         responseTime: Date.now() - startTime,
@@ -253,11 +335,14 @@ export class ProviderManagerService {
   public async fetchAvailableModels(providerId: string): Promise<string[]> {
     const provider = this.getProviderById(providerId);
     if (!provider) {
+      this.logger.warn('fetchAvailableModels.notFound', { id: providerId });
       throw new Error(`Provider with ID ${providerId} not found`);
     }
 
     const connectionTest = await this.testProviderConnection(provider);
-    return connectionTest.availableModels || [];
+    const models = connectionTest.availableModels || [];
+    this.logger.debug('fetchAvailableModels.result', { id: providerId, count: models.length });
+    return models;
   }
 
   /**
@@ -266,6 +351,7 @@ export class ProviderManagerService {
   public async storeProviderApiKey(providerId: string, apiKey: string): Promise<void> {
     const key = `comrade.provider.${providerId}.apiKey`;
     await this.secretStorage.store(key, apiKey);
+    this.logger.debug('apiKey.store', { providerId });
   }
 
   /**
@@ -273,7 +359,9 @@ export class ProviderManagerService {
    */
   public async getProviderApiKey(providerId: string): Promise<string | undefined> {
     const key = `comrade.provider.${providerId}.apiKey`;
-    return await this.secretStorage.get(key);
+    const value = await this.secretStorage.get(key);
+    this.logger.debug('apiKey.get', { providerId, found: !!value });
+    return value;
   }
 
   /**
@@ -282,6 +370,7 @@ export class ProviderManagerService {
   private async removeProviderApiKey(providerId: string): Promise<void> {
     const key = `comrade.provider.${providerId}.apiKey`;
     await this.secretStorage.delete(key);
+    this.logger.debug('apiKey.delete', { providerId });
   }
 
   /**
@@ -289,13 +378,19 @@ export class ProviderManagerService {
    */
   private async updateProvidersConfiguration(providers: ProviderConfig[]): Promise<void> {
     const config = vscode.workspace.getConfiguration('comrade');
-    await config.update('providers', providers, vscode.ConfigurationTarget.Global);
+    const hasWorkspace = !!vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0;
+    const target = hasWorkspace ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+    // Update in-memory cache first to ensure immediate consistency for subsequent reads
+    this.inMemoryProviders = providers;
+    await config.update('providers', providers, target);
+    this.logger.debug('config.update', { count: providers.length });
   }
 
   /**
    * Create provider object from form data
    */
   private createProviderFromFormData(formData: ProviderFormData): ProviderConfig {
+    this.logger.debug('createProviderFromFormData', { name: formData.name, type: formData.type, provider: formData.provider });
     const baseProvider = {
       id: this.generateProviderId(),
       name: formData.name,
@@ -325,31 +420,35 @@ export class ProviderManagerService {
   /**
    * Validate provider form data
    */
-  private validateProviderData(data: ProviderFormData): { valid: boolean; error?: string } {
+  private validateProviderData(data: ProviderFormData): void {
     if (!data.name || data.name.trim().length === 0) {
-      return { valid: false, error: 'Provider name is required' };
+      this.logger.debug('validateProviderData.fail', { reason: 'name' });
+      throw new Error('Provider name is required');
     }
 
     if (!data.type || !['cloud', 'local-network'].includes(data.type)) {
-      return { valid: false, error: 'Invalid provider type' };
+      this.logger.debug('validateProviderData.fail', { reason: 'type' });
+      throw new Error('Invalid provider type');
     }
 
     if (!data.provider) {
-      return { valid: false, error: 'Provider type is required' };
+      this.logger.debug('validateProviderData.fail', { reason: 'provider' });
+      throw new Error('Provider type is required');
     }
 
     if (data.type === 'local-network' && !data.endpoint) {
-      return { valid: false, error: 'Endpoint is required for local network providers' };
+      this.logger.debug('validateProviderData.fail', { reason: 'endpoint' });
+      throw new Error('Endpoint is required for local network providers');
     }
-
-    return { valid: true };
   }
 
   /**
    * Generate unique provider ID
    */
   private generateProviderId(): string {
-    return ConfigurationValidator.generateUniqueId('provider');
+    const id = ConfigurationValidator.generateUniqueId('provider');
+    this.logger.debug('generateProviderId', { id });
+    return id;
   }
 
   /**

@@ -439,7 +439,7 @@ export class ErrorNotificationComponent implements OnInit, OnDestroy {
    * Get CSS classes for error item
    */
   getErrorClasses(error: ErrorInfo): string {
-    const classes = [error.type];
+    const classes: string[] = [error.type];
     if (error.dismissed) {
       classes.push('dismissed');
     }

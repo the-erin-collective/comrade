@@ -1414,12 +1414,6 @@ export class BuiltInTools {
    * Register all built-in tools
    */
   public static registerAll(): void {
-    // Prevent duplicate registration
-    if (BuiltInTools.toolsRegistered) {
-      console.debug('Tools already registered, skipping...');
-      return;
-    }
-
     const toolManager = ToolManager.getInstance();
     const toolRegistry = ToolRegistry.getInstance();
     
@@ -1440,8 +1434,25 @@ export class BuiltInTools {
     try {
       console.debug('Registering built-in tools...');
       
-      // Register tools that don't have class-based implementations
+      // If we've previously marked as registered but the registry is empty (e.g., after a reset), proceed.
+      const alreadyRegistered =
+        toolRegistry.getTool('read_file') &&
+        toolRegistry.getTool('write_file') &&
+        toolRegistry.getTool('list_files') &&
+        toolRegistry.getTool('git_status') &&
+        toolRegistry.getTool('web_request') &&
+        toolRegistry.getTool('show_message');
+
+      if (BuiltInTools.toolsRegistered && alreadyRegistered) {
+        console.debug('Tools already registered, skipping...');
+        return;
+      }
+
+      // Register all built-in tools
       const toolsToRegister = [
+        this.createReadFileToolDefinition,
+        this.createWriteFileToolDefinition,
+        this.createListFilesToolDefinition,
         this.createGitStatusToolDefinition,
         this.createWebRequestToolDefinition,
         this.createShowMessageToolDefinition

@@ -32,6 +32,14 @@ class MockAgent implements IAgent {
   }
 }
 
+// Helper to create a full ILogger mock
+const createTestLogger = (sb: sinon.SinonSandbox): ILogger => ({
+  debug: sb.stub(),
+  info: sb.stub(),
+  warn: sb.stub(),
+  error: sb.stub()
+});
+
 // Mock runner for testing
 class TestRunner extends BaseRunner {
   private shouldFail: boolean;
@@ -269,23 +277,25 @@ describe('BaseRunner Tests', () => {
   });
 
   it('Runner execution with validation failure', async () => {
-    const logger = { error: sinon.stub() };
+    const sandbox = sinon.createSandbox();
+    const logger: ILogger = createTestLogger(sandbox);
     const runner = new TestRunner(mockSession, mockAgent, 'test personality', false, false, logger);
     const result = await runner.run();
 
     assert.strictEqual(result.success, false);
     assert.match(result.error?.message || '', /Input validation failed/);
-    sinon.assert.calledOnce(logger.error);
+    sinon.assert.called(logger.error as sinon.SinonStub);
   });
 
   it('Runner execution with execution failure', async () => {
-    const logger = { error: sinon.stub() };
+    const sandbox = sinon.createSandbox();
+    const logger: ILogger = createTestLogger(sandbox);
     const runner = new TestRunner(mockSession, mockAgent, 'test personality', true, true, logger);
     const result = await runner.run();
 
     assert.strictEqual(result.success, false);
     assert.match(result.error?.message || '', /TestRunner failed: Test execution failure/);
-    sinon.assert.calledOnce(logger.error);
+    sinon.assert.called(logger.error as sinon.SinonStub);
   });
 
   it('Runner execution with cancelled session', async () => {

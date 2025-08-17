@@ -1,4 +1,3 @@
-import { describe, it, beforeEach } from 'mocha';
 import * as assert from 'assert';
 import { ToolRegistry } from '../../core/tool-registry';
 import { Tool, ToolResult, ToolParameter, BaseTool } from '../../core/types';

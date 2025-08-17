@@ -8,7 +8,7 @@
 import { Logger } from './logger';
 import { ErrorMapper, EnhancedError, ErrorContext } from './error-handler';
 import { ToolRegistry } from './tool-registry';
-import { ReadFileTool, WriteFileTool, ListDirectoryTool } from './tools/file-operations';
+import { registerBuiltInTools as registerAllBuiltInTools } from './tools/index';
 import { createCodingConversationContext } from './conversation-context';
 import { ModelManager } from './model-manager';
 import { ModelAdapter } from './model-adapters';
@@ -180,9 +180,8 @@ export class AIAgentService {
    */
   private registerBuiltInTools(): void {
     try {
-      this.toolRegistry.registerTool(new ReadFileTool());
-      this.toolRegistry.registerTool(new WriteFileTool());
-      this.toolRegistry.registerTool(new ListDirectoryTool());
+      // Register the full built-in tool suite (file ops, command execution, workspace navigation)
+      registerAllBuiltInTools(this.toolRegistry);
       
       this.logger.info('Built-in tools registered', {
         toolCount: this.toolRegistry.size()

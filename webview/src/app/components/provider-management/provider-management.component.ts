@@ -1336,14 +1336,6 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
     endpoint: '',
     localHostType: 'ollama'
   };
-  providerForm: ProviderFormData = {
-    name: '',
-    type: 'cloud',
-    provider: 'openai',
-    endpoint: '',
-    apiKey: '',
-    localHostType: 'ollama'
-  };
 
   constructor() {
     // Load providers on component initialization
