@@ -614,9 +614,12 @@ export class ProviderManagerService {
    * Create provider object from form data
    */
   private createProviderFromFormData(data: ProviderFormData): ProviderConfig {
+    // Auto-generate name if not provided
+    const name = data.name?.trim() || this.generateProviderName(data.provider, data.type);
+    
     const baseProvider = {
       id: this.generateProviderId(),
-      name: data.name.trim(),
+      name,
       provider: data.provider,
       isActive: true,
       createdAt: new Date(),
@@ -645,5 +648,24 @@ export class ProviderManagerService {
    */
   private generateProviderId(): string {
     return `provider-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Generate a provider name based on provider type and provider
+   */
+  private generateProviderName(provider: string, type: 'cloud' | 'local-network'): string {
+    const providerLabels: Record<string, string> = {
+      'openai': 'OpenAI',
+      'anthropic': 'Anthropic',
+      'google': 'Google',
+      'azure': 'Azure OpenAI',
+      'ollama': 'Ollama',
+      'custom': 'Custom'
+    };
+    
+    const baseLabel = providerLabels[provider] || provider;
+    const typeLabel = type === 'cloud' ? 'Cloud' : 'Local';
+    
+    return `${baseLabel} (${typeLabel})`;
   }
 }

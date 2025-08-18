@@ -1,13 +1,16 @@
-import { Component, ChangeDetectionStrategy, signal, output } from '@angular/core';
+import { Component, ChangeDetectionStrategy, signal, computed, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Store } from '@ngrx/store';
 import { MessageService } from '../../services/message.service';
+import { ValidationService } from '../../services/validation.service';
 import { ProviderManagementComponent } from '../provider-management/provider-management.component';
+import { FormValidationState, ValidationRules, FormValidation, FieldValidationState } from '../../utils/validation.utils';
 import { ConfirmationDialogComponent, ConfirmationData } from '../confirmation-dialog/confirmation-dialog.component';
 import { selectAgentsWithProviders, selectActiveAgents } from '../../state/agent/agent.selectors';
 import { selectActiveProviders } from '../../state/provider/provider.selectors';
-import { AgentWithProvider, Agent, ProviderConfig } from '../../interfaces/provider-agent.interface';
+import { AgentWithProvider, Agent, ProviderConfig, AgentFormData } from '../../interfaces/provider-agent.interface';
+import * as AgentActions from '../../state/agent/agent.actions';
 
 
 // Legacy interface for backward compatibility during migration
@@ -88,7 +91,13 @@ interface AgentConfig {
               <div class="empty-state">
                 <h4>No agents configured</h4>
                 <p>Add your first AI agent to get started with Comrade.</p>
-                <button class="primary-btn" (click)="addNewAgent()">Add Agent</button>
+                <button 
+                  class="primary-btn" 
+                  (click)="addNewAgent()"
+                  [disabled]="!hasActiveProviders()"
+                  [title]="getAddAgentTooltip()">
+                  Add Agent
+                </button>
               </div>
             } @else {
               <div class="agents-list">
@@ -149,7 +158,13 @@ interface AgentConfig {
                   </div>
                 }
               </div>
-              <button class="secondary-btn" (click)="addNewAgent()">Add Another Agent</button>
+              <button 
+                class="secondary-btn" 
+                (click)="addNewAgent()"
+                [disabled]="!hasActiveProviders()"
+                [title]="getAddAgentTooltip()">
+                Add Another Agent
+              </button>
             }
           </div>
         } @else if (activeTab() === 'general') {
@@ -197,16 +212,75 @@ interface AgentConfig {
             <button type="button" class="close-btn" (click)="closeAgentForm()">×</button>
           </div>
           <div class="modal-body">
+            <!-- Success/Error Messages -->
+            @if (successMessage()) {
+              <div class="success-message">
+                <span class="icon">✓</span>
+                {{ successMessage() }}
+              </div>
+            }
+            @if (errorMessage()) {
+              <div class="error-message">
+                <span class="icon">⚠</span>
+                {{ errorMessage() }}
+              </div>
+            }
+            @if (agentFormErrors().length > 0) {
+              <div class="validation-errors">
+                <h4>Please fix the following errors:</h4>
+                <ul>
+                  @for (error of agentFormErrors(); track error) {
+                    <li>{{ error }}</li>
+                  }
+                </ul>
+              </div>
+            }
+
             <div class="form-group">
-              <label for="provider">Provider</label>
-              <select id="provider" name="provider" [(ngModel)]="agentForm.provider" (ngModelChange)="onProviderChange($event)" required #providerField="ngModel">
+              <label for="agentName">Agent Name (Optional)</label>
+              <input 
+                type="text" 
+                id="agentName" 
+                name="agentName" 
+                [(ngModel)]="agentForm.name" 
+                (input)="validateAgentNameField($event.target.value)"
+                placeholder="Leave empty to auto-generate from model name"
+                class="form-input"
+                [class.error]="!agentNameFieldState().isValid"
+                [class.validating]="agentNameFieldState().isValidating"
+                [disabled]="savingAgent()">
+              @if (agentNameFieldState().isValidating) {
+                <div class="field-validation validating">
+                  <span class="loading-spinner-small"></span>
+                  <span>Validating...</span>
+                </div>
+              } @else if (!agentNameFieldState().isValid) {
+                <div class="field-validation error">
+                  @for (error of agentNameFieldState().errors; track error) {
+                    <span class="error-text">{{ error }}</span>
+                  }
+                </div>
+              }
+              <p class="form-help-text">If left empty, the name will be generated automatically based on the selected model.</p>
+            </div>
+
+            <div class="form-group">
+              <label for="provider">Provider *</label>
+              <select id="provider" name="provider" [(ngModel)]="agentForm.provider" (ngModelChange)="onProviderChange($event); validateAgentProviderField($event)" required #providerField="ngModel" class="form-select" [class.error]="!agentProviderFieldState().isValid" [disabled]="savingAgent()">
                 <option value="" disabled>Select a provider...</option>
                 @for (provider of activeProviders$ | async; track provider.id) {
                   <option [value]="provider.id">{{ provider.name }} ({{ getProviderTypeDisplayName(provider.type, provider.provider) }})</option>
                 }
               </select>
+              @if (!agentProviderFieldState().isValid) {
+                <div class="field-validation error">
+                  @for (error of agentProviderFieldState().errors; track error) {
+                    <span class="error-text">{{ error }}</span>
+                  }
+                </div>
+              }
               @if ((activeProviders$ | async)?.length === 0) {
-                <p class="form-help-text">No active providers available. Please configure a provider first.</p>
+                <p class="form-help-text error">No active providers available. Please configure a provider first.</p>
               }
             </div>
 
@@ -227,35 +301,120 @@ interface AgentConfig {
             }
 
             <div class="form-group">
-              <label>Model</label>
+              <label for="model">Model *</label>
               @if (availableModels().length > 0) {
-                <select [(ngModel)]="agentForm.model">
+                <select id="model" name="model" [(ngModel)]="agentForm.model" (ngModelChange)="validateAgentModelField($event)" required class="form-select" [class.error]="!agentModelFieldState().isValid" [disabled]="savingAgent()">
                   <option value="" disabled>Select a model...</option>
                   @for (model of availableModels(); track model) {
                     <option [value]="model">{{ model }}</option>
                   }
                 </select>
               } @else {
-                <input type="text" [(ngModel)]="agentForm.model" 
-                       placeholder="Enter model name or fetch models from provider" 
-                       [disabled]="!agentForm.provider"
-                       required>
+                <input 
+                  type="text" 
+                  id="model" 
+                  name="model" 
+                  [(ngModel)]="agentForm.model" 
+                  (input)="validateAgentModelField($event.target.value)"
+                  placeholder="Enter model name or fetch models from provider" 
+                  [disabled]="!agentForm.provider || savingAgent()"
+                  required
+                  class="form-input"
+                  [class.error]="!agentModelFieldState().isValid"
+                  [class.validating]="agentModelFieldState().isValidating">
+              }
+              @if (agentModelFieldState().isValidating) {
+                <div class="field-validation validating">
+                  <span class="loading-spinner-small"></span>
+                  <span>Validating model name...</span>
+                </div>
+              } @else if (!agentModelFieldState().isValid) {
+                <div class="field-validation error">
+                  @for (error of agentModelFieldState().errors; track error) {
+                    <span class="error-text">{{ error }}</span>
+                  }
+                </div>
               }
               <p class="form-help-text">Select a provider and fetch models, or enter a model name manually.</p>
             </div>
 
+            <!-- Advanced Settings -->
+            <div class="form-group">
+              <label for="temperature">Temperature</label>
+              <input 
+                type="number" 
+                id="temperature" 
+                name="temperature" 
+                [(ngModel)]="agentForm.temperature" 
+                (input)="validateTemperatureField($event.target.value)"
+                min="0" 
+                max="2" 
+                step="0.1"
+                class="form-input"
+                [class.error]="!agentTemperatureFieldState().isValid"
+                [class.validating]="agentTemperatureFieldState().isValidating"
+                [disabled]="savingAgent()">
+              @if (agentTemperatureFieldState().isValidating) {
+                <div class="field-validation validating">
+                  <span class="loading-spinner-small"></span>
+                  <span>Validating...</span>
+                </div>
+              } @else if (!agentTemperatureFieldState().isValid) {
+                <div class="field-validation error">
+                  @for (error of agentTemperatureFieldState().errors; track error) {
+                    <span class="error-text">{{ error }}</span>
+                  }
+                </div>
+              }
+              <p class="form-help-text">Controls randomness in responses (0.0 = deterministic, 2.0 = very creative)</p>
+            </div>
+
+            <div class="form-group">
+              <label for="maxTokens">Max Tokens</label>
+              <input 
+                type="number" 
+                id="maxTokens" 
+                name="maxTokens" 
+                [(ngModel)]="agentForm.maxTokens" 
+                (input)="validateMaxTokensField($event.target.value)"
+                min="1" 
+                max="100000"
+                class="form-input"
+                [class.error]="!agentMaxTokensFieldState().isValid"
+                [class.validating]="agentMaxTokensFieldState().isValidating"
+                [disabled]="savingAgent()">
+              @if (agentMaxTokensFieldState().isValidating) {
+                <div class="field-validation validating">
+                  <span class="loading-spinner-small"></span>
+                  <span>Validating...</span>
+                </div>
+              } @else if (!agentMaxTokensFieldState().isValid) {
+                <div class="field-validation error">
+                  @for (error of agentMaxTokensFieldState().errors; track error) {
+                    <span class="error-text">{{ error }}</span>
+                  }
+                </div>
+              }
+              <p class="form-help-text">Maximum number of tokens in the response</p>
+            </div>
+
             <div class="form-group">
               <label class="checkbox-label">
-                <input type="checkbox" [(ngModel)]="agentForm.multimodal">
+                <input type="checkbox" [(ngModel)]="agentForm.multimodal" name="multimodal">
                 <span class="checkbox-text">Multimodal (supports images and vision)</span>
               </label>
               <p class="setting-description">Enable if this model can process images and visual content.</p>
             </div>
           </div>
           <div class="modal-footer">
-            <button type="button" class="secondary-btn" (click)="closeAgentForm()">Cancel</button>
-            <button type="submit" class="primary-btn" [disabled]="!agentFormElement.form.valid">
-              {{ editingAgent() ? 'Update' : 'Add' }} Agent
+            <button type="button" class="secondary-btn" (click)="closeAgentForm()" [disabled]="savingAgent()">Cancel</button>
+            <button type="submit" class="primary-btn" [disabled]="savingAgent() || !isAgentFormValid() || agentFormErrors().length > 0">
+              @if (savingAgent()) {
+                <span class="loading-spinner-small"></span>
+                {{ editingAgent() ? 'Updating...' : 'Adding...' }}
+              } @else {
+                {{ editingAgent() ? 'Update Agent' : 'Add Agent' }}
+              }
             </button>
           </div>
         </form>
@@ -706,6 +865,208 @@ interface AgentConfig {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+
+    /* Message styles */
+    .success-message, .error-message {
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .success-message {
+      background: var(--success-bg);
+      color: var(--success-color);
+      border: 1px solid var(--success-color);
+    }
+
+    .error-message {
+      background: var(--error-bg);
+      color: var(--error-color);
+      border: 1px solid var(--error-color);
+    }
+
+    .validation-errors {
+      background: var(--error-bg);
+      border: 1px solid var(--error-color);
+      border-radius: 6px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .validation-errors h4 {
+      margin: 0 0 0.5rem 0;
+      color: var(--error-color);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .validation-errors ul {
+      margin: 0;
+      padding-left: 1.5rem;
+      color: var(--error-color);
+    }
+
+    .validation-errors li {
+      font-size: 13px;
+      line-height: 1.4;
+      margin-bottom: 0.25rem;
+    }
+
+    /* Form input styles */
+    .form-input, .form-select {
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      background: var(--background-color);
+      color: var(--text-color);
+      font-size: 14px;
+      transition: border-color 0.2s ease;
+    }
+
+    .form-input:focus, .form-select:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 2px rgba(var(--primary-color-rgb), 0.1);
+    }
+
+    .form-input:disabled, .form-select:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      background: var(--background-secondary);
+    }
+
+    /* Validation states */
+    .form-input.error,
+    .form-select.error {
+      border-color: var(--error-color, #dc3545);
+      box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.1);
+    }
+
+    .form-input.validating,
+    .form-select.validating {
+      border-color: var(--warning-color, #ffc107);
+    }
+
+    /* Field validation messages */
+    .field-validation {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+      font-size: 0.875rem;
+      line-height: 1.4;
+    }
+
+    .field-validation.error {
+      color: var(--error-color, #dc3545);
+    }
+
+    .field-validation.warning {
+      color: var(--warning-color, #ffc107);
+    }
+
+    .field-validation.validating {
+      color: var(--text-secondary);
+    }
+
+    .field-validation .loading-spinner-small {
+      width: 14px;
+      height: 14px;
+      border-width: 2px;
+    }
+
+    .field-validation .error-text {
+      margin: 0;
+      font-weight: 500;
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+      color: var(--text-color);
+      font-size: 14px;
+    }
+
+    .form-help-text.error {
+      color: var(--error-color);
+    }
+
+    /* Modal styles */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal-content {
+      background: var(--background-color);
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      width: 90%;
+      max-width: 500px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-color);
+    }
+
+    .modal-body {
+      padding: 1.5rem;
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.75rem;
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border-color);
+      background: var(--background-secondary);
+    }
+
+    /* Button disabled state */
+    .primary-btn:disabled, .secondary-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .primary-btn:disabled:hover, .secondary-btn:disabled:hover {
+      background: var(--primary-color);
+    }
+
+    .secondary-btn:disabled:hover {
+      background: var(--background-secondary);
+    }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -732,14 +1093,44 @@ export class SettingsComponent {
   public maxHistory = signal(100);
 
   public agentForm = {
+    name: '',
     provider: '',
     model: '',
     apiKey: '',
     networkAddress: '',
     localHostType: '',
     multimodal: false,
-    endpoint: ''
+    endpoint: '',
+    temperature: 0.7,
+    maxTokens: 4000,
+    timeout: 30000
   };
+
+  // UI state signals
+  public savingAgent = signal(false);
+  public agentFormErrors = signal<string[]>([]);
+  public successMessage = signal<string | null>(null);
+  public errorMessage = signal<string | null>(null);
+
+  // Real-time validation state for agent form
+  private agentValidationState = new FormValidationState();
+  
+  // Agent field validation states
+  agentNameFieldState = signal<FieldValidationState>({ isValid: true, errors: [], warnings: [], isValidating: false });
+  agentProviderFieldState = signal<FieldValidationState>({ isValid: true, errors: [], warnings: [], isValidating: false });
+  agentModelFieldState = signal<FieldValidationState>({ isValid: true, errors: [], warnings: [], isValidating: false });
+  agentTemperatureFieldState = signal<FieldValidationState>({ isValid: true, errors: [], warnings: [], isValidating: false });
+  agentMaxTokensFieldState = signal<FieldValidationState>({ isValid: true, errors: [], warnings: [], isValidating: false });
+
+  // Computed agent form validity
+  isAgentFormValid = computed(() => {
+    return this.agentValidationState.isFormValid() && 
+           this.agentNameFieldState().isValid &&
+           this.agentProviderFieldState().isValid &&
+           this.agentModelFieldState().isValid &&
+           this.agentTemperatureFieldState().isValid &&
+           this.agentMaxTokensFieldState().isValid;
+  });
 
   // NgRx selectors
   public agentsWithProviders$ = this.store.select(selectAgentsWithProviders);
@@ -747,6 +1138,7 @@ export class SettingsComponent {
 
   constructor(
     private messageService: MessageService,
+    private validationService: ValidationService,
     private store: Store
   ) {
     // Load mock data for demo
@@ -756,6 +1148,9 @@ export class SettingsComponent {
     this.messageService.messages$.subscribe(message => {
       this.handleMessageResponse(message);
     });
+
+    // Subscribe to NgRx actions for model loading
+    this.subscribeToAgentActions();
   }
 
   private loadSettings() {
@@ -840,18 +1235,15 @@ export class SettingsComponent {
   }
 
   public addNewAgent() {
+    // Check if there are active providers before allowing agent creation
+    if (!this.hasActiveProviders()) {
+      this.showErrorMessage('Please configure at least one provider before adding agents');
+      return;
+    }
+
     this.editingAgent.set(null);
-    this.agentForm = {
-      provider: '', // Now stores provider ID instead of provider type
-      model: '',
-      apiKey: '', // Not used anymore but kept for compatibility
-      networkAddress: '', // Not used anymore but kept for compatibility
-      localHostType: '', // Not used anymore but kept for compatibility
-      multimodal: false,
-      endpoint: '' // Not used anymore but kept for compatibility
-    };
-    this.availableModels.set([]);
-    this.modelError.set(null);
+    this.resetAgentForm();
+    this.clearMessages();
     this.showAgentForm.set(true);
   }
 
@@ -859,16 +1251,21 @@ export class SettingsComponent {
     this.editingAgent.set(agentWithProvider.agent);
     
     this.agentForm = {
+      name: agentWithProvider.agent.name,
       provider: agentWithProvider.provider.id,
       model: agentWithProvider.agent.model,
       apiKey: '',
       networkAddress: '',
       localHostType: '',
       multimodal: agentWithProvider.agent.capabilities.hasVision,
-      endpoint: ''
+      endpoint: '',
+      temperature: agentWithProvider.agent.temperature || 0.7,
+      maxTokens: agentWithProvider.agent.maxTokens || 4000,
+      timeout: agentWithProvider.agent.timeout || 30000
     };
     this.availableModels.set([]);
     this.modelError.set(null);
+    this.clearMessages();
     this.showAgentForm.set(true);
   }
 
@@ -887,12 +1284,8 @@ export class SettingsComponent {
   public onConfirmDelete() {
     const agentId = this.agentToDelete();
     if (agentId) {
-      // TODO: Dispatch NgRx action to delete agent
-      // For now, use the old approach
-      const agents = this.agents();
-      this.agents.set(agents.filter(a => a.id !== agentId));
-      this.autoSaveSettings();
-      console.log('Would delete agent with ID:', agentId);
+      // Dispatch NgRx action to delete agent
+      this.store.dispatch(AgentActions.deleteAgent({ agentId }));
     }
     this.closeConfirmDialog();
   }
@@ -908,71 +1301,337 @@ export class SettingsComponent {
     this.availableModels.set([]);
     this.modelError.set(null);
     this.loadingModels.set(false);
+    this.savingAgent.set(false);
+    this.clearMessages();
+    this.resetAgentForm();
   }
 
-  public saveAgent(event?: Event) {
+  public async saveAgent(event?: Event) {
     // Prevent default form submission if event is provided
     if (event) {
       event.preventDefault();
       event.stopPropagation();
     }
 
-    const editing = this.editingAgent();
-    
-    // Generate agent name based on provider and model
-    const agentName = this.generateAgentName();
+    // Clear previous messages
+    this.clearMessages();
 
-    if (editing) {
-      // TODO: Dispatch NgRx action to update existing agent
-      const updatedAgent: Agent = {
-        ...editing,
-        name: agentName,
-        providerId: this.agentForm.provider, // Now uses provider ID
-        model: this.agentForm.model,
-        capabilities: {
-          ...editing.capabilities,
-          hasVision: this.agentForm.multimodal
-        },
-        updatedAt: new Date()
-      };
-      
-      // For now, use the old approach
-      console.log('Would update agent:', updatedAgent);
-    } else {
-      // TODO: Dispatch NgRx action to add new agent
-      const newAgent: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'> = {
-        name: agentName,
-        providerId: this.agentForm.provider, // Now uses provider ID
-        model: this.agentForm.model,
-        temperature: 0.7,
-        maxTokens: 4000,
-        timeout: 30000,
-        capabilities: {
-          hasVision: this.agentForm.multimodal,
-          hasToolUse: true,
-          reasoningDepth: 'intermediate',
-          speed: 'medium',
-          costTier: 'medium'
-        },
-        isActive: true
-      };
-      
-      // For now, use the old approach
-      console.log('Would create agent:', newAgent);
+    // Validate the form
+    if (!this.validateAgentForm()) {
+      return;
     }
 
-    // Save settings immediately when an agent is added or updated
-    this.autoSaveSettings();
-    this.closeAgentForm();
+    this.savingAgent.set(true);
+
+    try {
+      const editing = this.editingAgent();
+      
+      if (editing) {
+        // Update existing agent
+        const updates: Partial<Agent> = {
+          name: this.agentForm.name || this.generateAgentName(),
+          providerId: this.agentForm.provider,
+          model: this.agentForm.model,
+          temperature: this.agentForm.temperature,
+          maxTokens: this.agentForm.maxTokens,
+          timeout: this.agentForm.timeout,
+          capabilities: {
+            ...editing.capabilities,
+            hasVision: this.agentForm.multimodal
+          }
+        };
+
+        // Dispatch NgRx action to update agent
+        this.store.dispatch(AgentActions.updateAgent({ 
+          agentId: editing.id, 
+          updates 
+        }));
+
+        // Listen for success/failure
+        this.handleAgentActionResult('update');
+
+      } else {
+        // Create new agent
+        const agentData: AgentFormData = {
+          name: this.agentForm.name || this.generateAgentName(),
+          providerId: this.agentForm.provider,
+          model: this.agentForm.model,
+          temperature: this.agentForm.temperature,
+          maxTokens: this.agentForm.maxTokens,
+          timeout: this.agentForm.timeout,
+          capabilities: {
+            hasVision: this.agentForm.multimodal,
+            hasToolUse: true,
+            reasoningDepth: 'intermediate',
+            speed: 'medium',
+            costTier: 'medium'
+          }
+        };
+
+        // Dispatch NgRx action to add agent
+        this.store.dispatch(AgentActions.addAgent({ agentData }));
+
+        // Listen for success/failure
+        this.handleAgentActionResult('add');
+      }
+
+    } catch (error) {
+      this.savingAgent.set(false);
+      this.showErrorMessage(`Failed to save agent: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private generateAgentName(): string {
-    const providerId = this.agentForm.provider;
     const model = this.agentForm.model;
+    const providerId = this.agentForm.provider;
 
-    // TODO: Get provider name from NgRx store using providerId
-    // For now, use a simple approach
-    return `Agent - ${model}`;
+    if (model) {
+      return `${model} Agent`;
+    } else if (providerId) {
+      return `Agent - ${providerId}`;
+    } else {
+      return `New Agent`;
+    }
+  }
+
+  /**
+   * Real-time agent validation methods
+   */
+  
+  /**
+   * Validate agent name field in real-time
+   */
+  async validateAgentNameField(value: string): Promise<void> {
+    // Agent name is optional - will be auto-generated if empty
+    if (!value?.trim()) {
+      this.agentNameFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+      return;
+    }
+
+    const rules = [
+      ValidationRules.stringLength(2, 50)
+    ];
+
+    const result = await this.agentValidationState.validateFieldDebounced('agentName', value, rules);
+    this.agentNameFieldState.set(this.agentValidationState.getFieldState('agentName'));
+  }
+
+  /**
+   * Validate agent provider field
+   */
+  validateAgentProviderField(value: string): void {
+    const rules = [ValidationRules.required()];
+    const result = FormValidation.validateFieldRealTime(value, 'provider', rules);
+    
+    this.agentValidationState.setFieldState('agentProvider', {
+      isValid: result.valid,
+      errors: result.error ? [result.error] : [],
+      warnings: result.warnings || [],
+      isValidating: false
+    });
+    
+    this.agentProviderFieldState.set(this.agentValidationState.getFieldState('agentProvider'));
+  }
+
+  /**
+   * Validate agent model field in real-time
+   */
+  async validateAgentModelField(value: string): Promise<void> {
+    const rules = [
+      ValidationRules.required(),
+      ValidationRules.modelNameFormat()
+    ];
+
+    const result = await this.agentValidationState.validateFieldDebounced('model', value, rules);
+    this.agentModelFieldState.set(this.agentValidationState.getFieldState('model'));
+  }
+
+  /**
+   * Validate temperature field in real-time
+   */
+  async validateTemperatureField(value: number | string): Promise<void> {
+    if (value === '' || value === null || value === undefined) {
+      this.agentTemperatureFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+      return;
+    }
+
+    const rules = [ValidationRules.range(0, 2)];
+    const result = await this.agentValidationState.validateFieldDebounced('temperature', value, rules);
+    this.agentTemperatureFieldState.set(this.agentValidationState.getFieldState('temperature'));
+  }
+
+  /**
+   * Validate max tokens field in real-time
+   */
+  async validateMaxTokensField(value: number | string): Promise<void> {
+    if (value === '' || value === null || value === undefined) {
+      this.agentMaxTokensFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+      return;
+    }
+
+    const rules = [ValidationRules.range(1, 100000)];
+    const result = await this.agentValidationState.validateFieldDebounced('maxTokens', value, rules);
+    this.agentMaxTokensFieldState.set(this.agentValidationState.getFieldState('maxTokens'));
+  }
+
+  /**
+   * Clear agent validation states
+   */
+  private clearAgentValidationStates(): void {
+    this.agentValidationState.clear();
+    this.agentNameFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+    this.agentProviderFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+    this.agentModelFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+    this.agentTemperatureFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+    this.agentMaxTokensFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+  }
+
+  private validateAgentForm(): boolean {
+    const errors: string[] = [];
+
+    // Validate required fields
+    if (!this.agentForm.provider) {
+      errors.push('Please select a provider');
+    }
+
+    if (!this.agentForm.model || this.agentForm.model.trim().length === 0) {
+      errors.push('Please enter or select a model');
+    }
+
+    // Validate optional numeric fields
+    if (this.agentForm.temperature !== undefined && 
+        (this.agentForm.temperature < 0 || this.agentForm.temperature > 2)) {
+      errors.push('Temperature must be between 0 and 2');
+    }
+
+    if (this.agentForm.maxTokens !== undefined && 
+        (this.agentForm.maxTokens < 1 || this.agentForm.maxTokens > 100000)) {
+      errors.push('Max tokens must be between 1 and 100,000');
+    }
+
+    if (this.agentForm.timeout !== undefined && 
+        (this.agentForm.timeout < 1000 || this.agentForm.timeout > 300000)) {
+      errors.push('Timeout must be between 1 and 300 seconds');
+    }
+
+    this.agentFormErrors.set(errors);
+    return errors.length === 0;
+  }
+
+  private handleAgentActionResult(operation: 'add' | 'update') {
+    // Listen for configuration update results from the message service
+    const subscription = this.messageService.messages$.subscribe(message => {
+      if (message.type === 'configUpdateResult' && message.payload.configType === 'agents') {
+        this.savingAgent.set(false);
+        
+        if (message.payload.success) {
+          const successMsg = operation === 'add' ? 'Agent created successfully!' : 'Agent updated successfully!';
+          this.showSuccessMessage(successMsg);
+          
+          // Close the form after a brief delay to show the success message
+          setTimeout(() => {
+            this.closeAgentForm();
+          }, 1500);
+          
+        } else {
+          const errorMsg = message.payload.error || `Failed to ${operation} agent`;
+          this.showErrorMessage(errorMsg);
+        }
+        
+        subscription.unsubscribe();
+      }
+    });
+
+    // Set up a timeout to handle the case where no response is received
+    setTimeout(() => {
+      if (this.savingAgent()) {
+        this.savingAgent.set(false);
+        this.showErrorMessage('Operation timed out. Please try again.');
+        subscription.unsubscribe();
+      }
+    }, 10000); // 10 second timeout
+  }
+
+  private resetAgentForm() {
+    this.agentForm = {
+      name: '',
+      provider: '',
+      model: '',
+      apiKey: '',
+      networkAddress: '',
+      localHostType: '',
+      multimodal: false,
+      endpoint: '',
+      temperature: 0.7,
+      maxTokens: 4000,
+      timeout: 30000
+    };
+    this.availableModels.set([]);
+    this.modelError.set(null);
+    this.agentFormErrors.set([]);
+    this.clearAgentValidationStates();
+  }
+
+  private clearMessages() {
+    this.successMessage.set(null);
+    this.errorMessage.set(null);
+    this.agentFormErrors.set([]);
+    this.clearAgentValidationStates();
+  }
+
+  private showSuccessMessage(message: string) {
+    this.successMessage.set(message);
+    this.errorMessage.set(null);
+    
+    // Auto-clear success message after 3 seconds
+    setTimeout(() => {
+      if (this.successMessage() === message) {
+        this.successMessage.set(null);
+      }
+    }, 3000);
+  }
+
+  private showErrorMessage(message: string) {
+    this.errorMessage.set(message);
+    this.successMessage.set(null);
+  }
+
+  public hasActiveProviders(): boolean {
+    // This will be used in the template to disable the add agent button
+    let hasProviders = false;
+    
+    // Use synchronous approach with current store state
+    const subscription = this.store.select(selectActiveProviders).subscribe(providers => {
+      hasProviders = providers && providers.length > 0;
+    });
+    subscription.unsubscribe();
+    
+    return hasProviders;
+  }
+
+  public getAddAgentTooltip(): string {
+    if (!this.hasActiveProviders()) {
+      return 'Configure at least one provider before adding agents';
+    }
+    return 'Add a new AI agent';
+  }
+
+  private subscribeToAgentActions() {
+    // Listen for model loading results
+    this.messageService.messages$.subscribe(message => {
+      if (message.type === 'configUpdateResult' && 
+          message.payload.operation === 'fetchModels') {
+        this.loadingModels.set(false);
+        
+        if (message.payload.success) {
+          this.availableModels.set(message.payload.models || []);
+          this.modelError.set(null);
+        } else {
+          this.modelError.set(message.payload.error || 'Failed to fetch models');
+          this.availableModels.set([]);
+        }
+      }
+    });
   }
 
   public onProviderChange(providerId: string) {
@@ -1005,9 +1664,8 @@ export class SettingsComponent {
   }
 
   public onAgentToggleChange(agentId: string, isActive: boolean) {
-    // TODO: Dispatch NgRx action to toggle agent status
-    // For now, keep the existing behavior
-    this.autoSaveSettings();
+    // Dispatch NgRx action to toggle agent status
+    this.store.dispatch(AgentActions.toggleAgent({ agentId, isActive }));
   }
 
   public autoSaveSettings() {
@@ -1049,17 +1707,15 @@ export class SettingsComponent {
   }
 
   public fetchModelsForProvider() {
-    if (!this.agentForm.provider) return;
+    if (!this.agentForm.provider) {return;}
     
     this.loadingModels.set(true);
     this.modelError.set(null);
     
-    // TODO: Dispatch NgRx action to fetch models for the selected provider
-    // For now, simulate the old behavior
-    this.messageService.sendMessage({
-      type: 'fetchModelsForProvider',
-      payload: { providerId: this.agentForm.provider }
-    });
+    // Dispatch NgRx action to fetch models for the selected provider
+    this.store.dispatch(AgentActions.loadModelsForProvider({ 
+      providerId: this.agentForm.provider 
+    }));
   }
 
 

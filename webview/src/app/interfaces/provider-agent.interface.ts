@@ -77,7 +77,7 @@ export interface AgentCapabilities {
  * Form data interface for provider creation/editing
  */
 export interface ProviderFormData {
-  name: string;
+  name?: string; // Optional - will be auto-generated if not provided
   type: 'cloud' | 'local-network';
   provider: 'openai' | 'anthropic' | 'google' | 'azure' | 'ollama' | 'custom';
   endpoint?: string;
@@ -161,15 +161,7 @@ export interface AgentStats {
   };
 }
 
-/**
- * Migration data interface for converting old agent configs to new provider-agent structure
- */
-export interface MigrationData {
-  providersCreated: Provider[];
-  agentsUpdated: Agent[];
-  errors: string[];
-  warnings: string[];
-}
+
 
 /**
  * Provider connection test result

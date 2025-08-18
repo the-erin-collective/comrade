@@ -8,6 +8,128 @@
 import { ProviderConfig, ProviderFormData, AgentFormData, ValidationResult, ConnectionTestResult } from '../interfaces/provider-agent.interface';
 
 /**
+ * Interface for validation rules
+ */
+export interface ValidationRule {
+  validate(value: any, fieldName: string, formData?: any): ValidationResult;
+}
+
+/**
+ * Real-time validation state
+ */
+export interface FieldValidationState {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+  isValidating: boolean;
+  lastValidated?: Date;
+}
+
+/**
+ * Form validation state manager
+ */
+export class FormValidationState {
+  private fieldStates = new Map<string, FieldValidationState>();
+  private validationTimeouts = new Map<string, NodeJS.Timeout>();
+
+  /**
+   * Set field validation state
+   */
+  setFieldState(fieldName: string, state: Partial<FieldValidationState>): void {
+    const currentState = this.fieldStates.get(fieldName) || {
+      isValid: true,
+      errors: [],
+      warnings: [],
+      isValidating: false
+    };
+
+    this.fieldStates.set(fieldName, {
+      ...currentState,
+      ...state,
+      lastValidated: new Date()
+    });
+  }
+
+  /**
+   * Get field validation state
+   */
+  getFieldState(fieldName: string): FieldValidationState {
+    return this.fieldStates.get(fieldName) || {
+      isValid: true,
+      errors: [],
+      warnings: [],
+      isValidating: false
+    };
+  }
+
+  /**
+   * Validate field with debouncing
+   */
+  validateFieldDebounced(
+    fieldName: string, 
+    value: any, 
+    validationRules: ValidationRule[], 
+    debounceMs: number = 300
+  ): Promise<ValidationResult> {
+    return new Promise((resolve) => {
+      // Clear existing timeout
+      const existingTimeout = this.validationTimeouts.get(fieldName);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+      }
+
+      // Set validating state immediately
+      this.setFieldState(fieldName, { isValidating: true });
+
+      // Set new timeout
+      const timeout = setTimeout(() => {
+        const result = FormValidation.validateFieldRealTime(value, fieldName, validationRules);
+        
+        this.setFieldState(fieldName, {
+          isValid: result.valid,
+          errors: result.error ? [result.error] : [],
+          warnings: result.warnings || [],
+          isValidating: false
+        });
+
+        resolve(result);
+      }, debounceMs);
+
+      this.validationTimeouts.set(fieldName, timeout);
+    });
+  }
+
+  /**
+   * Get overall form validity
+   */
+  isFormValid(): boolean {
+    return Array.from(this.fieldStates.values()).every(state => state.isValid);
+  }
+
+  /**
+   * Get all form errors
+   */
+  getAllErrors(): string[] {
+    const errors: string[] = [];
+    this.fieldStates.forEach((state, fieldName) => {
+      if (!state.isValid) {
+        errors.push(...state.errors);
+      }
+    });
+    return errors;
+  }
+
+  /**
+   * Clear all validation states
+   */
+  clear(): void {
+    this.fieldStates.clear();
+    this.validationTimeouts.forEach(timeout => clearTimeout(timeout));
+    this.validationTimeouts.clear();
+  }
+}
+
+/**
  * Provider validation utilities
  */
 export class ProviderValidation {
@@ -19,15 +141,15 @@ export class ProviderValidation {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    // Name validation
-    if (!data.name?.trim()) {
-      errors.push('Provider name is required');
-    } else if (data.name.trim().length < 2) {
-      errors.push('Provider name must be at least 2 characters long');
-    } else if (data.name.trim().length > 50) {
-      errors.push('Provider name must be less than 50 characters');
-    } else if (!/^[a-zA-Z0-9\s\-_]+$/.test(data.name.trim())) {
-      errors.push('Provider name can only contain letters, numbers, spaces, hyphens, and underscores');
+    // Name validation (optional - will be auto-generated if empty)
+    if (data.name?.trim()) {
+      if (data.name.trim().length < 2) {
+        errors.push('Provider name must be at least 2 characters long');
+      } else if (data.name.trim().length > 50) {
+        errors.push('Provider name must be less than 50 characters');
+      } else if (!/^[a-zA-Z0-9\s\-_]+$/.test(data.name.trim())) {
+        errors.push('Provider name can only contain letters, numbers, spaces, hyphens, and underscores');
+      }
     }
 
     // Type validation
@@ -229,14 +351,17 @@ export class ProviderValidation {
   ): ValidationResult {
     const warnings: string[] = [];
 
-    // Check for duplicate names
-    const duplicateName = existingProviders.find(p => 
-      p.id !== editingProviderId && 
-      p.name.toLowerCase() === formData.name.trim().toLowerCase()
-    );
-    
-    if (duplicateName) {
-      return { valid: false, error: 'A provider with this name already exists' };
+    // Check for duplicate names (only if name is provided)
+    if (formData.name?.trim()) {
+      const trimmedName = formData.name.trim();
+      const duplicateName = existingProviders.find(p => 
+        p.id !== editingProviderId && 
+        p.name.toLowerCase() === trimmedName.toLowerCase()
+      );
+      
+      if (duplicateName) {
+        return { valid: false, error: 'A provider with this name already exists' };
+      }
     }
 
     // Check for duplicate endpoints (for local network providers)
@@ -463,9 +588,37 @@ export class FormValidation {
   }
 
   /**
-   * Validate string length
+   * Validate field in real-time with debouncing
    */
-  static validateLength(
+  static validateFieldRealTime(
+    value: any, 
+    fieldName: string, 
+    validationRules: ValidationRule[]
+  ): ValidationResult {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    for (const rule of validationRules) {
+      const result = rule.validate(value, fieldName);
+      if (!result.valid && result.error) {
+        errors.push(result.error);
+      }
+      if (result.warnings) {
+        warnings.push(...result.warnings);
+      }
+    }
+
+    return {
+      valid: errors.length === 0,
+      error: errors.length > 0 ? errors.join('; ') : undefined,
+      warnings: warnings.length > 0 ? warnings : undefined
+    };
+  }
+
+  /**
+   * Validate string length (static method for backward compatibility)
+   */
+  static validateStringLength(
     value: string, 
     fieldName: string, 
     min?: number, 
@@ -485,9 +638,9 @@ export class FormValidation {
   }
 
   /**
-   * Validate numeric range
+   * Validate numeric range (static method for backward compatibility)
    */
-  static validateRange(
+  static validateNumericRange(
     value: number, 
     fieldName: string, 
     min?: number, 
@@ -506,6 +659,211 @@ export class FormValidation {
     }
     
     return { valid: true };
+  }
+
+  /**
+   * Get contextual validation message based on field and error type
+   */
+  static getContextualMessage(fieldName: string, errorType: string, value?: any): string {
+    const messages: Record<string, Record<string, string>> = {
+      'apiKey': {
+        'required': 'API key is required to connect to this provider',
+        'format': 'Please check your API key format - it should match the provider\'s requirements',
+        'invalid': 'This API key format doesn\'t match the selected provider'
+      },
+      'endpoint': {
+        'required': 'Network address is required to connect to your local service',
+        'format': 'Please enter a valid URL (e.g., http://localhost:11434)',
+        'invalid': 'Please check the URL format and ensure it includes the protocol (http:// or https://)'
+      },
+      'providerType': {
+        'required': 'Please select whether you want to use a cloud service or local network'
+      },
+      'provider': {
+        'required': 'Please select which AI service you want to use'
+      },
+      'model': {
+        'required': 'Please select or enter a model name for this agent',
+        'invalid': 'Model name should only contain letters, numbers, dots, hyphens, and underscores'
+      },
+      'temperature': {
+        'range': 'Temperature controls creativity - use 0.0 for consistent responses, up to 2.0 for very creative ones'
+      },
+      'maxTokens': {
+        'range': 'Max tokens controls response length - typical values are 1000-4000 for most use cases'
+      }
+    };
+
+    return messages[fieldName]?.[errorType] || `Please check the ${fieldName} field`;
+  }
+}
+
+/**
+ * Common validation rules
+ */
+export class ValidationRules {
+  
+  /**
+   * Required field validation rule
+   */
+  static required(): ValidationRule {
+    return {
+      validate(value: any, fieldName: string): ValidationResult {
+        if (value === null || value === undefined || value === '') {
+          return { 
+            valid: false, 
+            error: FormValidation.getContextualMessage(fieldName, 'required')
+          };
+        }
+        
+        if (typeof value === 'string' && !value.trim()) {
+          return { 
+            valid: false, 
+            error: FormValidation.getContextualMessage(fieldName, 'required')
+          };
+        }
+        
+        return { valid: true };
+      }
+    };
+  }
+
+  /**
+   * String length validation rule
+   */
+  static stringLength(min?: number, max?: number): ValidationRule {
+    return {
+      validate(value: any, fieldName: string): ValidationResult {
+        if (typeof value !== 'string') {
+          return { valid: true }; // Skip if not string
+        }
+
+        const length = value.trim().length;
+        
+        if (min !== undefined && length < min) {
+          return { 
+            valid: false, 
+            error: `${fieldName} must be at least ${min} characters long`
+          };
+        }
+        
+        if (max !== undefined && length > max) {
+          return { 
+            valid: false, 
+            error: `${fieldName} must be less than ${max} characters long`
+          };
+        }
+        
+        return { valid: true };
+      }
+    };
+  }
+
+  /**
+   * Numeric range validation rule
+   */
+  static range(min?: number, max?: number): ValidationRule {
+    return {
+      validate(value: any, fieldName: string): ValidationResult {
+        if (value === null || value === undefined || value === '') {
+          return { valid: true }; // Skip if empty (use required rule separately)
+        }
+
+        const numValue = typeof value === 'string' ? parseFloat(value) : value;
+        
+        if (typeof numValue !== 'number' || isNaN(numValue)) {
+          return { 
+            valid: false, 
+            error: `${fieldName} must be a valid number`
+          };
+        }
+        
+        if (min !== undefined && numValue < min) {
+          return { 
+            valid: false, 
+            error: FormValidation.getContextualMessage(fieldName, 'range') || `${fieldName} must be at least ${min}`
+          };
+        }
+        
+        if (max !== undefined && numValue > max) {
+          return { 
+            valid: false, 
+            error: FormValidation.getContextualMessage(fieldName, 'range') || `${fieldName} must be at most ${max}`
+          };
+        }
+        
+        return { valid: true };
+      }
+    };
+  }
+
+  /**
+   * API key format validation rule
+   */
+  static apiKeyFormat(provider: string): ValidationRule {
+    return {
+      validate(value: any, fieldName: string): ValidationResult {
+        if (!value || typeof value !== 'string') {
+          return { valid: true }; // Skip if empty (use required rule separately)
+        }
+
+        return ProviderValidation.validateApiKey(provider, value);
+      }
+    };
+  }
+
+  /**
+   * URL format validation rule
+   */
+  static urlFormat(): ValidationRule {
+    return {
+      validate(value: any, fieldName: string): ValidationResult {
+        if (!value || typeof value !== 'string') {
+          return { valid: true }; // Skip if empty (use required rule separately)
+        }
+
+        return ProviderValidation.validateEndpoint(value);
+      }
+    };
+  }
+
+  /**
+   * Model name format validation rule
+   */
+  static modelNameFormat(): ValidationRule {
+    return {
+      validate(value: any, fieldName: string): ValidationResult {
+        if (!value || typeof value !== 'string') {
+          return { valid: true }; // Skip if empty (use required rule separately)
+        }
+
+        const trimmed = value.trim();
+        
+        if (!/^[a-zA-Z0-9._-]+$/.test(trimmed)) {
+          return { 
+            valid: false, 
+            error: FormValidation.getContextualMessage(fieldName, 'invalid')
+          };
+        }
+        
+        return { valid: true };
+      }
+    };
+  }
+
+  /**
+   * Conditional validation rule - only validate if condition is met
+   */
+  static conditional(condition: (formData: any) => boolean, rule: ValidationRule): ValidationRule {
+    return {
+      validate(value: any, fieldName: string, formData?: any): ValidationResult {
+        if (!condition(formData)) {
+          return { valid: true }; // Skip validation if condition not met
+        }
+        
+        return rule.validate(value, fieldName, formData);
+      }
+    };
   }
 }
 

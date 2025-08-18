@@ -25,15 +25,16 @@ export class FormValidationService {
    */
   providerValidators = {
     /**
-     * Validate provider name
+     * Validate provider name (optional - will be auto-generated if empty)
      */
     name: (): ValidatorFn => {
       return (control: AbstractControl): ValidationErrors | null => {
-        if (!control.value) {
-          return { required: { message: 'Provider name is required' } };
+        // Name is now optional - if empty, it will be auto-generated
+        if (!control.value || !control.value.trim()) {
+          return null;
         }
 
-        const result = FormValidation.validateLength(control.value, 'Provider name', 2, 50);
+        const result = FormValidation.validateStringLength(control.value, 'Provider name', 2, 50);
         if (!result.valid) {
           return { length: { message: result.error } };
         }
@@ -165,7 +166,7 @@ export class FormValidationService {
           return { required: { message: 'Agent name is required' } };
         }
 
-        const result = FormValidation.validateLength(control.value, 'Agent name', 2, 50);
+        const result = FormValidation.validateStringLength(control.value, 'Agent name', 2, 50);
         if (!result.valid) {
           return { length: { message: result.error } };
         }
@@ -191,7 +192,7 @@ export class FormValidationService {
           return null; // Optional field
         }
 
-        const result = FormValidation.validateRange(control.value, 'Temperature', 0, 2);
+        const result = FormValidation.validateNumericRange(control.value, 'Temperature', 0, 2);
         if (!result.valid) {
           return { range: { message: result.error } };
         }
@@ -225,7 +226,7 @@ export class FormValidationService {
           };
         }
 
-        const result = FormValidation.validateRange(Number(control.value), 'Max tokens', 1, 100000);
+        const result = FormValidation.validateNumericRange(Number(control.value), 'Max tokens', 1, 100000);
         if (!result.valid) {
           return { range: { message: result.error } };
         }

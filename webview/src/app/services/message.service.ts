@@ -3,12 +3,12 @@ import { Subject, Observable } from 'rxjs';
 import { filter, take } from 'rxjs/operators';
 
 export interface WebviewMessage {
-  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult' | 'aiResponse' | 'toolExecution' | 'aiTyping' | 'aiProcessing' | 'streamChunk' | 'providerValidationResult' | 'connectionTestResult' | 'agentConfigResult' | 'agentUpdateResult' | 'agentValidationResult' | 'agentAvailabilityResult' | 'legacyConfigData' | 'migrationResult';
+  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult' | 'aiResponse' | 'toolExecution' | 'aiTyping' | 'aiProcessing' | 'streamChunk' | 'providerValidationResult' | 'connectionTestResult' | 'agentConfigResult' | 'agentUpdateResult' | 'agentValidationResult' | 'agentAvailabilityResult';
   payload: any;
 }
 
 export interface ExtensionMessage {
-  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'fetchOllamaModels' | 'fetchCloudModels' | 'updateConfig' | 'getConfig' | 'cancelMessage' | 'validateProvider' | 'testProviderConnection' | 'validateAgent' | 'checkAgentAvailability' | 'fetchModelsForProvider' | 'getLegacyConfig' | 'saveMigrationResults';
+  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'fetchOllamaModels' | 'fetchCloudModels' | 'updateConfig' | 'getConfig' | 'cancelMessage' | 'validateProvider' | 'testProviderConnection' | 'validateAgent' | 'checkAgentAvailability' | 'fetchModelsForProvider';
   payload: any;
 }
 

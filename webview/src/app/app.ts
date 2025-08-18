@@ -13,15 +13,13 @@ import { ErrorHandlerComponent } from './components/error-handler/error-handler.
 import { ProgressIndicatorComponent } from './components/progress-indicator/progress-indicator.component';
 import { SettingsComponent } from './components/settings/settings.component';
 import { SessionHistoryComponent } from './components/session-history/session-history.component';
-import { MigrationStatusComponent } from './components/migration-status/migration-status.component';
 import { SessionService } from './services/session.service';
 import { MessageService } from './services/message.service';
-import { MigrationExecutorService } from './services/migration-executor.service';
 import { ConversationSession, ContextItem, PhaseAlert, ErrorState, ProgressState, TimeoutState } from './models/session.model';
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule, SessionTabsComponent, ChatOutputComponent, InputAreaComponent, ErrorHandlerComponent, ProgressIndicatorComponent, SettingsComponent, SessionHistoryComponent, MigrationStatusComponent],
+  imports: [CommonModule, FormsModule, SessionTabsComponent, ChatOutputComponent, InputAreaComponent, ErrorHandlerComponent, ProgressIndicatorComponent, SettingsComponent, SessionHistoryComponent],
   templateUrl: './app.html',
   styleUrl: './app.css'
 })
@@ -51,7 +49,6 @@ export class App {
   constructor(
     private sessionService: SessionService,
     private messageService: MessageService,
-    private migrationExecutor: MigrationExecutorService,
     private store: Store<any>
   ) {
     console.log('App constructor called - Angular is running!');
@@ -72,9 +69,6 @@ export class App {
       
       // Setup event listeners
       this.setupEventListeners();
-      
-      // Check and execute migration if needed
-      await this.checkMigration();
       
       // Load available agents from configuration
       this.loadAvailableAgents();
@@ -134,60 +128,7 @@ export class App {
     });
   }
 
-  private async checkMigration() {
-    try {
-      console.log('App: Checking if migration is needed...');
-      this.initializationMessage.set('Checking configuration migration...');
-      
-      // Subscribe to migration status for user feedback
-      this.migrationExecutor.migrationStatus$
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(status => {
-          if (status.isRunning) {
-            this.initializationMessage.set(status.currentStep);
-          }
-          
-          if (status.isComplete) {
-            if (status.hasErrors) {
-              console.error('App: Migration completed with errors:', status.currentStep);
-              // Show error but don't block initialization
-              this.phaseAlert.set({
-                message: `Configuration migration failed: ${status.currentStep}`,
-                actionButton: {
-                  text: 'Continue',
-                  action: () => this.phaseAlert.set(null)
-                },
-                type: 'warning',
-                dismissible: true
-              });
-            } else if (status.results && status.results.providersCreated.length > 0) {
-              console.log('App: Migration completed successfully');
-              // Show success message
-              this.phaseAlert.set({
-                message: `Configuration migrated successfully! Created ${status.results.providersCreated.length} providers and updated ${status.results.agentsUpdated.length} agents.`,
-                actionButton: {
-                  text: 'Great!',
-                  action: () => this.phaseAlert.set(null)
-                },
-                type: 'success',
-                dismissible: true
-              });
-            }
-          }
-        });
-      
-      // Check and execute migration if needed
-      const migrationExecuted = await this.migrationExecutor.checkAndExecuteMigration();
-      
-      if (!migrationExecuted) {
-        console.log('App: No migration needed');
-      }
-      
-    } catch (error) {
-      console.error('App: Migration check failed:', error);
-      // Don't block initialization for migration errors
-    }
-  }
+
 
   private loadAvailableAgents() {
     console.log('App: Loading available agents from configuration...');
@@ -444,15 +385,7 @@ export class App {
         this.handleAgentAvailabilityResult(message.payload);
         break;
 
-      case 'legacyConfigData':
-        console.log('App: Received legacy config data for migration');
-        // Migration executor will handle this automatically
-        break;
 
-      case 'migrationResult':
-        console.log('App: Received migration result:', message.payload);
-        // Migration executor will handle this automatically
-        break;
 
       default:
         console.log('Unhandled message type:', message.type);

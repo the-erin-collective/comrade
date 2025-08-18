@@ -16,9 +16,10 @@ import {
 } from '../../state/provider/provider.selectors';
 import * as ProviderActions from '../../state/provider/provider.actions';
 import { ErrorHandlerService } from '../../services/error-handler.service';
-import { FormValidationService } from '../../services/form-validation.service';
+import { ValidationService } from '../../services/validation.service';
 import { ProviderManagerService } from '../../services/provider-manager.service';
 import { ErrorNotificationComponent } from '../error-notification/error-notification.component';
+import { FormValidationState, ValidationRules, FormValidation, FieldValidationState } from '../../utils/validation.utils';
 
 @Component({
   selector: 'app-provider-management',
@@ -38,24 +39,11 @@ import { ErrorNotificationComponent } from '../error-notification/error-notifica
 
       <!-- Provider Statistics -->
       @if (hasProviders$ | async) {
-        <div class="provider-stats">
+        <div class="provider-stats-compact">
           @if (providerStats$ | async; as stats) {
-            <div class="stat-item">
-              <span class="stat-value">{{ stats.totalProviders }}</span>
-              <span class="stat-label">Total Providers</span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-value">{{ stats.activeProviders }}</span>
-              <span class="stat-label">Active</span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-value">{{ stats.providersByType.cloud }}</span>
-              <span class="stat-label">Cloud</span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-value">{{ stats.providersByType['local-network'] }}</span>
-              <span class="stat-label">Local Network</span>
-            </div>
+            <span class="stats-summary">
+              {{ stats.activeProviders }} of {{ stats.totalProviders }} providers active
+            </span>
           }
         </div>
       }
@@ -87,13 +75,8 @@ import { ErrorNotificationComponent } from '../error-notification/error-notifica
       <!-- Provider List -->
       @if (providers$ | async; as providers) {
         @if (providers.length === 0) {
-          <div class="empty-state">
-            <div class="empty-icon">🔌</div>
-            <h4>No providers configured</h4>
-            <p>Add your first AI provider to get started with Comrade.</p>
-            <button class="primary-btn" (click)="showAddProviderForm()">
-              Add Your First Provider
-            </button>
+          <div class="empty-state-simple">
+            <span class="empty-text">No providers configured</span>
           </div>
         } @else {
           <div class="providers-list">
@@ -194,66 +177,101 @@ import { ErrorNotificationComponent } from '../error-notification/error-notifica
           </div>
           
           <div class="modal-body">
+            <!-- Success Message -->
+            @if (successMessage()) {
+              <div class="success-message">
+                <span class="success-icon">✅</span>
+                <span>{{ successMessage() }}</span>
+              </div>
+            }
+
+            <!-- Form Errors -->
+            @if (formErrors().length > 0) {
+              <div class="form-errors">
+                <div class="error-header">
+                  <span class="error-icon">⚠️</span>
+                  <span>Please fix the following errors:</span>
+                </div>
+                <ul class="error-list">
+                  @for (error of formErrors(); track error) {
+                    <li>{{ error }}</li>
+                  }
+                </ul>
+              </div>
+            }
+
             <!-- Provider Name -->
             <div class="form-group">
-              <label for="providerName">Provider Name</label>
+              <label for="providerName">Provider Name (Optional)</label>
               <input 
                 type="text" 
                 id="providerName"
                 name="providerName"
                 [(ngModel)]="providerForm.name" 
-                placeholder="e.g., My OpenAI Provider"
-                required
+                (input)="validateNameField($event.target.value)"
+                placeholder="Leave empty to auto-generate based on provider type"
                 #nameField="ngModel"
                 class="form-input"
+                [class.error]="!nameFieldState().isValid"
+                [class.validating]="nameFieldState().isValidating"
+                [disabled]="savingProvider()"
               >
-              @if (nameField.invalid && nameField.touched) {
-                <span class="error-text">Provider name is required</span>
+              @if (nameFieldState().isValidating) {
+                <div class="field-validation validating">
+                  <span class="loading-spinner-small"></span>
+                  <span>Validating...</span>
+                </div>
+              } @else if (!nameFieldState().isValid) {
+                <div class="field-validation error">
+                  @for (error of nameFieldState().errors; track error) {
+                    <span class="error-text">{{ error }}</span>
+                  }
+                </div>
+              } @else if (nameFieldState().warnings.length > 0) {
+                <div class="field-validation warning">
+                  @for (warning of nameFieldState().warnings; track warning) {
+                    <span class="warning-text">{{ warning }}</span>
+                  }
+                </div>
               }
+              <span class="form-help">
+                If left empty, a name will be automatically generated based on the provider type
+              </span>
             </div>
 
             <!-- Provider Type Selection -->
             <div class="form-group">
-              <label>Provider Type</label>
-              <div class="provider-type-selection">
-                <label class="radio-option" [class.selected]="providerForm.type === 'cloud'">
-                  <input 
-                    type="radio" 
-                    name="providerType" 
-                    value="cloud"
-                    [(ngModel)]="providerForm.type"
-                    (ngModelChange)="onProviderTypeChange('cloud')"
-                  >
-                  <div class="radio-content">
-                    <div class="radio-header">
-                      <span class="radio-icon">☁️</span>
-                      <span class="radio-title">Cloud Provider</span>
-                    </div>
-                    <span class="radio-description">
-                      Connect to cloud-based AI services like OpenAI, Anthropic, or Google
-                    </span>
-                  </div>
-                </label>
-                
-                <label class="radio-option" [class.selected]="providerForm.type === 'local-network'">
-                  <input 
-                    type="radio" 
-                    name="providerType" 
-                    value="local-network"
-                    [(ngModel)]="providerForm.type"
-                    (ngModelChange)="onProviderTypeChange('local-network')"
-                  >
-                  <div class="radio-content">
-                    <div class="radio-header">
-                      <span class="radio-icon">🏠</span>
-                      <span class="radio-title">Local Network</span>
-                    </div>
-                    <span class="radio-description">
-                      Connect to local AI services like Ollama or custom endpoints
-                    </span>
-                  </div>
-                </label>
-              </div>
+              <label for="providerType">Provider Type</label>
+              <select 
+                id="providerType"
+                name="providerType"
+                [(ngModel)]="providerForm.type"
+                (ngModelChange)="onProviderTypeChange($event)"
+                class="form-select"
+                [class.error]="!typeFieldState().isValid"
+                required
+                [disabled]="savingProvider()"
+              >
+                <option value="" disabled>Select provider type...</option>
+                <option value="cloud">☁️ Cloud Provider</option>
+                <option value="local-network">🏠 Local Network</option>
+              </select>
+              @if (!typeFieldState().isValid) {
+                <div class="field-validation error">
+                  @for (error of typeFieldState().errors; track error) {
+                    <span class="error-text">{{ error }}</span>
+                  }
+                </div>
+              }
+              @if (providerForm.type) {
+                <span class="form-help">
+                  @if (providerForm.type === 'cloud') {
+                    Connect to cloud-based AI services like OpenAI, Anthropic, or Google
+                  } @else if (providerForm.type === 'local-network') {
+                    Connect to local AI services like Ollama or custom endpoints
+                  }
+                </span>
+              }
             </div>
 
             <!-- Cloud Provider Configuration -->
@@ -264,8 +282,11 @@ import { ErrorNotificationComponent } from '../error-notification/error-notifica
                   id="cloudProvider"
                   name="cloudProvider"
                   [(ngModel)]="providerForm.provider" 
+                  (ngModelChange)="validateProviderField($event)"
                   required
                   class="form-select"
+                  [class.error]="!providerFieldState().isValid"
+                  [disabled]="savingProvider()"
                 >
                   <option value="" disabled>Select a cloud provider...</option>
                   <option value="openai">OpenAI</option>
@@ -273,6 +294,13 @@ import { ErrorNotificationComponent } from '../error-notification/error-notifica
                   <option value="google">Google</option>
                   <option value="azure">Azure OpenAI</option>
                 </select>
+                @if (!providerFieldState().isValid) {
+                  <div class="field-validation error">
+                    @for (error of providerFieldState().errors; track error) {
+                      <span class="error-text">{{ error }}</span>
+                    }
+                  </div>
+                }
               </div>
 
               <div class="form-group">
@@ -283,15 +311,19 @@ import { ErrorNotificationComponent } from '../error-notification/error-notifica
                     id="apiKey"
                     name="apiKey"
                     [(ngModel)]="providerForm.apiKey" 
+                    (input)="validateApiKeyField($event.target.value)"
                     placeholder="Enter your API key"
                     required
                     class="form-input"
+                    [class.error]="!apiKeyFieldState().isValid"
+                    [class.validating]="apiKeyFieldState().isValidating"
+                    [disabled]="savingProvider()"
                   >
                   <button 
                     type="button" 
                     class="test-connection-btn"
                     (click)="testConnection()"
-                    [disabled]="!providerForm.apiKey || testingConnection()"
+                    [disabled]="!providerForm.apiKey || testingConnection() || savingProvider() || !apiKeyFieldState().isValid"
                   >
                     @if (testingConnection()) {
                       <span class="loading-spinner-small"></span>
@@ -300,6 +332,24 @@ import { ErrorNotificationComponent } from '../error-notification/error-notifica
                     }
                   </button>
                 </div>
+                @if (apiKeyFieldState().isValidating) {
+                  <div class="field-validation validating">
+                    <span class="loading-spinner-small"></span>
+                    <span>Validating API key format...</span>
+                  </div>
+                } @else if (!apiKeyFieldState().isValid) {
+                  <div class="field-validation error">
+                    @for (error of apiKeyFieldState().errors; track error) {
+                      <span class="error-text">{{ error }}</span>
+                    }
+                  </div>
+                } @else if (apiKeyFieldState().warnings.length > 0) {
+                  <div class="field-validation warning">
+                    @for (warning of apiKeyFieldState().warnings; track warning) {
+                      <span class="warning-text">{{ warning }}</span>
+                    }
+                  </div>
+                }
                 @if (connectionTestResult()) {
                   <div class="connection-result" [class.success]="connectionTestResult()?.success" [class.error]="!connectionTestResult()?.success">
                     @if (connectionTestResult()?.success) {
@@ -325,11 +375,20 @@ import { ErrorNotificationComponent } from '../error-notification/error-notifica
                   (ngModelChange)="onLocalHostTypeChange($event)"
                   required
                   class="form-select"
+                  [class.error]="!localHostTypeFieldState().isValid"
+                  [disabled]="savingProvider()"
                 >
                   <option value="" disabled>Select host type...</option>
                   <option value="ollama">Ollama</option>
                   <option value="custom">Custom Endpoint</option>
                 </select>
+                @if (!localHostTypeFieldState().isValid) {
+                  <div class="field-validation error">
+                    @for (error of localHostTypeFieldState().errors; track error) {
+                      <span class="error-text">{{ error }}</span>
+                    }
+                  </div>
+                }
               </div>
 
               <div class="form-group">
@@ -339,10 +398,32 @@ import { ErrorNotificationComponent } from '../error-notification/error-notifica
                   id="endpoint"
                   name="endpoint"
                   [(ngModel)]="providerForm.endpoint" 
+                  (input)="validateEndpointField($event.target.value)"
                   placeholder="e.g., http://localhost:11434"
                   required
                   class="form-input"
+                  [class.error]="!endpointFieldState().isValid"
+                  [class.validating]="endpointFieldState().isValidating"
+                  [disabled]="savingProvider()"
                 >
+                @if (endpointFieldState().isValidating) {
+                  <div class="field-validation validating">
+                    <span class="loading-spinner-small"></span>
+                    <span>Validating URL format...</span>
+                  </div>
+                } @else if (!endpointFieldState().isValid) {
+                  <div class="field-validation error">
+                    @for (error of endpointFieldState().errors; track error) {
+                      <span class="error-text">{{ error }}</span>
+                    }
+                  </div>
+                } @else if (endpointFieldState().warnings.length > 0) {
+                  <div class="field-validation warning">
+                    @for (warning of endpointFieldState().warnings; track warning) {
+                      <span class="warning-text">{{ warning }}</span>
+                    }
+                  </div>
+                }
                 <span class="form-help">
                   Enter the full URL including protocol (http:// or https://)
                 </span>
@@ -357,6 +438,7 @@ import { ErrorNotificationComponent } from '../error-notification/error-notifica
                   [(ngModel)]="providerForm.apiKey" 
                   placeholder="Leave empty if no authentication required"
                   class="form-input"
+                  [disabled]="saving()"
                 >
                 <span class="form-help">
                   Most local providers like Ollama don't require an API key
@@ -368,7 +450,7 @@ import { ErrorNotificationComponent } from '../error-notification/error-notifica
                   type="button" 
                   class="test-connection-btn secondary"
                   (click)="testConnection()"
-                  [disabled]="!providerForm.endpoint || testingConnection()"
+                  [disabled]="!providerForm.endpoint || testingConnection() || saving()"
                 >
                   @if (testingConnection()) {
                     <span class="loading-spinner-small"></span>
@@ -396,18 +478,25 @@ import { ErrorNotificationComponent } from '../error-notification/error-notifica
           </div>
           
           <div class="modal-footer">
-            <button type="button" class="secondary-btn" (click)="closeProviderForm()">
+            <button 
+              type="button" 
+              class="secondary-btn" 
+              (click)="closeProviderForm()"
+              [disabled]="saving()"
+            >
               Cancel
             </button>
             <button 
               type="submit" 
               class="primary-btn" 
-              [disabled]="!providerFormElement.form.valid || (loading$ | async)"
+              [disabled]="savingProvider() || !isFormValid() || formErrors().length > 0"
             >
-              @if (loading$ | async) {
+              @if (savingProvider()) {
                 <span class="loading-spinner-small"></span>
+                {{ editingProvider() ? 'Updating...' : 'Adding...' }}
+              } @else {
+                {{ editingProvider() ? 'Update' : 'Add' }} Provider
               }
-              {{ editingProvider() ? 'Update' : 'Add' }} Provider
             </button>
           </div>
         </form>
@@ -496,33 +585,17 @@ import { ErrorNotificationComponent } from '../error-notification/error-notifica
     }
 
     /* Provider Statistics */
-    .provider-stats {
-      display: flex;
-      gap: 1rem;
-      padding: 1rem;
+    .provider-stats-compact {
+      padding: 0.75rem 1rem;
       background: var(--background-secondary);
-      border-radius: 8px;
+      border-radius: 6px;
       border: 1px solid var(--border-color);
     }
 
-    .stat-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 0.25rem;
-    }
-
-    .stat-value {
-      font-size: 1.5rem;
-      font-weight: 600;
-      color: var(--primary-color);
-    }
-
-    .stat-label {
-      font-size: 0.75rem;
+    .stats-summary {
+      font-size: 0.875rem;
       color: var(--text-secondary);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      font-weight: 500;
     }
 
     /* Add Provider Section */
@@ -601,31 +674,14 @@ import { ErrorNotificationComponent } from '../error-notification/error-notifica
     }
 
     /* Empty State */
-    .empty-state {
+    .empty-state-simple {
+      padding: 1rem;
       text-align: center;
-      padding: 3rem 2rem;
-      border: 2px dashed var(--border-color);
-      border-radius: 8px;
-      background: var(--background-secondary);
     }
 
-    .empty-icon {
-      font-size: 3rem;
-      margin-bottom: 1rem;
-    }
-
-    .empty-state h4 {
-      margin: 0 0 0.5rem 0;
-      font-size: 1.125rem;
-      font-weight: 600;
-      color: var(--text-color);
-    }
-
-    .empty-state p {
-      margin: 0 0 1.5rem 0;
+    .empty-text {
       color: var(--text-secondary);
       font-size: 0.875rem;
-      line-height: 1.5;
     }
 
     /* Provider List */
@@ -1026,64 +1082,58 @@ import { ErrorNotificationComponent } from '../error-notification/error-notifica
       color: var(--error-color, #d32f2f);
     }
 
-    /* Provider Type Selection */
-    .provider-type-selection {
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
+    /* Validation states */
+    .form-input.error,
+    .form-select.error {
+      border-color: var(--error-color, #dc3545);
+      box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.1);
     }
 
-    .radio-option {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
-      padding: 1rem;
-      border: 2px solid var(--border-color);
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.2s ease;
+    .form-input.validating,
+    .form-select.validating {
+      border-color: var(--warning-color, #ffc107);
     }
 
-    .radio-option:hover {
-      border-color: var(--primary-color);
-      background: var(--background-secondary);
-    }
-
-    .radio-option.selected {
-      border-color: var(--primary-color);
-      background: var(--primary-bg, rgba(59, 130, 246, 0.1));
-    }
-
-    .radio-option input[type="radio"] {
-      margin: 0;
-      margin-top: 0.125rem;
-    }
-
-    .radio-content {
-      flex: 1;
-    }
-
-    .radio-header {
+    /* Field validation messages */
+    .field-validation {
       display: flex;
       align-items: center;
       gap: 0.5rem;
-      margin-bottom: 0.25rem;
-    }
-
-    .radio-icon {
-      font-size: 1.25rem;
-    }
-
-    .radio-title {
-      font-weight: 600;
-      color: var(--text-color);
-    }
-
-    .radio-description {
+      margin-top: 0.5rem;
       font-size: 0.875rem;
-      color: var(--text-secondary);
       line-height: 1.4;
     }
+
+    .field-validation.error {
+      color: var(--error-color, #dc3545);
+    }
+
+    .field-validation.warning {
+      color: var(--warning-color, #ffc107);
+    }
+
+    .field-validation.validating {
+      color: var(--text-secondary);
+    }
+
+    .field-validation .loading-spinner-small {
+      width: 14px;
+      height: 14px;
+      border-width: 2px;
+    }
+
+    .field-validation .error-text {
+      margin: 0;
+      font-weight: 500;
+    }
+
+    .warning-text {
+      display: block;
+      font-weight: 500;
+      color: var(--warning-color, #ffc107);
+    }
+
+
 
     /* API Key Input */
     .api-key-input {
@@ -1293,6 +1343,59 @@ import { ErrorNotificationComponent } from '../error-notification/error-notifica
       cursor: not-allowed;
       transform: none;
     }
+
+    /* Success Message */
+    .success-message {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 1rem;
+      background: var(--success-bg, #e8f5e8);
+      border: 1px solid var(--success-border, #c8e6c9);
+      border-radius: 6px;
+      color: var(--success-text, #2e7d32);
+      margin-bottom: 1.5rem;
+    }
+
+    .success-icon {
+      font-size: 1.25rem;
+    }
+
+    /* Form Errors */
+    .form-errors {
+      padding: 1rem;
+      background: var(--error-bg, #fee);
+      border: 1px solid var(--error-border, #fcc);
+      border-radius: 6px;
+      color: var(--error-text, #c33);
+      margin-bottom: 1.5rem;
+    }
+
+    .error-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+      font-weight: 500;
+    }
+
+    .error-icon {
+      font-size: 1.125rem;
+    }
+
+    .error-list {
+      margin: 0;
+      padding-left: 1.5rem;
+    }
+
+    .error-list li {
+      margin-bottom: 0.5rem;
+      line-height: 1.4;
+    }
+
+    .error-list li:last-child {
+      margin-bottom: 0;
+    }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -1300,6 +1403,9 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
   private store = inject(Store);
   private fb = inject(FormBuilder);
+  private errorHandler = inject(ErrorHandlerService);
+  private validationService = inject(ValidationService);
+  private providerManager = inject(ProviderManagerService);
 
   ngOnInit(): void {
     // Load providers on component initialization
@@ -1326,6 +1432,9 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
   connectionTestResult = signal<{ success: boolean; error?: string; availableModels?: string[] } | null>(null);
   showDeleteConfirmation = signal(false);
   providerToDelete = signal<ProviderConfig | null>(null);
+  saving = signal(false);
+  formErrors = signal<string[]>([]);
+  successMessage = signal<string | null>(null);
 
   // Provider form data
   providerForm: ProviderFormData = {
@@ -1337,6 +1446,33 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
     localHostType: 'ollama'
   };
 
+  // Real-time validation state
+  private validationState = new FormValidationState();
+  
+  // Field validation states (signals for reactive UI)
+  nameFieldState = signal<FieldValidationState>({ isValid: true, errors: [], warnings: [], isValidating: false });
+  typeFieldState = signal<FieldValidationState>({ isValid: true, errors: [], warnings: [], isValidating: false });
+  providerFieldState = signal<FieldValidationState>({ isValid: true, errors: [], warnings: [], isValidating: false });
+  apiKeyFieldState = signal<FieldValidationState>({ isValid: true, errors: [], warnings: [], isValidating: false });
+  endpointFieldState = signal<FieldValidationState>({ isValid: true, errors: [], warnings: [], isValidating: false });
+  localHostTypeFieldState = signal<FieldValidationState>({ isValid: true, errors: [], warnings: [], isValidating: false });
+
+  // Computed validation state
+  isFormValid = computed(() => {
+    return this.validationState.isFormValid() && 
+           this.nameFieldState().isValid &&
+           this.typeFieldState().isValid &&
+           this.providerFieldState().isValid &&
+           this.apiKeyFieldState().isValid &&
+           this.endpointFieldState().isValid &&
+           this.localHostTypeFieldState().isValid;
+  });
+
+  // Loading states for individual operations
+  savingProvider = signal(false);
+  testingApiKey = signal(false);
+  testingEndpoint = signal(false);
+
   constructor() {
     // Load providers on component initialization
     this.store.dispatch(ProviderActions.loadProviders());
@@ -1347,6 +1483,9 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
    */
   showAddProviderForm(): void {
     this.editingProvider.set(null);
+    this.saving.set(false);
+    this.formErrors.set([]);
+    this.successMessage.set(null);
     this.resetProviderForm();
     this.showProviderForm.set(true);
   }
@@ -1356,6 +1495,9 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
    */
   editProvider(provider: ProviderConfig): void {
     this.editingProvider.set(provider);
+    this.saving.set(false);
+    this.formErrors.set([]);
+    this.successMessage.set(null);
     this.populateProviderForm(provider);
     this.showProviderForm.set(true);
   }
@@ -1463,6 +1605,28 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
       localHostType: 'ollama'
     };
     this.connectionTestResult.set(null);
+    this.formErrors.set([]);
+    this.successMessage.set(null);
+    this.clearValidationStates();
+  }
+
+  /**
+   * Generate a provider name based on provider type and provider
+   */
+  private generateProviderName(provider: string, type: 'cloud' | 'local-network'): string {
+    const providerLabels: Record<string, string> = {
+      'openai': 'OpenAI',
+      'anthropic': 'Anthropic',
+      'google': 'Google',
+      'azure': 'Azure OpenAI',
+      'ollama': 'Ollama',
+      'custom': 'Custom'
+    };
+    
+    const baseLabel = providerLabels[provider] || provider;
+    const typeLabel = type === 'cloud' ? 'Cloud' : 'Local';
+    
+    return `${baseLabel} (${typeLabel})`;
   }
 
   /**
@@ -1486,6 +1650,9 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
   closeProviderForm(): void {
     this.showProviderForm.set(false);
     this.editingProvider.set(null);
+    this.savingProvider.set(false);
+    this.formErrors.set([]);
+    this.successMessage.set(null);
     this.resetProviderForm();
   }
 
@@ -1495,15 +1662,36 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
   onProviderTypeChange(type: 'cloud' | 'local-network'): void {
     this.providerForm.type = type;
     
+    // Validate the type field
+    this.validateTypeField(type);
+    
     if (type === 'cloud') {
       this.providerForm.provider = 'openai';
       this.providerForm.endpoint = '';
       this.providerForm.localHostType = undefined;
+      
+      // Clear endpoint validation since it's not needed for cloud
+      this.endpointFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+      this.localHostTypeFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+      
+      // Validate provider and API key for cloud
+      this.validateProviderField(this.providerForm.provider);
+      if (this.providerForm.apiKey) {
+        this.validateApiKeyField(this.providerForm.apiKey);
+      }
     } else {
       this.providerForm.provider = 'ollama';
       this.providerForm.endpoint = 'http://localhost:11434';
       this.providerForm.localHostType = 'ollama';
       this.providerForm.apiKey = '';
+      
+      // Clear API key validation since it's not required for local
+      this.apiKeyFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+      
+      // Validate local network fields
+      this.validateProviderField(this.providerForm.provider);
+      this.validateLocalHostTypeField(this.providerForm.localHostType);
+      this.validateEndpointField(this.providerForm.endpoint);
     }
     
     this.connectionTestResult.set(null);
@@ -1515,6 +1703,9 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
   onLocalHostTypeChange(hostType: string): void {
     this.providerForm.localHostType = hostType as 'ollama' | 'custom';
     
+    // Validate the local host type field
+    this.validateLocalHostTypeField(hostType);
+    
     if (hostType === 'ollama') {
       this.providerForm.provider = 'ollama';
       this.providerForm.endpoint = 'http://localhost:11434';
@@ -1522,6 +1713,10 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
       this.providerForm.provider = 'custom';
       this.providerForm.endpoint = '';
     }
+    
+    // Validate related fields
+    this.validateProviderField(this.providerForm.provider);
+    this.validateEndpointField(this.providerForm.endpoint);
     
     this.connectionTestResult.set(null);
   }
@@ -1584,53 +1779,287 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Save provider
+   * Save provider with proper validation and error handling
    */
-  saveProvider(event?: Event): void {
+  async saveProvider(event?: Event): Promise<void> {
     if (event) {
       event.preventDefault();
       event.stopPropagation();
     }
 
-    const editing = this.editingProvider();
-    
-    if (editing) {
-      // Update existing provider
-      const updates: Partial<ProviderConfig> = {
-        name: this.providerForm.name,
-        isActive: true
-      };
-      
-      if (this.providerForm.type === 'cloud') {
-        (updates as Partial<CloudProvider>).apiKey = this.providerForm.apiKey!;
-      } else {
-        (updates as Partial<LocalNetworkProvider>).endpoint = this.providerForm.endpoint!;
-        (updates as Partial<LocalNetworkProvider>).localHostType = this.providerForm.localHostType!;
-        if (this.providerForm.apiKey) {
-          (updates as Partial<LocalNetworkProvider>).apiKey = this.providerForm.apiKey;
-        }
-      }
-      
-      this.store.dispatch(ProviderActions.updateProvider({
-        providerId: editing.id,
-        updates
-      }));
-    } else {
-      // Add new provider
-      this.store.dispatch(ProviderActions.addProvider({
-        providerData: this.providerForm
-      }));
+    // Clear previous errors and success messages
+    this.formErrors.set([]);
+    this.successMessage.set(null);
+
+    // Validate form before submission
+    if (!this.validateProviderForm()) {
+      return;
     }
 
-    this.closeProviderForm();
+    try {
+      this.savingProvider.set(true);
+
+      // Auto-generate name if not provided
+      if (!this.providerForm.name?.trim()) {
+        this.providerForm.name = this.generateProviderName(
+          this.providerForm.provider, 
+          this.providerForm.type
+        );
+      }
+
+      const editing = this.editingProvider();
+      
+      if (editing) {
+        // Update existing provider
+        await this.updateExistingProvider(editing);
+      } else {
+        // Add new provider
+        await this.addNewProvider();
+      }
+
+      // Show success message
+      const successMsg = editing ? 
+        `Provider "${this.providerForm.name}" updated successfully` : 
+        `Provider "${this.providerForm.name}" added successfully`;
+      
+      this.successMessage.set(successMsg);
+      this.errorHandler.addInfo(successMsg, 'Provider Management');
+
+      // Close form after short delay to show success message
+      setTimeout(() => {
+        this.closeProviderForm();
+      }, 1500);
+
+    } catch (error) {
+      const isEditing = this.editingProvider();
+      const errorMsg = isEditing ? 'Failed to update provider' : 'Failed to add provider';
+      this.errorHandler.handleProviderError(error, isEditing ? 'update' : 'add', this.providerForm.name);
+      this.formErrors.set([errorMsg + ': ' + (error instanceof Error ? error.message : String(error))]);
+    } finally {
+      this.savingProvider.set(false);
+    }
+  }
+
+  /**
+   * Real-time validation methods
+   */
+  
+  /**
+   * Validate provider name field in real-time
+   */
+  async validateNameField(value: string): Promise<void> {
+    const rules = [
+      ValidationRules.stringLength(2, 50)
+    ];
+
+    const result = await this.validationState.validateFieldDebounced('name', value, rules);
+    this.nameFieldState.set(this.validationState.getFieldState('name'));
+  }
+
+  /**
+   * Validate provider type field
+   */
+  validateTypeField(value: string): void {
+    const rules = [ValidationRules.required()];
+    const result = FormValidation.validateFieldRealTime(value, 'providerType', rules);
+    
+    this.validationState.setFieldState('type', {
+      isValid: result.valid,
+      errors: result.error ? [result.error] : [],
+      warnings: result.warnings || [],
+      isValidating: false
+    });
+    
+    this.typeFieldState.set(this.validationState.getFieldState('type'));
+  }
+
+  /**
+   * Validate provider selection field
+   */
+  validateProviderField(value: string): void {
+    const rules = [ValidationRules.required()];
+    const result = FormValidation.validateFieldRealTime(value, 'provider', rules);
+    
+    this.validationState.setFieldState('provider', {
+      isValid: result.valid,
+      errors: result.error ? [result.error] : [],
+      warnings: result.warnings || [],
+      isValidating: false
+    });
+    
+    this.providerFieldState.set(this.validationState.getFieldState('provider'));
+  }
+
+  /**
+   * Validate API key field in real-time
+   */
+  async validateApiKeyField(value: string): Promise<void> {
+    if (this.providerForm.type !== 'cloud') {
+      this.apiKeyFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+      return;
+    }
+
+    const rules = [
+      ValidationRules.required(),
+      ValidationRules.apiKeyFormat(this.providerForm.provider)
+    ];
+
+    const result = await this.validationState.validateFieldDebounced('apiKey', value, rules);
+    this.apiKeyFieldState.set(this.validationState.getFieldState('apiKey'));
+  }
+
+  /**
+   * Validate endpoint field in real-time
+   */
+  async validateEndpointField(value: string): Promise<void> {
+    if (this.providerForm.type !== 'local-network') {
+      this.endpointFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+      return;
+    }
+
+    const rules = [
+      ValidationRules.required(),
+      ValidationRules.urlFormat()
+    ];
+
+    const result = await this.validationState.validateFieldDebounced('endpoint', value, rules);
+    this.endpointFieldState.set(this.validationState.getFieldState('endpoint'));
+  }
+
+  /**
+   * Validate local host type field
+   */
+  validateLocalHostTypeField(value: string): void {
+    if (this.providerForm.type !== 'local-network') {
+      this.localHostTypeFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+      return;
+    }
+
+    const rules = [ValidationRules.required()];
+    const result = FormValidation.validateFieldRealTime(value, 'localHostType', rules);
+    
+    this.validationState.setFieldState('localHostType', {
+      isValid: result.valid,
+      errors: result.error ? [result.error] : [],
+      warnings: result.warnings || [],
+      isValidating: false
+    });
+    
+    this.localHostTypeFieldState.set(this.validationState.getFieldState('localHostType'));
+  }
+
+  /**
+   * Clear all validation states
+   */
+  private clearValidationStates(): void {
+    this.validationState.clear();
+    this.nameFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+    this.typeFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+    this.providerFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+    this.apiKeyFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+    this.endpointFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+    this.localHostTypeFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+  }
+
+  /**
+   * Validate provider form before submission
+   */
+  private validateProviderForm(): boolean {
+    const errors: string[] = [];
+
+    // Validate provider type
+    if (!this.providerForm.type) {
+      errors.push('Provider type is required');
+    }
+
+    // Type-specific validation
+    if (this.providerForm.type === 'cloud') {
+      if (!this.providerForm.provider) {
+        errors.push('Cloud provider selection is required');
+      }
+      
+      if (!this.providerForm.apiKey?.trim()) {
+        errors.push('API key is required for cloud providers');
+      } else {
+        // Validate API key format
+        const apiKeyValidation = this.validationService.validateApiKey(
+          this.providerForm.apiKey, 
+          this.providerForm.provider
+        );
+        if (!apiKeyValidation.isValid) {
+          errors.push(...apiKeyValidation.errors);
+        }
+      }
+    } else if (this.providerForm.type === 'local-network') {
+      if (!this.providerForm.localHostType) {
+        errors.push('Local host type is required');
+      }
+      
+      if (!this.providerForm.endpoint?.trim()) {
+        errors.push('Network address is required for local providers');
+      } else {
+        // Validate endpoint format
+        const endpointValidation = this.validationService.validateEndpoint(this.providerForm.endpoint);
+        if (!endpointValidation.isValid) {
+          errors.push(...endpointValidation.errors);
+        }
+      }
+    }
+
+    // Validate name uniqueness if provided
+    if (this.providerForm.name?.trim()) {
+      // This would need to be implemented with current providers list
+      // For now, we'll skip this validation as it requires async data
+    }
+
+    if (errors.length > 0) {
+      this.formErrors.set(errors);
+      this.errorHandler.handleValidationError(errors, [], 'Provider Form');
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Add new provider
+   */
+  private async addNewProvider(): Promise<void> {
+    await this.providerManager.addProvider(this.providerForm);
+  }
+
+  /**
+   * Update existing provider
+   */
+  private async updateExistingProvider(editing: ProviderConfig): Promise<void> {
+    const updates: Partial<ProviderConfig> = {
+      name: this.providerForm.name,
+      isActive: true
+    };
+    
+    if (this.providerForm.type === 'cloud') {
+      (updates as Partial<CloudProvider>).apiKey = this.providerForm.apiKey!;
+    } else {
+      (updates as Partial<LocalNetworkProvider>).endpoint = this.providerForm.endpoint!;
+      (updates as Partial<LocalNetworkProvider>).localHostType = this.providerForm.localHostType!;
+      if (this.providerForm.apiKey) {
+        (updates as Partial<LocalNetworkProvider>).apiKey = this.providerForm.apiKey;
+      }
+    }
+    
+    await this.providerManager.updateProvider(editing.id, updates);
   }
 
   /**
    * Build provider object from form data
    */
   private buildProviderFromForm(): Omit<ProviderConfig, 'id' | 'createdAt' | 'updatedAt'> {
+    // Ensure name is set (auto-generate if empty)
+    const name = this.providerForm.name?.trim() || 
+                 this.generateProviderName(this.providerForm.provider, this.providerForm.type);
+    
     const baseProvider = {
-      name: this.providerForm.name,
+      name,
       type: this.providerForm.type,
       provider: this.providerForm.provider,
       isActive: true
