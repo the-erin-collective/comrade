@@ -1,4 +1,7 @@
 <div id="app">
+  <!-- Notification System -->
+  <app-notification></app-notification>
+  
   @if (!showHistory() && !showSettings() && !isInitializing()) {
     <app-session-tabs></app-session-tabs>
   }

@@ -1,6 +1,131 @@
-import { ValidationRules, FormValidation, FormValidationState } from './validation.utils';
+import { ValidationUtils, ValidationRules, FormValidation, FormValidationState } from './validation.utils';
 
 describe('ValidationUtils', () => {
+  describe('ValidationUtils', () => {
+    describe('sanitizeProviderName', () => {
+      it('should replace forward slashes with hyphens', () => {
+        expect(ValidationUtils.sanitizeProviderName('model/name')).toBe('model-name');
+        expect(ValidationUtils.sanitizeProviderName('path/to/model')).toBe('path-to-model');
+      });
+
+      it('should replace colons with double underscores', () => {
+        expect(ValidationUtils.sanitizeProviderName('model:version')).toBe('model__version');
+        expect(ValidationUtils.sanitizeProviderName('host:port')).toBe('host__port');
+      });
+
+      it('should remove invalid characters while keeping valid ones', () => {
+        expect(ValidationUtils.sanitizeProviderName('model@#$%name')).toBe('modelname');
+        expect(ValidationUtils.sanitizeProviderName('valid-name_123')).toBe('valid-name_123');
+        expect(ValidationUtils.sanitizeProviderName('Model (Local)')).toBe('Model (Local)');
+      });
+
+      it('should normalize whitespace', () => {
+        expect(ValidationUtils.sanitizeProviderName('  model   name  ')).toBe('model name');
+        expect(ValidationUtils.sanitizeProviderName('model\t\nname')).toBe('model name');
+      });
+
+      it('should handle complex cases', () => {
+        expect(ValidationUtils.sanitizeProviderName('llama2/7b:latest')).toBe('llama2-7b__latest');
+        expect(ValidationUtils.sanitizeProviderName('  model/name:v1.0@test  ')).toBe('model-name__v1.0test');
+      });
+    });
+
+    describe('validateProviderName', () => {
+      it('should validate valid provider names', () => {
+        const result1 = ValidationUtils.validateProviderName('OpenAI (Cloud)');
+        expect(result1.valid).toBe(true);
+
+        const result2 = ValidationUtils.validateProviderName('Ollama (Local)');
+        expect(result2.valid).toBe(true);
+
+        const result3 = ValidationUtils.validateProviderName('Custom-Provider_123');
+        expect(result3.valid).toBe(true);
+      });
+
+      it('should reject empty or whitespace-only names', () => {
+        const result1 = ValidationUtils.validateProviderName('');
+        expect(result1.valid).toBe(false);
+        expect(result1.error).toContain('required');
+
+        const result2 = ValidationUtils.validateProviderName('   ');
+        expect(result2.valid).toBe(false);
+        expect(result2.error).toContain('required');
+      });
+
+      it('should reject names that are too short', () => {
+        const result = ValidationUtils.validateProviderName('A');
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('at least 2 characters');
+      });
+
+      it('should reject names that are too long', () => {
+        const longName = 'A'.repeat(51);
+        const result = ValidationUtils.validateProviderName(longName);
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('less than 50 characters');
+      });
+
+      it('should reject names with invalid characters', () => {
+        const result1 = ValidationUtils.validateProviderName('model@name');
+        expect(result1.valid).toBe(false);
+        expect(result1.error).toContain('can only contain');
+
+        const result2 = ValidationUtils.validateProviderName('model/name');
+        expect(result2.valid).toBe(false);
+        expect(result2.error).toContain('can only contain');
+
+        const result3 = ValidationUtils.validateProviderName('model:name');
+        expect(result3.valid).toBe(false);
+        expect(result3.error).toContain('can only contain');
+      });
+    });
+
+    describe('generateProviderNameFromSelection', () => {
+      it('should generate correct names for cloud providers', () => {
+        expect(ValidationUtils.generateProviderNameFromSelection('openai', 'cloud')).toBe('OpenAI (Cloud)');
+        expect(ValidationUtils.generateProviderNameFromSelection('anthropic', 'cloud')).toBe('Anthropic (Cloud)');
+        expect(ValidationUtils.generateProviderNameFromSelection('google', 'cloud')).toBe('Google (Cloud)');
+      });
+
+      it('should generate correct names for local network providers', () => {
+        expect(ValidationUtils.generateProviderNameFromSelection('ollama', 'local-network')).toBe('Ollama (Local)');
+        expect(ValidationUtils.generateProviderNameFromSelection('custom', 'local-network')).toBe('Custom (Local)');
+      });
+
+      it('should handle unknown providers gracefully', () => {
+        expect(ValidationUtils.generateProviderNameFromSelection('unknown', 'cloud')).toBe('unknown (Cloud)');
+        expect(ValidationUtils.generateProviderNameFromSelection('unknown', 'local-network')).toBe('unknown (Local)');
+      });
+
+      it('should sanitize generated names', () => {
+        // Test with a provider name that would need sanitization
+        const result = ValidationUtils.generateProviderNameFromSelection('test/provider:v1', 'cloud');
+        expect(result).toBe('test-provider__v1 (Cloud)');
+      });
+    });
+
+    describe('generateProviderName', () => {
+      it('should generate names for local network providers with host type', () => {
+        expect(ValidationUtils.generateProviderName('local-network', 'ollama')).toBe('Ollama (Local)');
+        expect(ValidationUtils.generateProviderName('local-network', 'custom')).toBe('Custom (Local)');
+      });
+
+      it('should generate names for cloud providers', () => {
+        expect(ValidationUtils.generateProviderName('cloud')).toBe('Cloud Provider (Cloud)');
+      });
+
+      it('should handle unknown types gracefully', () => {
+        expect(ValidationUtils.generateProviderName('unknown')).toBe('Provider (unknown)');
+      });
+
+      it('should sanitize generated names', () => {
+        // Test with endpoint that might contain invalid characters
+        const result = ValidationUtils.generateProviderName('local-network', 'test/host:port');
+        expect(result).toBe('test-host__port (Local)');
+      });
+    });
+  });
+
   describe('ValidationRules', () => {
     describe('required', () => {
       it('should validate required fields correctly', () => {

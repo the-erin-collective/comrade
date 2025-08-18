@@ -8,7 +8,7 @@
 import { Component, ChangeDetectionStrategy, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Observable, Subject } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { takeUntil, map } from 'rxjs/operators';
 import { ErrorHandlerService, ErrorInfo, ErrorStats } from '../../services/error-handler.service';
 
 @Component({
@@ -31,7 +31,12 @@ import { ErrorHandlerService, ErrorInfo, ErrorStats } from '../../services/error
             </span>
           </div>
           @if (stats.totalErrors > 0) {
-            <button class="clear-all-btn" (click)="clearAllErrors()">
+            <button 
+              class="clear-all-btn" 
+              (click)="clearAllErrors()"
+              type="button"
+              aria-label="Clear all notifications"
+            >
               Clear All
             </button>
           }
@@ -63,8 +68,10 @@ import { ErrorHandlerService, ErrorInfo, ErrorStats } from '../../services/error
                     class="details-btn" 
                     (click)="toggleDetails(error.id)"
                     title="Show details"
+                    aria-label="Show error details"
+                    type="button"
                   >
-                    <span class="icon">ⓘ</span>
+                    <span class="icon" aria-hidden="true">ⓘ</span>
                   </button>
                 }
                 @if (error.details && isDetailsExpanded(error.id)) {
@@ -72,16 +79,20 @@ import { ErrorHandlerService, ErrorInfo, ErrorStats } from '../../services/error
                     class="details-btn expanded" 
                     (click)="toggleDetails(error.id)"
                     title="Hide details"
+                    aria-label="Hide error details"
+                    type="button"
                   >
-                    <span class="icon">ⓘ</span>
+                    <span class="icon" aria-hidden="true">ⓘ</span>
                   </button>
                 }
                 <button 
                   class="dismiss-btn" 
                   (click)="dismissError(error.id)"
-                  title="Dismiss"
+                  title="Dismiss notification"
+                  aria-label="Dismiss notification"
+                  type="button"
                 >
-                  <span class="icon">×</span>
+                  <span class="icon" aria-hidden="true">×</span>
                 </button>
               </div>
             </div>
@@ -140,15 +151,16 @@ import { ErrorHandlerService, ErrorInfo, ErrorStats } from '../../services/error
       justify-content: space-between;
       align-items: center;
       padding: 0.5rem 0.75rem;
-      background: var(--background-secondary);
-      border: 1px solid var(--border-color);
+      background: var(--vscode-notifications-background, #2d2d30);
+      border: 1px solid var(--vscode-notifications-border, #454545);
       border-radius: 4px;
       font-size: 0.75rem;
+      color: var(--vscode-notifications-foreground, #cccccc);
     }
 
     .error-stats.has-errors {
-      border-color: var(--error-color, #f44336);
-      background: var(--error-bg, #fee);
+      border-color: var(--vscode-notificationsErrorIcon-foreground, #f48771);
+      background: var(--vscode-notifications-background, #2d2d30);
     }
 
     .stats-summary {
@@ -165,19 +177,19 @@ import { ErrorHandlerService, ErrorInfo, ErrorStats } from '../../services/error
 
     .stat-value {
       font-weight: 600;
-      color: var(--text-color);
+      color: var(--vscode-notifications-foreground, #cccccc);
     }
 
     .stat-label {
-      color: var(--text-secondary);
+      color: var(--vscode-descriptionForeground, #999999);
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
 
     .clear-all-btn {
       padding: 0.25rem 0.5rem;
-      background: var(--error-color, #f44336);
-      color: white;
+      background: var(--vscode-notificationsErrorIcon-foreground, #f48771);
+      color: var(--vscode-button-foreground, #ffffff);
       border: none;
       border-radius: 3px;
       font-size: 0.75rem;
@@ -197,30 +209,31 @@ import { ErrorHandlerService, ErrorInfo, ErrorStats } from '../../services/error
     }
 
     .error-item {
-      background: var(--background-secondary);
-      border: 1px solid var(--border-color);
+      background: var(--vscode-notifications-background, #2d2d30);
+      border: 1px solid var(--vscode-notifications-border, #454545);
       border-radius: 6px;
       padding: 0.75rem;
       transition: all 0.2s ease;
+      color: var(--vscode-notifications-foreground, #cccccc);
     }
 
     .error-item.error {
-      border-color: var(--error-color, #f44336);
-      background: var(--error-bg, #fee);
+      border-left: 4px solid var(--vscode-notificationsErrorIcon-foreground, #f48771);
+      background: var(--vscode-notifications-background, #2d2d30);
     }
 
     .error-item.warning {
-      border-color: var(--warning-color, #ff9800);
-      background: var(--warning-bg, #fff3e0);
+      border-left: 4px solid var(--vscode-notificationsWarningIcon-foreground, #ffcc02);
+      background: var(--vscode-notifications-background, #2d2d30);
     }
 
     .error-item.info {
-      border-color: var(--info-color, #2196f3);
-      background: var(--info-bg, #e3f2fd);
+      border-left: 4px solid var(--vscode-notificationsInfoIcon-foreground, #75beff);
+      background: var(--vscode-notifications-background, #2d2d30);
     }
 
     .error-item:hover {
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     }
 
     /* Error Header */
@@ -243,19 +256,19 @@ import { ErrorHandlerService, ErrorInfo, ErrorStats } from '../../services/error
 
     .error-title {
       font-weight: 600;
-      color: var(--text-color);
+      color: var(--vscode-notifications-foreground, #cccccc);
       margin-bottom: 0.25rem;
     }
 
     .error-message {
-      color: var(--text-color);
+      color: var(--vscode-notifications-foreground, #cccccc);
       line-height: 1.4;
       word-wrap: break-word;
     }
 
     .error-context {
       font-size: 0.75rem;
-      color: var(--text-secondary);
+      color: var(--vscode-descriptionForeground, #999999);
       margin-top: 0.25rem;
       font-style: italic;
     }
@@ -274,46 +287,47 @@ import { ErrorHandlerService, ErrorInfo, ErrorStats } from '../../services/error
       width: 24px;
       height: 24px;
       background: none;
-      border: 1px solid var(--border-color);
+      border: 1px solid var(--vscode-notifications-border, #454545);
       border-radius: 3px;
       cursor: pointer;
       transition: all 0.2s ease;
       font-size: 0.875rem;
+      color: var(--vscode-notifications-foreground, #cccccc);
     }
 
     .details-btn:hover,
     .dismiss-btn:hover {
-      background: var(--hover-bg);
-      border-color: var(--primary-color);
+      background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.1));
+      border-color: var(--vscode-focusBorder, #007acc);
     }
 
     .details-btn.expanded {
-      background: var(--primary-color);
-      color: white;
-      border-color: var(--primary-color);
+      background: var(--vscode-button-background, #0e639c);
+      color: var(--vscode-button-foreground, #ffffff);
+      border-color: var(--vscode-button-background, #0e639c);
     }
 
     .dismiss-btn:hover {
-      background: var(--error-color, #f44336);
-      color: white;
-      border-color: var(--error-color, #f44336);
+      background: var(--vscode-notificationsErrorIcon-foreground, #f48771);
+      color: var(--vscode-button-foreground, #ffffff);
+      border-color: var(--vscode-notificationsErrorIcon-foreground, #f48771);
     }
 
     /* Error Details */
     .error-details {
       margin-top: 0.75rem;
       padding: 0.75rem;
-      background: var(--background-tertiary, #f5f5f5);
-      border: 1px solid var(--border-color);
+      background: var(--vscode-editor-background, #1e1e1e);
+      border: 1px solid var(--vscode-notifications-border, #454545);
       border-radius: 4px;
     }
 
     .error-details pre {
       margin: 0;
-      font-family: 'Courier New', monospace;
+      font-family: var(--vscode-editor-font-family, 'Courier New', monospace);
       font-size: 0.75rem;
       line-height: 1.4;
-      color: var(--text-secondary);
+      color: var(--vscode-descriptionForeground, #999999);
       white-space: pre-wrap;
       word-wrap: break-word;
     }
@@ -324,38 +338,39 @@ import { ErrorHandlerService, ErrorInfo, ErrorStats } from '../../services/error
       gap: 0.5rem;
       margin-top: 0.75rem;
       padding-top: 0.75rem;
-      border-top: 1px solid var(--border-color);
+      border-top: 1px solid var(--vscode-notifications-border, #454545);
     }
 
     .action-btn {
       padding: 0.375rem 0.75rem;
-      background: var(--background-color);
-      border: 1px solid var(--border-color);
+      background: var(--vscode-button-secondaryBackground, var(--vscode-input-background, #3c3c3c));
+      border: 1px solid var(--vscode-notifications-border, #454545);
       border-radius: 4px;
       font-size: 0.75rem;
       cursor: pointer;
       transition: all 0.2s ease;
+      color: var(--vscode-button-secondaryForeground, var(--vscode-foreground, #cccccc));
     }
 
     .action-btn:hover {
-      background: var(--hover-bg);
-      border-color: var(--primary-color);
+      background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground, #094771));
+      border-color: var(--vscode-focusBorder, #007acc);
     }
 
     .action-btn.primary {
-      background: var(--primary-color);
-      color: white;
-      border-color: var(--primary-color);
+      background: var(--vscode-button-background, #0e639c);
+      color: var(--vscode-button-foreground, #ffffff);
+      border-color: var(--vscode-button-background, #0e639c);
     }
 
     .action-btn.primary:hover {
-      background: var(--primary-hover);
+      background: var(--vscode-button-hoverBackground, #094771);
     }
 
     /* Error Timestamp */
     .error-timestamp {
       font-size: 0.625rem;
-      color: var(--text-tertiary, var(--text-secondary));
+      color: var(--vscode-descriptionForeground, #999999);
       margin-top: 0.5rem;
       text-align: right;
     }
@@ -364,7 +379,7 @@ import { ErrorHandlerService, ErrorInfo, ErrorStats } from '../../services/error
     .empty-state {
       text-align: center;
       padding: 2rem;
-      color: var(--text-secondary);
+      color: var(--vscode-descriptionForeground, #999999);
     }
 
     .empty-icon {
@@ -382,16 +397,16 @@ import { ErrorHandlerService, ErrorInfo, ErrorStats } from '../../services/error
     }
 
     .error-notification-container::-webkit-scrollbar-track {
-      background: var(--background-secondary);
+      background: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4));
     }
 
     .error-notification-container::-webkit-scrollbar-thumb {
-      background: var(--border-color);
+      background: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4));
       border-radius: 3px;
     }
 
     .error-notification-container::-webkit-scrollbar-thumb:hover {
-      background: var(--text-secondary);
+      background: var(--vscode-scrollbarSlider-hoverBackground, rgba(100, 100, 100, 0.7));
     }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -411,6 +426,7 @@ export class ErrorNotificationComponent implements OnInit, OnDestroy {
     
     // Filter out dismissed errors
     this.visibleErrors$ = this.errors$.pipe(
+      map(errors => errors.filter(error => !error.dismissed)),
       takeUntil(this.destroy$)
     );
   }

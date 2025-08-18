@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Subject, Observable } from 'rxjs';
+import { Subject, Observable, BehaviorSubject } from 'rxjs';
 import { filter, take } from 'rxjs/operators';
 
 export interface WebviewMessage {
@@ -10,6 +10,14 @@ export interface WebviewMessage {
 export interface ExtensionMessage {
   type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'fetchOllamaModels' | 'fetchCloudModels' | 'updateConfig' | 'getConfig' | 'cancelMessage' | 'validateProvider' | 'testProviderConnection' | 'validateAgent' | 'checkAgentAvailability' | 'fetchModelsForProvider';
   payload: any;
+}
+
+export interface NotificationMessage {
+  id: string;
+  type: 'success' | 'error' | 'info' | 'warning';
+  message: string;
+  timestamp: Date;
+  dismissible: boolean;
 }
 
 declare const acquireVsCodeApi: () => {
@@ -27,6 +35,10 @@ export class MessageService {
   // Use RxJS Subject for proper event-driven messaging
   private messageSubject = new Subject<WebviewMessage>();
   public messages$: Observable<WebviewMessage> = this.messageSubject.asObservable();
+  
+  // Notification system
+  private notificationsSubject = new BehaviorSubject<NotificationMessage[]>([]);
+  public notifications$ = this.notificationsSubject.asObservable();
   
   constructor() {
     console.log('MessageService constructor called');
@@ -323,5 +335,86 @@ export class MessageService {
     // If validation passes or is disabled, send the message normally
     const messageId = this.sendChatMessage(sessionId, message, contextItems, onChunk);
     return { messageId };
+  }
+
+  /**
+   * Show a success notification
+   */
+  showSuccess(message: string): void {
+    this.addNotification('success', message);
+  }
+  
+  /**
+   * Show an error notification
+   */
+  showError(message: string): void {
+    this.addNotification('error', message);
+  }
+  
+  /**
+   * Show an info notification
+   */
+  showInfo(message: string): void {
+    this.addNotification('info', message);
+  }
+  
+  /**
+   * Show a warning notification
+   */
+  showWarning(message: string): void {
+    this.addNotification('warning', message);
+  }
+  
+  /**
+   * Dismiss a notification by ID
+   */
+  dismissMessage(messageId: string): void {
+    const currentNotifications = this.notificationsSubject.value;
+    const updatedNotifications = currentNotifications.filter(notification => notification.id !== messageId);
+    this.notificationsSubject.next(updatedNotifications);
+  }
+  
+  /**
+   * Clear all error messages
+   */
+  clearErrorMessages(): void {
+    const currentNotifications = this.notificationsSubject.value;
+    const updatedNotifications = currentNotifications.filter(notification => notification.type !== 'error');
+    this.notificationsSubject.next(updatedNotifications);
+  }
+  
+  /**
+   * Clear all notifications
+   */
+  clearAllNotifications(): void {
+    this.notificationsSubject.next([]);
+  }
+  
+  /**
+   * Add a notification to the list
+   */
+  private addNotification(type: NotificationMessage['type'], message: string): void {
+    const newNotification: NotificationMessage = {
+      id: this.generateNotificationId(),
+      type,
+      message,
+      timestamp: new Date(),
+      dismissible: true
+    };
+    
+    const currentNotifications = this.notificationsSubject.value;
+    this.notificationsSubject.next([...currentNotifications, newNotification]);
+    
+    // Auto-dismiss success messages after 5 seconds
+    if (type === 'success') {
+      setTimeout(() => this.dismissMessage(newNotification.id), 5000);
+    }
+  }
+  
+  /**
+   * Generate unique notification ID
+   */
+  private generateNotificationId(): string {
+    return Math.random().toString(36).substr(2, 9);
   }
 }

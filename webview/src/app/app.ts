@@ -13,13 +13,14 @@ import { ErrorHandlerComponent } from './components/error-handler/error-handler.
 import { ProgressIndicatorComponent } from './components/progress-indicator/progress-indicator.component';
 import { SettingsComponent } from './components/settings/settings.component';
 import { SessionHistoryComponent } from './components/session-history/session-history.component';
+import { NotificationComponent } from './components/notification/notification.component';
 import { SessionService } from './services/session.service';
 import { MessageService } from './services/message.service';
 import { ConversationSession, ContextItem, PhaseAlert, ErrorState, ProgressState, TimeoutState } from './models/session.model';
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule, SessionTabsComponent, ChatOutputComponent, InputAreaComponent, ErrorHandlerComponent, ProgressIndicatorComponent, SettingsComponent, SessionHistoryComponent],
+  imports: [CommonModule, FormsModule, SessionTabsComponent, ChatOutputComponent, InputAreaComponent, ErrorHandlerComponent, ProgressIndicatorComponent, SettingsComponent, SessionHistoryComponent, NotificationComponent],
   templateUrl: './app.html',
   styleUrl: './app.css'
 })

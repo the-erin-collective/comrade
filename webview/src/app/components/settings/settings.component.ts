@@ -2,6 +2,7 @@ import { Component, ChangeDetectionStrategy, signal, computed, output } from '@a
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Store } from '@ngrx/store';
+import { Observable } from 'rxjs';
 import { MessageService } from '../../services/message.service';
 import { ValidationService } from '../../services/validation.service';
 import { ProviderManagementComponent } from '../provider-management/provider-management.component';
@@ -243,7 +244,7 @@ interface AgentConfig {
                 id="agentName" 
                 name="agentName" 
                 [(ngModel)]="agentForm.name" 
-                (input)="validateAgentNameField($event.target.value)"
+                (input)="onAgentNameInput($event)"
                 placeholder="Leave empty to auto-generate from model name"
                 class="form-input"
                 [class.error]="!agentNameFieldState().isValid"
@@ -315,7 +316,7 @@ interface AgentConfig {
                   id="model" 
                   name="model" 
                   [(ngModel)]="agentForm.model" 
-                  (input)="validateAgentModelField($event.target.value)"
+                  (input)="onAgentModelInput($event)"
                   placeholder="Enter model name or fetch models from provider" 
                   [disabled]="!agentForm.provider || savingAgent()"
                   required
@@ -346,7 +347,7 @@ interface AgentConfig {
                 id="temperature" 
                 name="temperature" 
                 [(ngModel)]="agentForm.temperature" 
-                (input)="validateTemperatureField($event.target.value)"
+                (input)="onTemperatureInput($event)"
                 min="0" 
                 max="2" 
                 step="0.1"
@@ -376,7 +377,7 @@ interface AgentConfig {
                 id="maxTokens" 
                 name="maxTokens" 
                 [(ngModel)]="agentForm.maxTokens" 
-                (input)="validateMaxTokensField($event.target.value)"
+                (input)="onMaxTokensInput($event)"
                 min="1" 
                 max="100000"
                 class="form-input"
@@ -1114,7 +1115,7 @@ export class SettingsComponent {
 
   // Real-time validation state for agent form
   private agentValidationState = new FormValidationState();
-  
+
   // Agent field validation states
   agentNameFieldState = signal<FieldValidationState>({ isValid: true, errors: [], warnings: [], isValidating: false });
   agentProviderFieldState = signal<FieldValidationState>({ isValid: true, errors: [], warnings: [], isValidating: false });
@@ -1124,23 +1125,26 @@ export class SettingsComponent {
 
   // Computed agent form validity
   isAgentFormValid = computed(() => {
-    return this.agentValidationState.isFormValid() && 
-           this.agentNameFieldState().isValid &&
-           this.agentProviderFieldState().isValid &&
-           this.agentModelFieldState().isValid &&
-           this.agentTemperatureFieldState().isValid &&
-           this.agentMaxTokensFieldState().isValid;
+    return this.agentValidationState.isFormValid() &&
+      this.agentNameFieldState().isValid &&
+      this.agentProviderFieldState().isValid &&
+      this.agentModelFieldState().isValid &&
+      this.agentTemperatureFieldState().isValid &&
+      this.agentMaxTokensFieldState().isValid;
   });
 
-  // NgRx selectors
-  public agentsWithProviders$ = this.store.select(selectAgentsWithProviders);
-  public activeProviders$ = this.store.select(selectActiveProviders);
+  // NgRx selectors - initialized in constructor
+  public agentsWithProviders$!: Observable<AgentWithProvider[]>;
+  public activeProviders$!: Observable<ProviderConfig[]>;
 
   constructor(
     private messageService: MessageService,
     private validationService: ValidationService,
     private store: Store
   ) {
+    // Initialize selectors after store is available
+    this.agentsWithProviders$ = this.store.select(selectAgentsWithProviders);
+    this.activeProviders$ = this.store.select(selectActiveProviders);
     // Load mock data for demo
     this.loadSettings();
 
@@ -1249,7 +1253,7 @@ export class SettingsComponent {
 
   public editAgent(agentWithProvider: AgentWithProvider) {
     this.editingAgent.set(agentWithProvider.agent);
-    
+
     this.agentForm = {
       name: agentWithProvider.agent.name,
       provider: agentWithProvider.provider.id,
@@ -1325,7 +1329,7 @@ export class SettingsComponent {
 
     try {
       const editing = this.editingAgent();
-      
+
       if (editing) {
         // Update existing agent
         const updates: Partial<Agent> = {
@@ -1342,9 +1346,9 @@ export class SettingsComponent {
         };
 
         // Dispatch NgRx action to update agent
-        this.store.dispatch(AgentActions.updateAgent({ 
-          agentId: editing.id, 
-          updates 
+        this.store.dispatch(AgentActions.updateAgent({
+          agentId: editing.id,
+          updates
         }));
 
         // Listen for success/failure
@@ -1397,7 +1401,7 @@ export class SettingsComponent {
   /**
    * Real-time agent validation methods
    */
-  
+
   /**
    * Validate agent name field in real-time
    */
@@ -1422,14 +1426,14 @@ export class SettingsComponent {
   validateAgentProviderField(value: string): void {
     const rules = [ValidationRules.required()];
     const result = FormValidation.validateFieldRealTime(value, 'provider', rules);
-    
+
     this.agentValidationState.setFieldState('agentProvider', {
       isValid: result.valid,
       errors: result.error ? [result.error] : [],
       warnings: result.warnings || [],
       isValidating: false
     });
-    
+
     this.agentProviderFieldState.set(this.agentValidationState.getFieldState('agentProvider'));
   }
 
@@ -1475,6 +1479,37 @@ export class SettingsComponent {
   }
 
   /**
+   * Helper methods for event handling
+   */
+  onAgentNameInput(event: Event): void {
+    const target = event.target as HTMLInputElement;
+    if (target) {
+      this.validateAgentNameField(target.value);
+    }
+  }
+
+  onAgentModelInput(event: Event): void {
+    const target = event.target as HTMLInputElement;
+    if (target) {
+      this.validateAgentModelField(target.value);
+    }
+  }
+
+  onTemperatureInput(event: Event): void {
+    const target = event.target as HTMLInputElement;
+    if (target) {
+      this.validateTemperatureField(target.value);
+    }
+  }
+
+  onMaxTokensInput(event: Event): void {
+    const target = event.target as HTMLInputElement;
+    if (target) {
+      this.validateMaxTokensField(target.value);
+    }
+  }
+
+  /**
    * Clear agent validation states
    */
   private clearAgentValidationStates(): void {
@@ -1499,18 +1534,18 @@ export class SettingsComponent {
     }
 
     // Validate optional numeric fields
-    if (this.agentForm.temperature !== undefined && 
-        (this.agentForm.temperature < 0 || this.agentForm.temperature > 2)) {
+    if (this.agentForm.temperature !== undefined &&
+      (this.agentForm.temperature < 0 || this.agentForm.temperature > 2)) {
       errors.push('Temperature must be between 0 and 2');
     }
 
-    if (this.agentForm.maxTokens !== undefined && 
-        (this.agentForm.maxTokens < 1 || this.agentForm.maxTokens > 100000)) {
+    if (this.agentForm.maxTokens !== undefined &&
+      (this.agentForm.maxTokens < 1 || this.agentForm.maxTokens > 100000)) {
       errors.push('Max tokens must be between 1 and 100,000');
     }
 
-    if (this.agentForm.timeout !== undefined && 
-        (this.agentForm.timeout < 1000 || this.agentForm.timeout > 300000)) {
+    if (this.agentForm.timeout !== undefined &&
+      (this.agentForm.timeout < 1000 || this.agentForm.timeout > 300000)) {
       errors.push('Timeout must be between 1 and 300 seconds');
     }
 
@@ -1523,21 +1558,21 @@ export class SettingsComponent {
     const subscription = this.messageService.messages$.subscribe(message => {
       if (message.type === 'configUpdateResult' && message.payload.configType === 'agents') {
         this.savingAgent.set(false);
-        
+
         if (message.payload.success) {
           const successMsg = operation === 'add' ? 'Agent created successfully!' : 'Agent updated successfully!';
           this.showSuccessMessage(successMsg);
-          
+
           // Close the form after a brief delay to show the success message
           setTimeout(() => {
             this.closeAgentForm();
           }, 1500);
-          
+
         } else {
           const errorMsg = message.payload.error || `Failed to ${operation} agent`;
           this.showErrorMessage(errorMsg);
         }
-        
+
         subscription.unsubscribe();
       }
     });
@@ -1582,7 +1617,7 @@ export class SettingsComponent {
   private showSuccessMessage(message: string) {
     this.successMessage.set(message);
     this.errorMessage.set(null);
-    
+
     // Auto-clear success message after 3 seconds
     setTimeout(() => {
       if (this.successMessage() === message) {
@@ -1599,13 +1634,13 @@ export class SettingsComponent {
   public hasActiveProviders(): boolean {
     // This will be used in the template to disable the add agent button
     let hasProviders = false;
-    
+
     // Use synchronous approach with current store state
     const subscription = this.store.select(selectActiveProviders).subscribe(providers => {
       hasProviders = providers && providers.length > 0;
     });
     subscription.unsubscribe();
-    
+
     return hasProviders;
   }
 
@@ -1619,10 +1654,10 @@ export class SettingsComponent {
   private subscribeToAgentActions() {
     // Listen for model loading results
     this.messageService.messages$.subscribe(message => {
-      if (message.type === 'configUpdateResult' && 
-          message.payload.operation === 'fetchModels') {
+      if (message.type === 'configUpdateResult' &&
+        message.payload.operation === 'fetchModels') {
         this.loadingModels.set(false);
-        
+
         if (message.payload.success) {
           this.availableModels.set(message.payload.models || []);
           this.modelError.set(null);
@@ -1639,7 +1674,7 @@ export class SettingsComponent {
     this.agentForm.model = '';
     this.availableModels.set([]);
     this.modelError.set(null);
-    
+
     // Clear old form fields that are no longer needed
     this.agentForm.apiKey = '';
     this.agentForm.networkAddress = '';
@@ -1707,14 +1742,14 @@ export class SettingsComponent {
   }
 
   public fetchModelsForProvider() {
-    if (!this.agentForm.provider) {return;}
-    
+    if (!this.agentForm.provider) { return; }
+
     this.loadingModels.set(true);
     this.modelError.set(null);
-    
+
     // Dispatch NgRx action to fetch models for the selected provider
-    this.store.dispatch(AgentActions.loadModelsForProvider({ 
-      providerId: this.agentForm.provider 
+    this.store.dispatch(AgentActions.loadModelsForProvider({
+      providerId: this.agentForm.provider
     }));
   }
 

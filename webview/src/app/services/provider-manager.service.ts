@@ -13,7 +13,7 @@ import {
 import { MessageService } from './message.service';
 import { ErrorHandlerService } from './error-handler.service';
 import { FormValidationService } from './form-validation.service';
-import { ProviderValidation, NetworkValidation } from '../utils/validation.utils';
+import { ValidationUtils, ProviderValidation, NetworkValidation } from '../utils/validation.utils';
 import * as ProviderActions from '../state/provider/provider.actions';
 import { 
   selectProviders, 
@@ -654,18 +654,6 @@ export class ProviderManagerService {
    * Generate a provider name based on provider type and provider
    */
   private generateProviderName(provider: string, type: 'cloud' | 'local-network'): string {
-    const providerLabels: Record<string, string> = {
-      'openai': 'OpenAI',
-      'anthropic': 'Anthropic',
-      'google': 'Google',
-      'azure': 'Azure OpenAI',
-      'ollama': 'Ollama',
-      'custom': 'Custom'
-    };
-    
-    const baseLabel = providerLabels[provider] || provider;
-    const typeLabel = type === 'cloud' ? 'Cloud' : 'Local';
-    
-    return `${baseLabel} (${typeLabel})`;
+    return ValidationUtils.generateProviderNameFromSelection(provider, type);
   }
 }

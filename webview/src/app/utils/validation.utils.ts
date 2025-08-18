@@ -130,6 +130,101 @@ export class FormValidationState {
 }
 
 /**
+ * Provider name generation and validation utilities
+ */
+export class ValidationUtils {
+  
+  /**
+   * Generate a provider name based on provider type and provider, ensuring it passes validation
+   */
+  static generateProviderName(providerType: string, hostType?: string, endpoint?: string): string {
+    let baseName = '';
+    
+    if (providerType === 'local-network' && hostType) {
+      const hostLabels: Record<string, string> = {
+        'ollama': 'Ollama',
+        'custom': 'Custom'
+      };
+      baseName = hostLabels[hostType] || hostType;
+    } else if (providerType === 'cloud') {
+      baseName = 'Cloud Provider';
+    } else {
+      baseName = 'Provider';
+    }
+    
+    const typeLabel = providerType === 'cloud' ? 'Cloud' : 'Local';
+    const fullName = `${baseName} (${typeLabel})`;
+    
+    // Sanitize the name to ensure it passes validation
+    return this.sanitizeProviderName(fullName);
+  }
+  
+  /**
+   * Generate a provider name based on provider selection and type
+   */
+  static generateProviderNameFromSelection(provider: string, type: 'cloud' | 'local-network'): string {
+    const providerLabels: Record<string, string> = {
+      'openai': 'OpenAI',
+      'anthropic': 'Anthropic',
+      'google': 'Google',
+      'azure': 'Azure OpenAI',
+      'ollama': 'Ollama',
+      'custom': 'Custom'
+    };
+    
+    const baseLabel = providerLabels[provider] || provider;
+    const typeLabel = type === 'cloud' ? 'Cloud' : 'Local';
+    const fullName = `${baseLabel} (${typeLabel})`;
+    
+    // Sanitize the name to ensure it passes validation
+    return this.sanitizeProviderName(fullName);
+  }
+  
+  /**
+   * Sanitize provider name to ensure it passes validation rules
+   * Replaces invalid characters: / with -, : with __
+   */
+  static sanitizeProviderName(name: string): string {
+    return name
+      .replace(/[\/]/g, '-')        // Replace forward slashes with hyphens
+      .replace(/[:]/g, '__')        // Replace colons with double underscores
+      .replace(/[^a-zA-Z0-9\s\-_()]/g, '') // Remove other invalid characters except parentheses
+      .trim()
+      .replace(/\s+/g, ' ');       // Normalize whitespace
+  }
+  
+  /**
+   * Validate provider name format
+   */
+  static validateProviderName(name: string): ValidationResult {
+    if (!name || name.trim().length === 0) {
+      return { valid: false, error: 'Provider name is required' };
+    }
+    
+    const trimmedName = name.trim();
+    
+    if (trimmedName.length < 2) {
+      return { valid: false, error: 'Provider name must be at least 2 characters long' };
+    }
+    
+    if (trimmedName.length > 50) {
+      return { valid: false, error: 'Provider name must be less than 50 characters' };
+    }
+    
+    // Allow letters, numbers, spaces, hyphens, underscores, and parentheses
+    const validNamePattern = /^[a-zA-Z0-9\s\-_()]+$/;
+    if (!validNamePattern.test(trimmedName)) {
+      return { 
+        valid: false, 
+        error: 'Provider name can only contain letters, numbers, spaces, hyphens, underscores, and parentheses' 
+      };
+    }
+    
+    return { valid: true };
+  }
+}
+
+/**
  * Provider validation utilities
  */
 export class ProviderValidation {
@@ -143,12 +238,9 @@ export class ProviderValidation {
 
     // Name validation (optional - will be auto-generated if empty)
     if (data.name?.trim()) {
-      if (data.name.trim().length < 2) {
-        errors.push('Provider name must be at least 2 characters long');
-      } else if (data.name.trim().length > 50) {
-        errors.push('Provider name must be less than 50 characters');
-      } else if (!/^[a-zA-Z0-9\s\-_]+$/.test(data.name.trim())) {
-        errors.push('Provider name can only contain letters, numbers, spaces, hyphens, and underscores');
+      const nameValidation = ValidationUtils.validateProviderName(data.name);
+      if (!nameValidation.valid) {
+        errors.push(nameValidation.error!);
       }
     }
 

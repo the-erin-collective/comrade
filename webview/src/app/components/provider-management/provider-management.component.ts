@@ -19,7 +19,7 @@ import { ErrorHandlerService } from '../../services/error-handler.service';
 import { ValidationService } from '../../services/validation.service';
 import { ProviderManagerService } from '../../services/provider-manager.service';
 import { ErrorNotificationComponent } from '../error-notification/error-notification.component';
-import { FormValidationState, ValidationRules, FormValidation, FieldValidationState } from '../../utils/validation.utils';
+import { ValidationUtils, FormValidationState, ValidationRules, FormValidation, FieldValidationState } from '../../utils/validation.utils';
 
 @Component({
   selector: 'app-provider-management',
@@ -185,18 +185,13 @@ import { FormValidationState, ValidationRules, FormValidation, FieldValidationSt
               </div>
             }
 
-            <!-- Form Errors -->
-            @if (formErrors().length > 0) {
+            <!-- Single Focused Error Message -->
+            @if (currentError()) {
               <div class="form-errors">
                 <div class="error-header">
                   <span class="error-icon">⚠️</span>
-                  <span>Please fix the following errors:</span>
+                  <span>{{ currentError() }}</span>
                 </div>
-                <ul class="error-list">
-                  @for (error of formErrors(); track error) {
-                    <li>{{ error }}</li>
-                  }
-                </ul>
               </div>
             }
 
@@ -208,7 +203,7 @@ import { FormValidationState, ValidationRules, FormValidation, FieldValidationSt
                 id="providerName"
                 name="providerName"
                 [(ngModel)]="providerForm.name" 
-                (input)="validateNameField($event.target.value)"
+                (input)="onNameInput($event)"
                 placeholder="Leave empty to auto-generate based on provider type"
                 #nameField="ngModel"
                 class="form-input"
@@ -234,9 +229,7 @@ import { FormValidationState, ValidationRules, FormValidation, FieldValidationSt
                   }
                 </div>
               }
-              <span class="form-help">
-                If left empty, a name will be automatically generated based on the provider type
-              </span>
+
             </div>
 
             <!-- Provider Type Selection -->
@@ -263,15 +256,7 @@ import { FormValidationState, ValidationRules, FormValidation, FieldValidationSt
                   }
                 </div>
               }
-              @if (providerForm.type) {
-                <span class="form-help">
-                  @if (providerForm.type === 'cloud') {
-                    Connect to cloud-based AI services like OpenAI, Anthropic, or Google
-                  } @else if (providerForm.type === 'local-network') {
-                    Connect to local AI services like Ollama or custom endpoints
-                  }
-                </span>
-              }
+
             </div>
 
             <!-- Cloud Provider Configuration -->
@@ -311,7 +296,7 @@ import { FormValidationState, ValidationRules, FormValidation, FieldValidationSt
                     id="apiKey"
                     name="apiKey"
                     [(ngModel)]="providerForm.apiKey" 
-                    (input)="validateApiKeyField($event.target.value)"
+                    (input)="onApiKeyInput($event)"
                     placeholder="Enter your API key"
                     required
                     class="form-input"
@@ -398,7 +383,7 @@ import { FormValidationState, ValidationRules, FormValidation, FieldValidationSt
                   id="endpoint"
                   name="endpoint"
                   [(ngModel)]="providerForm.endpoint" 
-                  (input)="validateEndpointField($event.target.value)"
+                  (input)="onEndpointInput($event)"
                   placeholder="e.g., http://localhost:11434"
                   required
                   class="form-input"
@@ -424,9 +409,7 @@ import { FormValidationState, ValidationRules, FormValidation, FieldValidationSt
                     }
                   </div>
                 }
-                <span class="form-help">
-                  Enter the full URL including protocol (http:// or https://)
-                </span>
+
               </div>
 
               <div class="form-group">
@@ -440,9 +423,7 @@ import { FormValidationState, ValidationRules, FormValidation, FieldValidationSt
                   class="form-input"
                   [disabled]="saving()"
                 >
-                <span class="form-help">
-                  Most local providers like Ollama don't require an API key
-                </span>
+
               </div>
 
               <div class="form-group">
@@ -489,11 +470,15 @@ import { FormValidationState, ValidationRules, FormValidation, FieldValidationSt
             <button 
               type="submit" 
               class="primary-btn" 
-              [disabled]="savingProvider() || !isFormValid() || formErrors().length > 0"
+              [disabled]="savingProvider() || !isFormValid() || currentError()"
             >
               @if (savingProvider()) {
                 <span class="loading-spinner-small"></span>
-                {{ editingProvider() ? 'Updating...' : 'Adding...' }}
+                @if (testingConnectionForSave()) {
+                  Testing connection...
+                } @else {
+                  {{ editingProvider() ? 'Updating...' : 'Adding...' }}
+                }
               } @else {
                 {{ editingProvider() ? 'Update' : 'Add' }} Provider
               }
@@ -1435,6 +1420,7 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
   saving = signal(false);
   formErrors = signal<string[]>([]);
   successMessage = signal<string | null>(null);
+  currentError = signal<string | null>(null);
 
   // Provider form data
   providerForm: ProviderFormData = {
@@ -1472,6 +1458,7 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
   savingProvider = signal(false);
   testingApiKey = signal(false);
   testingEndpoint = signal(false);
+  testingConnectionForSave = signal(false);
 
   constructor() {
     // Load providers on component initialization
@@ -1484,8 +1471,7 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
   showAddProviderForm(): void {
     this.editingProvider.set(null);
     this.saving.set(false);
-    this.formErrors.set([]);
-    this.successMessage.set(null);
+    this.clearError();
     this.resetProviderForm();
     this.showProviderForm.set(true);
   }
@@ -1496,8 +1482,7 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
   editProvider(provider: ProviderConfig): void {
     this.editingProvider.set(provider);
     this.saving.set(false);
-    this.formErrors.set([]);
-    this.successMessage.set(null);
+    this.clearError();
     this.populateProviderForm(provider);
     this.showProviderForm.set(true);
   }
@@ -1605,8 +1590,7 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
       localHostType: 'ollama'
     };
     this.connectionTestResult.set(null);
-    this.formErrors.set([]);
-    this.successMessage.set(null);
+    this.clearError();
     this.clearValidationStates();
   }
 
@@ -1614,19 +1598,7 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
    * Generate a provider name based on provider type and provider
    */
   private generateProviderName(provider: string, type: 'cloud' | 'local-network'): string {
-    const providerLabels: Record<string, string> = {
-      'openai': 'OpenAI',
-      'anthropic': 'Anthropic',
-      'google': 'Google',
-      'azure': 'Azure OpenAI',
-      'ollama': 'Ollama',
-      'custom': 'Custom'
-    };
-    
-    const baseLabel = providerLabels[provider] || provider;
-    const typeLabel = type === 'cloud' ? 'Cloud' : 'Local';
-    
-    return `${baseLabel} (${typeLabel})`;
+    return ValidationUtils.generateProviderNameFromSelection(provider, type);
   }
 
   /**
@@ -1651,8 +1623,7 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
     this.showProviderForm.set(false);
     this.editingProvider.set(null);
     this.savingProvider.set(false);
-    this.formErrors.set([]);
-    this.successMessage.set(null);
+    this.clearError();
     this.resetProviderForm();
   }
 
@@ -1661,6 +1632,9 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
    */
   onProviderTypeChange(type: 'cloud' | 'local-network'): void {
     this.providerForm.type = type;
+    
+    // Clear any existing errors when changing provider type
+    this.clearError();
     
     // Validate the type field
     this.validateTypeField(type);
@@ -1702,6 +1676,9 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
    */
   onLocalHostTypeChange(hostType: string): void {
     this.providerForm.localHostType = hostType as 'ollama' | 'custom';
+    
+    // Clear any existing errors when changing local host type
+    this.clearError();
     
     // Validate the local host type field
     this.validateLocalHostTypeField(hostType);
@@ -1751,6 +1728,30 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
   }
 
   /**
+   * Test connection before saving provider (automatic connection testing)
+   */
+  private async testConnectionBeforeSave(): Promise<ConnectionTestResult> {
+    try {
+      this.testingConnectionForSave.set(true);
+      
+      // Create a temporary provider object for testing
+      const tempProvider = this.buildProviderFromForm();
+      
+      // Use the provider manager service to test the connection
+      const result = await this.providerManager.testProviderConnection(tempProvider as ProviderConfig);
+      
+      return result;
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Connection test failed'
+      };
+    } finally {
+      this.testingConnectionForSave.set(false);
+    }
+  }
+
+  /**
    * Validate provider configuration
    */
   private validateProviderConfig(): boolean {
@@ -1788,8 +1789,7 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
     }
 
     // Clear previous errors and success messages
-    this.formErrors.set([]);
-    this.successMessage.set(null);
+    this.clearError();
 
     // Validate form before submission
     if (!this.validateProviderForm()) {
@@ -1808,6 +1808,14 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
       }
 
       const editing = this.editingProvider();
+      
+      // Automatically test connection before adding/updating provider
+      const connectionResult = await this.testConnectionBeforeSave();
+      
+      if (!connectionResult.success) {
+        this.showError(`Could not connect to provider: ${connectionResult.error}`);
+        return;
+      }
       
       if (editing) {
         // Update existing provider
@@ -1834,7 +1842,7 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
       const isEditing = this.editingProvider();
       const errorMsg = isEditing ? 'Failed to update provider' : 'Failed to add provider';
       this.errorHandler.handleProviderError(error, isEditing ? 'update' : 'add', this.providerForm.name);
-      this.formErrors.set([errorMsg + ': ' + (error instanceof Error ? error.message : String(error))]);
+      this.showError(errorMsg + ': ' + (error instanceof Error ? error.message : String(error)));
     } finally {
       this.savingProvider.set(false);
     }
@@ -1848,12 +1856,21 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
    * Validate provider name field in real-time
    */
   async validateNameField(value: string): Promise<void> {
-    const rules = [
-      ValidationRules.stringLength(2, 50)
-    ];
+    // Only validate if name is provided (since it's optional)
+    if (!value || !value.trim()) {
+      this.nameFieldState.set({ isValid: true, errors: [], warnings: [], isValidating: false });
+      return;
+    }
 
-    const result = await this.validationState.validateFieldDebounced('name', value, rules);
-    this.nameFieldState.set(this.validationState.getFieldState('name'));
+    // Use the centralized validation logic - show only name validation errors, no unrelated warnings
+    const result = ValidationUtils.validateProviderName(value);
+    
+    this.nameFieldState.set({
+      isValid: result.valid,
+      errors: result.error ? [result.error] : [],
+      warnings: [], // Remove warnings to prevent unrelated Ollama warnings from appearing
+      isValidating: false
+    });
   }
 
   /**
@@ -1866,11 +1883,16 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
     this.validationState.setFieldState('type', {
       isValid: result.valid,
       errors: result.error ? [result.error] : [],
-      warnings: result.warnings || [],
+      warnings: [], // Remove warnings to prevent redundant messages
       isValidating: false
     });
     
     this.typeFieldState.set(this.validationState.getFieldState('type'));
+    
+    // Clear form-level error if this field becomes valid
+    if (result.valid && this.currentError()) {
+      this.clearError();
+    }
   }
 
   /**
@@ -1883,11 +1905,16 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
     this.validationState.setFieldState('provider', {
       isValid: result.valid,
       errors: result.error ? [result.error] : [],
-      warnings: result.warnings || [],
+      warnings: [], // Remove warnings to prevent redundant messages
       isValidating: false
     });
     
     this.providerFieldState.set(this.validationState.getFieldState('provider'));
+    
+    // Clear form-level error if this field becomes valid
+    if (result.valid && this.currentError()) {
+      this.clearError();
+    }
   }
 
   /**
@@ -1905,7 +1932,18 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
     ];
 
     const result = await this.validationState.validateFieldDebounced('apiKey', value, rules);
-    this.apiKeyFieldState.set(this.validationState.getFieldState('apiKey'));
+    const fieldState = this.validationState.getFieldState('apiKey');
+    
+    // Remove warnings to prevent redundant messages
+    this.apiKeyFieldState.set({
+      ...fieldState,
+      warnings: []
+    });
+    
+    // Clear form-level error if this field becomes valid
+    if (fieldState.isValid && this.currentError()) {
+      this.clearError();
+    }
   }
 
   /**
@@ -1923,7 +1961,54 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
     ];
 
     const result = await this.validationState.validateFieldDebounced('endpoint', value, rules);
-    this.endpointFieldState.set(this.validationState.getFieldState('endpoint'));
+    const fieldState = this.validationState.getFieldState('endpoint');
+    
+    // Remove warnings to prevent redundant messages
+    this.endpointFieldState.set({
+      ...fieldState,
+      warnings: []
+    });
+    
+    // Clear form-level error if this field becomes valid
+    if (fieldState.isValid && this.currentError()) {
+      this.clearError();
+    }
+  }
+
+  /**
+   * Helper methods for event handling
+   */
+  onNameInput(event: Event): void {
+    const target = event.target as HTMLInputElement;
+    if (target) {
+      // Clear form-level error when user starts typing
+      if (this.currentError()) {
+        this.clearError();
+      }
+      this.validateNameField(target.value);
+    }
+  }
+
+  onApiKeyInput(event: Event): void {
+    const target = event.target as HTMLInputElement;
+    if (target) {
+      // Clear form-level error when user starts typing
+      if (this.currentError()) {
+        this.clearError();
+      }
+      this.validateApiKeyField(target.value);
+    }
+  }
+
+  onEndpointInput(event: Event): void {
+    const target = event.target as HTMLInputElement;
+    if (target) {
+      // Clear form-level error when user starts typing
+      if (this.currentError()) {
+        this.clearError();
+      }
+      this.validateEndpointField(target.value);
+    }
   }
 
   /**
@@ -1941,11 +2026,16 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
     this.validationState.setFieldState('localHostType', {
       isValid: result.valid,
       errors: result.error ? [result.error] : [],
-      warnings: result.warnings || [],
+      warnings: [], // Remove warnings to prevent redundant messages
       isValidating: false
     });
     
     this.localHostTypeFieldState.set(this.validationState.getFieldState('localHostType'));
+    
+    // Clear form-level error if this field becomes valid
+    if (result.valid && this.currentError()) {
+      this.clearError();
+    }
   }
 
   /**
@@ -1962,60 +2052,85 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
   }
 
   /**
+   * Clear current error message
+   */
+  clearError(): void {
+    this.currentError.set(null);
+    this.formErrors.set([]);
+    this.successMessage.set(null);
+  }
+
+  /**
+   * Show a single, focused error message
+   */
+  showError(message: string): void {
+    // Clear any existing errors first to prevent multiple simultaneous error messages
+    this.clearError();
+    this.currentError.set(message);
+    this.formErrors.set([message]);
+  }
+
+  /**
    * Validate provider form before submission
    */
   private validateProviderForm(): boolean {
-    const errors: string[] = [];
+    // Clear any existing errors first
+    this.clearError();
 
     // Validate provider type
     if (!this.providerForm.type) {
-      errors.push('Provider type is required');
+      this.showError('Provider type is required');
+      return false;
     }
 
     // Type-specific validation
     if (this.providerForm.type === 'cloud') {
       if (!this.providerForm.provider) {
-        errors.push('Cloud provider selection is required');
+        this.showError('Cloud provider selection is required');
+        return false;
       }
       
       if (!this.providerForm.apiKey?.trim()) {
-        errors.push('API key is required for cloud providers');
+        this.showError('API key is required for cloud providers');
+        return false;
       } else {
-        // Validate API key format
+        // Validate API key format - show only the relevant validation error
         const apiKeyValidation = this.validationService.validateApiKey(
           this.providerForm.apiKey, 
           this.providerForm.provider
         );
         if (!apiKeyValidation.isValid) {
-          errors.push(...apiKeyValidation.errors);
+          this.showError(apiKeyValidation.errors[0]); // Show only the first, most relevant error
+          return false;
         }
       }
     } else if (this.providerForm.type === 'local-network') {
       if (!this.providerForm.localHostType) {
-        errors.push('Local host type is required');
+        this.showError('Local host type is required');
+        return false;
       }
       
       if (!this.providerForm.endpoint?.trim()) {
-        errors.push('Network address is required for local providers');
+        this.showError('Network address is required for local providers');
+        return false;
       } else {
-        // Validate endpoint format
+        // Validate endpoint format - show only the relevant validation error
         const endpointValidation = this.validationService.validateEndpoint(this.providerForm.endpoint);
         if (!endpointValidation.isValid) {
-          errors.push(...endpointValidation.errors);
+          this.showError(endpointValidation.errors[0]); // Show only the first, most relevant error
+          return false;
         }
       }
     }
 
-    // Validate name uniqueness if provided
+    // Validate name format if provided (name is optional - will be auto-generated if empty)
     if (this.providerForm.name?.trim()) {
-      // This would need to be implemented with current providers list
-      // For now, we'll skip this validation as it requires async data
-    }
-
-    if (errors.length > 0) {
-      this.formErrors.set(errors);
-      this.errorHandler.handleValidationError(errors, [], 'Provider Form');
-      return false;
+      const nameValidation = ValidationUtils.validateProviderName(this.providerForm.name);
+      if (!nameValidation.valid) {
+        // Show only the name validation error without unrelated Ollama warnings
+        this.showError(nameValidation.error!);
+        return false;
+      }
     }
 
     return true;
@@ -2053,16 +2168,19 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
   /**
    * Build provider object from form data
    */
-  private buildProviderFromForm(): Omit<ProviderConfig, 'id' | 'createdAt' | 'updatedAt'> {
+  private buildProviderFromForm(): ProviderConfig {
     // Ensure name is set (auto-generate if empty)
     const name = this.providerForm.name?.trim() || 
                  this.generateProviderName(this.providerForm.provider, this.providerForm.type);
     
     const baseProvider = {
+      id: this.editingProvider()?.id || `temp-${Date.now()}`, // Use existing ID or temporary ID for testing
       name,
       type: this.providerForm.type,
       provider: this.providerForm.provider,
-      isActive: true
+      isActive: true,
+      createdAt: this.editingProvider()?.createdAt || new Date(),
+      updatedAt: new Date()
     };
 
     if (this.providerForm.type === 'cloud') {
@@ -2070,7 +2188,7 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
         ...baseProvider,
         type: 'cloud',
         apiKey: this.providerForm.apiKey!
-      } as Omit<CloudProvider, 'id' | 'createdAt' | 'updatedAt'>;
+      } as CloudProvider;
     } else {
       return {
         ...baseProvider,
@@ -2078,7 +2196,7 @@ export class ProviderManagementComponent implements OnInit, OnDestroy {
         endpoint: this.providerForm.endpoint!,
         localHostType: this.providerForm.localHostType!,
         apiKey: this.providerForm.apiKey || undefined
-      } as Omit<LocalNetworkProvider, 'id' | 'createdAt' | 'updatedAt'>;
+      } as LocalNetworkProvider;
     }
   }
 }
