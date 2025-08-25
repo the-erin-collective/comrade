@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import { AIAgentService, AIResponse, ToolCall, AIToolResult } from '../core/ai-agent';
+import { ModelConfig } from '../core/model-adapters/base-model-adapter';
 import { ProviderConfig, Agent, ProviderFormData, AgentFormData, ConnectionTestResult, ProviderValidationResult, AgentValidationResult } from '../core/types';
 import { getConfigurationManager, getAgentRegistry } from '../extension';
 
 export interface WebviewMessage {
-  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult' | 'aiResponse' | 'toolExecution' | 'aiTyping' | 'aiProcessing' | 'providerValidationResult' | 'connectionTestResult' | 'agentValidationResult' | 'agentAvailabilityResult' | 'agentUpdateResult' | 'legacyConfigData' | 'migrationResult' | 'streamChunk';
+  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult' | 'aiResponse' | 'toolExecution' | 'aiTyping' | 'aiProcessing' | 'providerValidationResult' | 'connectionTestResult' | 'agentValidationResult' | 'agentAvailabilityResult' | 'agentUpdateResult' | 'legacyConfigData' | 'migrationResult' | 'streamChunk' | 'agentTestResult';
   payload: any;
 }
 
@@ -45,7 +46,7 @@ export interface AIProcessingMessage extends WebviewMessage {
 }
 
 export interface ExtensionMessage {
-  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'debug' | 'fetchOllamaModels' | 'fetchCloudModels' | 'updateConfig' | 'getConfig' | 'validateProvider' | 'testProviderConnection' | 'validateAgent' | 'checkAgentAvailability' | 'getLegacyConfig' | 'saveMigrationResults' | 'executeMigration';
+  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'debug' | 'fetchOllamaModels' | 'fetchCloudModels' | 'updateConfig' | 'getConfig' | 'validateProvider' | 'testProviderConnection' | 'validateAgent' | 'checkAgentAvailability' | 'getLegacyConfig' | 'saveMigrationResults' | 'executeMigration' | 'testAgent';
   payload: any;
 }
 
@@ -292,6 +293,9 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
         break;
       case 'executeMigration':
         this._handleExecuteMigration(message.payload);
+        break;
+      case 'testAgent':
+        this._handleTestAgent(message.payload);
         break;
       default:
         console.warn('Unknown message type:', message.type);
@@ -673,7 +677,7 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
         console.log('[SidebarProvider] Found provider for fetchModels:', provider.name, provider.provider);
         
         // Handle different provider types
-        if (provider.type === 'local-network' && provider.provider === 'ollama') {
+        if (provider.type === 'local_network' && provider.provider === 'ollama') {
           console.log('[SidebarProvider] Fetching models for Ollama provider');
           
           // Get Ollama adapter and fetch models
@@ -1495,7 +1499,7 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
         ...baseConfig,
         apiKey: (provider as any).apiKey
       };
-    } else if (provider.type === 'local-network') {
+    } else if (provider.type === 'local_network') {
       return {
         ...baseConfig,
         endpoint: (provider as any).endpoint || 'http://localhost:11434',
@@ -1682,6 +1686,54 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
           agentId: payload.agentId,
           available: false,
           error: error instanceof Error ? error.message : 'Availability check failed'
+        }
+      });
+    }
+  }
+
+  /**
+   * Handle agent testing request
+   */
+  private async _handleTestAgent(payload: { agentConfig: any; testConfig?: any }) {
+    try {
+      console.log('SidebarProvider: Testing agent configuration:', payload.agentConfig);
+      
+      // Import the AgentTester
+      const { AgentTester } = await import('../core/agent-tester');
+      const tester = new AgentTester();
+      
+      // Convert the agent config to standard ModelConfig format
+      const modelConfig: ModelConfig = {
+        name: payload.agentConfig.model,
+        provider: payload.agentConfig.providerId, // Map providerId to provider
+        endpoint: payload.agentConfig.endpoint,
+        apiKey: payload.agentConfig.apiKey,
+        temperature: payload.agentConfig.temperature,
+        maxTokens: payload.agentConfig.maxTokens,
+        timeout: payload.agentConfig.timeout
+      };
+      
+      // Run the test
+      const testResult = await tester.testAgent(modelConfig);
+      
+      console.log('SidebarProvider: Agent test completed:', testResult);
+      
+      this.postMessage({
+        type: 'agentTestResult',
+        payload: {
+          success: true,
+          result: testResult
+        }
+      });
+      
+    } catch (error) {
+      console.error('SidebarProvider: Agent test failed:', error);
+      
+      this.postMessage({
+        type: 'agentTestResult',
+        payload: {
+          success: false,
+          error: error instanceof Error ? error.message : 'Agent test failed'
         }
       });
     }

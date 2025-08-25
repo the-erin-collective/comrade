@@ -195,7 +195,7 @@ describe('ProviderManagerService', () => {
       it('should add local network provider successfully', async () => {
         const providerData: ProviderFormData = {
           name: 'Ollama Provider',
-          type: 'local-network',
+          type: 'local_network',
           provider: 'ollama',
           endpoint: 'http://localhost:11434',
           localHostType: 'ollama'
@@ -205,7 +205,7 @@ describe('ProviderManagerService', () => {
 
         assert.ok(provider.id);
         assert.strictEqual(provider.name, 'Ollama Provider');
-        assert.strictEqual(provider.type, 'local-network');
+        assert.strictEqual(provider.type, 'local_network');
         assert.strictEqual(provider.provider, 'ollama');
         assert.strictEqual((provider as LocalNetworkProvider).endpoint, 'http://localhost:11434');
         assert.strictEqual((provider as LocalNetworkProvider).localHostType, 'ollama');
@@ -227,7 +227,7 @@ describe('ProviderManagerService', () => {
       it('should throw error for missing endpoint in local network provider', async () => {
         const invalidData: ProviderFormData = {
           name: 'Test Provider',
-          type: 'local-network',
+          type: 'local_network',
           provider: 'ollama'
         };
 
@@ -441,7 +441,7 @@ describe('ProviderManagerService', () => {
         { data: { name: '', type: 'cloud', provider: 'openai' }, error: 'Provider name is required' },
         { data: { name: 'Test', type: 'invalid', provider: 'openai' }, error: 'Invalid provider type' },
         { data: { name: 'Test', type: 'cloud', provider: '' }, error: 'Provider type is required' },
-        { data: { name: 'Test', type: 'local-network', provider: 'ollama' }, error: 'Endpoint is required for local network providers' }
+        { data: { name: 'Test', type: 'local_network', provider: 'ollama' }, error: 'Endpoint is required for local network providers' }
       ];
 
       testCases.forEach(({ data, error }) => {
@@ -460,7 +460,7 @@ describe('ProviderManagerService', () => {
 
       const validLocalData: ProviderFormData = {
         name: 'Test Provider',
-        type: 'local-network',
+        type: 'local_network',
         provider: 'ollama',
         endpoint: 'http://localhost:11434'
       };
@@ -512,7 +512,7 @@ describe('ProviderManagerService', () => {
     it('should create local network provider from form data', () => {
       const formData: ProviderFormData = {
         name: 'Ollama Provider',
-        type: 'local-network',
+        type: 'local_network',
         provider: 'ollama',
         endpoint: 'http://localhost:11434',
         localHostType: 'ollama',
@@ -523,7 +523,7 @@ describe('ProviderManagerService', () => {
 
       assert.ok(provider.id);
       assert.strictEqual(provider.name, 'Ollama Provider');
-      assert.strictEqual(provider.type, 'local-network');
+      assert.strictEqual(provider.type, 'local_network');
       assert.strictEqual(provider.provider, 'ollama');
       assert.strictEqual((provider as LocalNetworkProvider).endpoint, 'http://localhost:11434');
       assert.strictEqual((provider as LocalNetworkProvider).localHostType, 'ollama');
@@ -533,7 +533,7 @@ describe('ProviderManagerService', () => {
     it('should use default endpoint for local network providers', () => {
       const formData: ProviderFormData = {
         name: 'Ollama Provider',
-        type: 'local-network',
+        type: 'local_network',
         provider: 'ollama',
         localHostType: 'ollama'
       };

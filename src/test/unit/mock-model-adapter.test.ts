@@ -77,7 +77,7 @@ describe('MockModelAdapter', () => {
               required: true
             }
           ],
-          execute: async () => ({ success: true, metadata: { executionTime: 0, toolName: 'test', parameters: {} } })
+          execute: async () => ({ success: true, metadata: { executionTime: 0, toolName: 'test', parameters: {}, timestamp: new Date() } })
         }
       ];
       

@@ -5,7 +5,7 @@
 import * as vscode from 'vscode';
 import { IAgent, AgentCapabilities, PhaseType, LLMProvider } from './agent';
 import { ConfigurationManager, AgentConfigurationItem } from './config';
-import { Agent, ProviderConfig, AgentWithProvider } from './types';
+import { Agent, ProviderConfig, AgentWithProvider, LocalNetworkProvider } from './types';
 
 export class AgentRegistry {
   private static instance: AgentRegistry;
@@ -940,7 +940,7 @@ export class AgentRegistry {
       name: agent.name,
       provider: provider.provider as LLMProvider,
       model: agent.model,
-      endpoint: provider.type === 'local-network' ? (provider as any).endpoint : undefined,
+      endpoint: provider.type === 'local_network' ? (provider as LocalNetworkProvider).endpoint : undefined,
       temperature: agent.temperature,
       maxTokens: agent.maxTokens,
       timeout: agent.timeout,

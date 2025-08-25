@@ -85,12 +85,19 @@ describe('Provider-Agent Architecture Integration Tests', () => {
             model: 'gpt-4',
             temperature: 0.7,
             maxTokens: 4000,
+            timeout: 30000,
+            systemPrompt: 'You are a helpful AI assistant.',
             capabilities: {
                 hasVision: false,
                 hasToolUse: true,
                 reasoningDepth: 'advanced',
                 speed: 'medium',
-                costTier: 'high'
+                costTier: 'high',
+                supportsStreaming: true,
+                supportsNonStreaming: true,
+                preferredStreamingMode: 'streaming',
+                maxContextLength: 4000,
+                supportedFormats: ['text']
             }
         };
 
@@ -108,7 +115,7 @@ describe('Provider-Agent Architecture Integration Tests', () => {
         // Create provider and agent
         const providerData: ProviderFormData = {
             name: 'Test Provider',
-            type: 'local-network',
+            type: 'local_network',
             provider: 'ollama',
             endpoint: 'http://localhost:11434'
         };
@@ -121,12 +128,21 @@ describe('Provider-Agent Architecture Integration Tests', () => {
             name: 'Test Agent',
             providerId: provider.id,
             model: 'llama2',
+            temperature: 0.8,
+            maxTokens: 2000,
+            timeout: 45000,
+            systemPrompt: 'You are a helpful AI assistant running locally.',
             capabilities: {
                 hasVision: false,
                 hasToolUse: false,
                 reasoningDepth: 'intermediate',
                 speed: 'fast',
-                costTier: 'low'
+                costTier: 'low',
+                supportsStreaming: true,
+                supportsNonStreaming: true,
+                preferredStreamingMode: 'streaming',
+                maxContextLength: 4000,
+                supportedFormats: ['text']
             }
         };
 
@@ -189,12 +205,21 @@ describe('Provider-Agent Architecture Integration Tests', () => {
             name: 'Test Agent',
             providerId: provider.id,
             model: 'claude-3-haiku',
+            temperature: 0.6,
+            maxTokens: 3000,
+            timeout: 25000,
+            systemPrompt: 'You are a helpful AI assistant.',
             capabilities: {
                 hasVision: false,
                 hasToolUse: true,
                 reasoningDepth: 'intermediate',
                 speed: 'fast',
-                costTier: 'low'
+                costTier: 'low',
+                supportsStreaming: true,
+                supportsNonStreaming: true,
+                preferredStreamingMode: 'streaming',
+                maxContextLength: 4000,
+                supportedFormats: ['text']
             }
         };
 

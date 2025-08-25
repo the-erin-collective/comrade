@@ -124,7 +124,7 @@ describe('Settings UI Automated Validation - Task 10', () => {
 
             const provider3 = await providerManager.addProvider({
                 name: 'Provider 3',
-                type: 'local-network',
+                type: 'local_network',
                 provider: 'ollama',
                 endpoint: 'http://localhost:11434'
             });
@@ -316,7 +316,7 @@ describe('Settings UI Automated Validation - Task 10', () => {
 
             const localProvider = await providerManager.addProvider({
                 name: 'Local Provider',
-                type: 'local-network',
+                type: 'local_network',
                 provider: 'ollama',
                 endpoint: 'http://localhost:11434'
             });
@@ -326,7 +326,7 @@ describe('Settings UI Automated Validation - Task 10', () => {
             assert.strictEqual(allProviders.length, 2);
 
             const cloudProviderFound = allProviders.find(p => p.type === 'cloud');
-            const localProviderFound = allProviders.find(p => p.type === 'local-network');
+            const localProviderFound = allProviders.find(p => p.type === 'local_network');
 
             assert.ok(cloudProviderFound, 'Should find cloud provider');
             assert.ok(localProviderFound, 'Should find local network provider');

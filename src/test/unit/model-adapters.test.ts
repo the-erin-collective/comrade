@@ -158,7 +158,7 @@ describe('Model Adapter System', () => {
           parameters: [
             { name: 'input', type: 'string', description: 'Test input', required: true }
           ],
-          execute: async () => ({ success: true, output: 'test', metadata: { executionTime: 0, toolName: 'test_tool', parameters: {} } })
+          execute: async () => ({ success: true, output: 'test', metadata: { executionTime: 0, toolName: 'test_tool', parameters: {}, timestamp: new Date() } })
         }
       ];
 
@@ -202,7 +202,7 @@ describe('Model Adapter System', () => {
             { name: 'required_param', type: 'string', description: 'Required parameter', required: true },
             { name: 'optional_param', type: 'string', description: 'Optional parameter', required: false }
           ],
-          execute: async () => ({ success: true, output: 'test', metadata: { executionTime: 0, toolName: 'test_tool', parameters: {} } })
+          execute: async () => ({ success: true, output: 'test', metadata: { executionTime: 0, toolName: 'test_tool', parameters: {}, timestamp: new Date() } })
         }
       ];
 
@@ -230,7 +230,7 @@ describe('Model Adapter System', () => {
           parameters: [
             { name: 'input', type: 'string', description: 'Test input', required: true }
           ],
-          execute: async () => ({ success: true, output: 'test', metadata: { executionTime: 0, toolName: 'test_tool', parameters: {} } })
+          execute: async () => ({ success: true, output: 'test', metadata: { executionTime: 0, toolName: 'test_tool', parameters: {}, timestamp: new Date() } })
         }
       ];
 

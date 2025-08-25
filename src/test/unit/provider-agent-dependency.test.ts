@@ -64,7 +64,18 @@ const mockAgent: Agent = {
     hasToolUse: true,
     reasoningDepth: 'advanced',
     speed: 'medium',
-    costTier: 'high'
+    costTier: 'high',
+    supportsStreaming: true,
+    supportsNonStreaming: true,
+    preferredStreamingMode: 'streaming',
+    maxContextLength: 4000,
+    supportedFormats: ['text']
+  },
+  userPreferences: {
+    theme: 'auto',
+    language: 'en',
+    notifications: true,
+    autoSave: true
   },
   isActive: true,
   createdAt: new Date(),

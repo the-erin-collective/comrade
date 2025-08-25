@@ -28,6 +28,11 @@ export interface ToolResult {
     executionTime: number;
     toolName: string;
     parameters: Record<string, any>;
+    timestamp: Date;
+    // Additional properties for specific tools
+    stderr?: string;
+    exitCode?: number;
+    [key: string]: any; // Allow additional metadata
   };
 }
 
@@ -44,6 +49,7 @@ export interface ToolParameter {
   description: string;
   required: boolean;
   enum?: string[];
+  default?: any; // Default value for the parameter
 }
 
 export interface AIResponse {
@@ -76,6 +82,7 @@ export interface ModelCapabilities {
   supportsSystemPrompts: boolean;
   maxContextLength: number;
   supportedFormats: string[];
+  preferStreaming?: boolean; // Whether this model works better with streaming
 }
 
 /**

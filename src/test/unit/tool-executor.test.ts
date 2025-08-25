@@ -2,7 +2,8 @@ import { expect } from 'chai';
 import * as sinon from 'sinon';
 import { ToolExecutor } from '../../core/tool-executor';
 import { ToolRegistry } from '../../core/tool-registry';
-import { Tool, ToolResult, ToolCall } from '../../core/types';
+import { ToolCall, AIToolResult } from '../../core/types';
+import { Tool, ToolResult } from '../../core/model-adapters/base-model-adapter';
 
 // Mock Tool implementation for testing
 class MockTool implements Tool {

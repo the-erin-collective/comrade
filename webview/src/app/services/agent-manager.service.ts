@@ -343,7 +343,12 @@ export class AgentManagerService {
       hasToolUse: false,
       reasoningDepth: 'basic',
       speed: 'medium',
-      costTier: 'medium'
+      costTier: 'medium',
+      supportsStreaming: true,
+      supportsNonStreaming: true,
+      preferredStreamingMode: 'streaming',
+      maxContextLength: 4096,
+      supportedFormats: ['text']
     };
 
     // Provider/model specific capabilities
@@ -473,7 +478,16 @@ export class AgentManagerService {
         reasoningDepth: 'basic',
         speed: 'medium',
         costTier: 'medium',
+        supportsStreaming: true,
+        supportsNonStreaming: true,
+        preferredStreamingMode: 'streaming',
+        maxContextLength: 4096,
+        supportedFormats: ['text'],
         ...data.capabilities
+      },
+      userPreferences: {
+        useStreaming: true,
+        ...data.userPreferences
       },
       isActive: true,
       createdAt: new Date(),

@@ -55,7 +55,7 @@ export class ModelCapabilityDetector {
           description: 'Test input',
           required: true
         }],
-        execute: async () => ({ success: true, output: 'test', metadata: { executionTime: 0, toolName: 'test_function', parameters: {} } })
+        execute: async () => ({ success: true, output: 'test', metadata: { executionTime: 0, toolName: 'test_function', parameters: {}, timestamp: new Date() } })
       }];
 
       const testMessages = [{

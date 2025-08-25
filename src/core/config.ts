@@ -1005,9 +1005,17 @@ export class ConfigurationManager {
         reasoningDepth: 'intermediate',
         speed: 'medium',
         costTier: 'medium',
-        maxTokens: 4000,
-        supportedLanguages: ['en'],
-        specializations: ['code']
+        supportsStreaming: true,
+        supportsNonStreaming: true,
+        preferredStreamingMode: 'streaming',
+        maxContextLength: 4000,
+        supportedFormats: ['text']
+      },
+      userPreferences: {
+        theme: 'auto',
+        language: 'en',
+        notifications: true,
+        autoSave: true
       },
       isActive: true,
       createdAt: new Date(),

@@ -407,10 +407,15 @@ export class ProviderManagerService {
         apiKey: '' // API key is stored separately in secure storage
       } as CloudProvider;
     } else {
+      const endpoint = formData.endpoint || 'http://localhost:11434';
+      const url = new URL(endpoint);
       return {
         ...baseProvider,
-        type: 'local-network',
-        endpoint: formData.endpoint || 'http://localhost:11434',
+        type: 'local_network',
+        endpoint: endpoint,
+        host: url.hostname,
+        port: parseInt(url.port) || (url.protocol === 'https:' ? 443 : 80),
+        protocol: url.protocol.replace(':', '') as 'http' | 'https',
         localHostType: formData.localHostType || 'ollama',
         apiKey: formData.apiKey
       } as LocalNetworkProvider;
@@ -436,7 +441,7 @@ export class ProviderManagerService {
       throw new Error('Provider type is required');
     }
 
-    if (data.type === 'local-network' && !data.endpoint) {
+    if (data.type === 'local_network' && !data.endpoint) {
       this.logger.debug('validateProviderData.fail', { reason: 'endpoint' });
       throw new Error('Endpoint is required for local network providers');
     }

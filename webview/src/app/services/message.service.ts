@@ -3,12 +3,12 @@ import { Subject, Observable, BehaviorSubject } from 'rxjs';
 import { filter, take } from 'rxjs/operators';
 
 export interface WebviewMessage {
-  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult' | 'aiResponse' | 'toolExecution' | 'aiTyping' | 'aiProcessing' | 'streamChunk' | 'providerValidationResult' | 'connectionTestResult' | 'agentConfigResult' | 'agentUpdateResult' | 'agentValidationResult' | 'agentAvailabilityResult';
+  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult' | 'aiResponse' | 'toolExecution' | 'aiTyping' | 'aiProcessing' | 'streamChunk' | 'providerValidationResult' | 'connectionTestResult' | 'agentConfigResult' | 'agentUpdateResult' | 'agentValidationResult' | 'agentAvailabilityResult' | 'agentTestResult';
   payload: any;
 }
 
 export interface ExtensionMessage {
-  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'fetchOllamaModels' | 'fetchCloudModels' | 'updateConfig' | 'getConfig' | 'cancelMessage' | 'validateProvider' | 'testProviderConnection' | 'validateAgent' | 'checkAgentAvailability' | 'fetchModelsForProvider';
+  type: 'sendMessage' | 'switchSession' | 'openConfig' | 'createSession' | 'closeSession' | 'addContext' | 'switchAgent' | 'cancelOperation' | 'retryOperation' | 'extendTimeout' | 'openConfiguration' | 'fetchOllamaModels' | 'fetchCloudModels' | 'updateConfig' | 'getConfig' | 'cancelMessage' | 'validateProvider' | 'testProviderConnection' | 'validateAgent' | 'checkAgentAvailability' | 'fetchModelsForProvider' | 'testAgent';
   payload: any;
 }
 
@@ -411,6 +411,40 @@ export class MessageService {
     }
   }
   
+  /**
+   * Test an agent configuration before adding it
+   * @param agentConfig The agent configuration to test
+   * @param testConfig Optional test configuration
+   * @returns Promise that resolves with test results
+   */
+  public testAgent(agentConfig: any, testConfig?: any): Promise<any> {
+    return new Promise((resolve, reject) => {
+      // Set up a one-time message listener for the test result
+      const subscription = this.messages$.pipe(
+        filter(message => message.type === 'agentTestResult'),
+        take(1)
+      ).subscribe(message => {
+        if (message.payload.success) {
+          resolve(message.payload.result);
+        } else {
+          reject(new Error(message.payload.error || 'Agent test failed'));
+        }
+      });
+
+      // Send test request
+      this.sendMessage({
+        type: 'testAgent',
+        payload: { agentConfig, testConfig }
+      });
+
+      // Cleanup subscription after timeout
+      setTimeout(() => {
+        subscription.unsubscribe();
+        reject(new Error('Agent test timeout - the test took too long to complete'));
+      }, 60000); // 60 second timeout for agent testing
+    });
+  }
+
   /**
    * Generate unique notification ID
    */

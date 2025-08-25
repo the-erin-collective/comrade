@@ -72,7 +72,7 @@ describe('ProviderManagerService', () => {
     it('should add local network provider successfully', async () => {
       const providerData: ProviderFormData = {
         name: 'Ollama Provider',
-        type: 'local-network',
+        type: 'local_network',
         provider: 'ollama',
         endpoint: 'http://localhost:11434',
         localHostType: 'ollama'
@@ -82,7 +82,7 @@ describe('ProviderManagerService', () => {
 
       assert.ok(provider.id);
       assert.strictEqual(provider.name, 'Ollama Provider');
-      assert.strictEqual(provider.type, 'local-network');
+      assert.strictEqual(provider.type, 'local_network');
       assert.strictEqual(provider.provider, 'ollama');
     });
 
@@ -219,7 +219,7 @@ describe('ProviderManagerService', () => {
     it('should reject local network provider without endpoint', async () => {
       const invalidData: ProviderFormData = {
         name: 'Test Provider',
-        type: 'local-network',
+        type: 'local_network',
         provider: 'ollama'
       };
 

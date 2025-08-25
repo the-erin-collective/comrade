@@ -45,6 +45,14 @@ export interface LocalNetworkProvider extends Provider {
 export type ProviderConfig = CloudProvider | LocalNetworkProvider;
 
 /**
+ * User preferences for agent behavior
+ */
+export interface AgentUserPreferences {
+  useStreaming: boolean; // User's choice for streaming (only applicable if both modes supported)
+  // Future user preferences can be added here
+}
+
+/**
  * Updated Agent interface that references providers instead of direct configuration
  */
 export interface Agent {
@@ -57,6 +65,7 @@ export interface Agent {
   timeout?: number;
   systemPrompt?: string;
   capabilities: AgentCapabilities;
+  userPreferences: AgentUserPreferences;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -71,6 +80,12 @@ export interface AgentCapabilities {
   reasoningDepth: 'basic' | 'intermediate' | 'advanced';
   speed: 'fast' | 'medium' | 'slow';
   costTier: 'low' | 'medium' | 'high';
+  // Streaming capabilities
+  supportsStreaming: boolean;
+  supportsNonStreaming: boolean;
+  preferredStreamingMode: 'streaming' | 'non-streaming';
+  maxContextLength: number;
+  supportedFormats: string[];
 }
 
 /**
@@ -97,6 +112,7 @@ export interface AgentFormData {
   timeout?: number;
   systemPrompt?: string;
   capabilities?: Partial<AgentCapabilities>;
+  userPreferences?: Partial<AgentUserPreferences>;
 }
 
 /**
@@ -118,12 +134,45 @@ export interface ProviderValidationResult extends ValidationResult {
 }
 
 /**
+ * Agent test result with comprehensive capability detection
+ */
+export interface AgentTestResult {
+  success: boolean;
+  responseTime: number;
+  error?: string;
+  capabilities: {
+    supportsStreaming: boolean;
+    supportsNonStreaming: boolean;
+    preferredStreamingMode: 'streaming' | 'non-streaming';
+    hasVision: boolean;
+    hasToolUse: boolean;
+    maxContextLength: number;
+    supportedFormats: string[];
+  };
+  testDetails: {
+    streamingTest: {
+      attempted: boolean;
+      successful: boolean;
+      responseTime?: number;
+      error?: string;
+    };
+    nonStreamingTest: {
+      attempted: boolean;
+      successful: boolean;
+      responseTime?: number;
+      error?: string;
+    };
+  };
+}
+
+/**
  * Agent validation result with provider dependency information
  */
 export interface AgentValidationResult extends ValidationResult {
   providerStatus?: 'active' | 'inactive' | 'not_found';
   modelAvailable?: boolean;
   estimatedCost?: 'low' | 'medium' | 'high';
+  testResult?: AgentTestResult;
 }
 
 /**

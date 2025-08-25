@@ -281,13 +281,26 @@ export class AIAgentService {
         // Truncate context if needed (additional safety check)
         conversationContext.truncateIfNeeded();
 
-        // If streaming is requested, use the streaming method
-        if (onChunk) {
-          return await this.streamMessageWithRetry(sessionId, message, onChunk, conversationContext, retryCount);
+        // Get model adapter first to check capabilities
+        const adapter = await this.getOrCreateModelAdapter();
+        const capabilities = adapter.getCapabilities();
+        
+        // Decide whether to use streaming based on:
+        // 1. If onChunk callback is provided (explicit streaming request)
+        // 2. User's streaming preference (if available)
+        // 3. Model's preferred streaming mode (auto-detected preference)
+        const userPreference = this.getUserStreamingPreference();
+        const shouldUseStreaming = onChunk || 
+                                 (userPreference !== null ? userPreference : capabilities.preferStreaming) && 
+                                 capabilities.supportsStreaming;
+        
+        if (shouldUseStreaming && capabilities.supportsStreaming) {
+          // Use streaming with a wrapper callback if no onChunk provided
+          const streamCallback = onChunk || (() => {}); // No-op callback for auto-streaming
+          return await this.streamMessageWithRetry(sessionId, message, streamCallback, conversationContext, retryCount);
         }
 
-        // Get model adapter and send request
-        const adapter = await this.getOrCreateModelAdapter();
+        // Use non-streaming approach
         const prompt = this.formatPromptForModel(conversationContext);
         const response = await adapter.sendRequest(prompt);
         const parsedResponse = adapter.parseResponse(response);
@@ -386,28 +399,27 @@ export class AIAgentService {
       this.isStreaming = true;
       this.currentStreamAbortController = new AbortController();
 
-      // TODO: Replace with actual model adapter streaming implementation
-      // This is a mock implementation that simulates streaming
-      const words = 'This is a simulated streaming response from the AI model. '.split(' ');
-      
-      for (let i = 0; i < words.length; i++) {
-        if (this.currentStreamAbortController.signal.aborted) {
-          throw new Error('Streaming was aborted');
-        }
+      // Get model adapter and format prompt
+      const adapter = await this.getOrCreateModelAdapter();
+      const prompt = this.formatPromptForModel(context);
 
-        const word = words[i] + (i < words.length - 1 ? ' ' : '');
-        fullResponse += word;
+      // Use actual model adapter streaming
+      await adapter.sendStreamingRequest(prompt, (chunk: { content: string; isComplete: boolean; toolCalls?: ToolCall[]; metadata?: any }) => {
+        if (chunk.content) {
+          fullResponse += chunk.content;
+        }
         
-        // Simulate network delay
-        await new Promise(resolve => setTimeout(resolve, 50));
+        if (chunk.toolCalls) {
+          toolCalls.push(...chunk.toolCalls);
+        }
         
-        // Send chunk to the callback
+        // Forward chunk to callback
         onChunk({
-          content: word,
-          isComplete: i === words.length - 1,
-          toolCalls: i === words.length - 1 ? toolCalls : undefined
+          content: chunk.content,
+          isComplete: chunk.isComplete,
+          toolCalls: chunk.isComplete ? toolCalls : undefined
         });
-      }
+      });
 
       const processingTime = Date.now() - startTime;
       
@@ -417,7 +429,7 @@ export class AIAgentService {
         toolCalls,
         metadata: {
           model: this.currentModel?.model || 'unknown',
-          tokensUsed: fullResponse.length / 4, // Rough estimate
+          tokensUsed: Math.ceil(fullResponse.length / 4), // Rough estimate
           processingTime,
           timestamp: new Date()
         }
@@ -556,7 +568,7 @@ export class AIAgentService {
             retryCount,
             errorCode: (error as any).code || 'execution_error'
           }
-        };
+        } as AIToolResult;
       }
     }
 
@@ -572,7 +584,7 @@ export class AIAgentService {
         timestamp: new Date(),
         retryCount: maxRetries
       }
-    };
+    } as AIToolResult;
   }
 
   /**
@@ -660,6 +672,19 @@ export class AIAgentService {
    */
   getCurrentModel(): ModelConfig | undefined {
     return this.currentModel ? { ...this.currentModel } : undefined;
+  }
+
+  /**
+   * Get user's streaming preference for the current model
+   * 
+   * @returns User's streaming preference or null if not set
+   */
+  private getUserStreamingPreference(): boolean | null {
+    // This would typically come from the agent configuration
+    // For now, we'll return null to use the model's default preference
+    // In a full implementation, this would look up the user's preference
+    // from the agent configuration stored in the extension
+    return null;
   }
 
   /**
@@ -1202,9 +1227,102 @@ export class AIAgentService {
     context: ConversationContext,
     retryCount: number
   ): Promise<AIResponse> {
-    // For now, fall back to the existing streaming implementation
-    // TODO: Add retry logic to streaming when model adapters support it
-    return this.streamMessage(sessionId, message, onChunk, context);
+    const maxStreamingRetries = 2; // Fewer retries for streaming to avoid long delays
+    let currentRetry = retryCount;
+    
+    while (currentRetry <= maxStreamingRetries) {
+      try {
+        return await this.streamMessage(sessionId, message, onChunk, context);
+      } catch (error) {
+        this.logger.error('Streaming attempt failed', {
+          sessionId,
+          retryCount: currentRetry,
+          error: error instanceof Error ? error.message : String(error)
+        });
+        
+        // Check if we should retry streaming errors
+        if (this.shouldRetryStreamingError(error, currentRetry, maxStreamingRetries)) {
+          currentRetry++;
+          const retryDelay = this.calculateRetryDelay(currentRetry);
+          
+          this.logger.info('Retrying streaming request', {
+            sessionId,
+            retryCount: currentRetry,
+            retryDelay
+          });
+          
+          await this.delay(retryDelay);
+          continue;
+        }
+        
+        // If streaming fails and we can't retry, fall back to non-streaming
+        this.logger.warn('Streaming failed, falling back to non-streaming', {
+          sessionId,
+          retryCount: currentRetry,
+          error: error instanceof Error ? error.message : String(error)
+        });
+        
+        try {
+          const adapter = await this.getOrCreateModelAdapter();
+          const prompt = this.formatPromptForModel(context);
+          const response = await adapter.sendRequest(prompt);
+          const parsedResponse = adapter.parseResponse(response);
+          
+          // Add AI response to context
+          const assistantMessage: AIMessage = {
+            role: 'assistant',
+            content: parsedResponse.content,
+            timestamp: new Date(),
+            toolCalls: parsedResponse.toolCalls
+          };
+          context.addMessage(assistantMessage);
+          
+          // Send the complete response as a single chunk if callback provided
+          if (onChunk) {
+            onChunk({
+              content: parsedResponse.content,
+              isComplete: true
+            });
+          }
+          
+          return parsedResponse;
+        } catch (fallbackError) {
+          this.logger.error('Non-streaming fallback also failed', {
+            sessionId,
+            error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+          });
+          throw fallbackError;
+        }
+      }
+    }
+    
+    throw new Error('Maximum streaming retries exceeded');
+  }
+
+  /**
+   * Check if a streaming error should be retried
+   */
+  private shouldRetryStreamingError(error: any, retryCount: number, maxRetries: number): boolean {
+    if (retryCount >= maxRetries) {
+      return false;
+    }
+    
+    // Retry connection errors
+    if (error.message?.includes('connection') || error.message?.includes('network')) {
+      return true;
+    }
+    
+    // Retry timeout errors
+    if (error.message?.includes('timeout') || error.message?.includes('aborted')) {
+      return true;
+    }
+    
+    // Don't retry streaming-specific errors (fall back to non-streaming instead)
+    if (error.message?.includes('streaming') || error.message?.includes('stream')) {
+      return false;
+    }
+    
+    return false;
   }
 
   /**

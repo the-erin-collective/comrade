@@ -8,7 +8,7 @@ import * as vscode from 'vscode';
 import { ConfigurationManager } from '../../core/config';
 import { AgentRegistry } from '../../core/registry';
 import { ProviderManagerService } from '../../core/provider-manager';
-import { ProviderConfig, Agent, ProviderFormData, AgentFormData } from '../../core/types';
+import { ProviderConfig, Agent, ProviderFormData, AgentFormData, LocalNetworkProvider } from '../../core/types';
 
 // Mock webview for testing UI interactions
 class MockWebview implements vscode.Webview {
@@ -167,7 +167,7 @@ describe('Settings UI Integration Tests', () => {
             // Test local network provider setup
             const providerFormData: ProviderFormData = {
                 name: 'Local Ollama',
-                type: 'local-network',
+                type: 'local_network',
                 provider: 'ollama',
                 endpoint: 'http://localhost:11434',
                 localHostType: 'ollama'
@@ -176,7 +176,7 @@ describe('Settings UI Integration Tests', () => {
             // Simulate user selecting local network provider type
             mockWebviewPanel.webview.simulateMessage({
                 type: 'providerTypeSelected',
-                payload: { type: 'local-network' }
+                payload: { type: 'local_network' }
             });
 
             // Simulate user filling out local network form
@@ -188,7 +188,7 @@ describe('Settings UI Integration Tests', () => {
             const newProvider = await providerManager.addProvider(providerFormData);
             
             assert.strictEqual(newProvider.name, 'Local Ollama');
-            assert.strictEqual(newProvider.type, 'local-network');
+            assert.strictEqual(newProvider.type, 'local_network');
             assert.strictEqual(newProvider.provider, 'ollama');
             assert.strictEqual(newProvider.endpoint, 'http://localhost:11434');
             assert.strictEqual(newProvider.isActive, true);
@@ -202,7 +202,7 @@ describe('Settings UI Integration Tests', () => {
             // Verify provider is accessible
             const providers = await providerManager.getProviders();
             assert.strictEqual(providers.length, 1);
-            assert.strictEqual(providers[0].endpoint, 'http://localhost:11434');
+            assert.strictEqual((providers[0] as LocalNetworkProvider).endpoint, 'http://localhost:11434');
         });
 
         it('Should handle provider edit workflow', async () => {
@@ -320,12 +320,19 @@ describe('Settings UI Integration Tests', () => {
                 model: 'gpt-4',
                 temperature: 0.7,
                 maxTokens: 4000,
+                timeout: 30000,
+                systemPrompt: 'You are a helpful AI assistant.',
                 capabilities: {
                     hasVision: false,
                     hasToolUse: true,
                     reasoningDepth: 'advanced',
                     speed: 'medium',
-                    costTier: 'high'
+                    costTier: 'high',
+                    supportsStreaming: true,
+                    supportsNonStreaming: true,
+                    preferredStreamingMode: 'streaming',
+                    maxContextLength: 4000,
+                    supportedFormats: ['text']
                 }
             };
 
@@ -347,7 +354,7 @@ describe('Settings UI Integration Tests', () => {
             // Create local network provider
             const provider = await providerManager.addProvider({
                 name: 'Local Ollama Provider',
-                type: 'local-network',
+                type: 'local_network',
                 provider: 'ollama',
                 endpoint: 'http://localhost:11434',
                 localHostType: 'ollama'
@@ -371,12 +378,21 @@ describe('Settings UI Integration Tests', () => {
                 name: 'Local Llama Agent',
                 providerId: provider.id,
                 model: 'llama2',
+                temperature: 0.8,
+                maxTokens: 2000,
+                timeout: 45000,
+                systemPrompt: 'You are a helpful AI assistant running locally.',
                 capabilities: {
                     hasVision: false,
                     hasToolUse: false,
                     reasoningDepth: 'intermediate',
                     speed: 'fast',
-                    costTier: 'low'
+                    costTier: 'low',
+                    supportsStreaming: true,
+                    supportsNonStreaming: true,
+                    preferredStreamingMode: 'streaming',
+                    maxContextLength: 4000,
+                    supportedFormats: ['text']
                 }
             };
 
@@ -550,7 +566,7 @@ describe('Settings UI Integration Tests', () => {
             // Create provider and agents
             const provider = await providerManager.addProvider({
                 name: 'Provider to Deactivate',
-                type: 'local-network',
+                type: 'local_network',
                 provider: 'ollama',
                 endpoint: 'http://localhost:11434',
                 localHostType: 'ollama'

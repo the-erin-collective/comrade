@@ -14,34 +14,7 @@ import { AgentWithProvider, Agent, ProviderConfig, AgentFormData } from '../../i
 import * as AgentActions from '../../state/agent/agent.actions';
 
 
-// Legacy interface for backward compatibility during migration
-interface AgentConfig {
-  id: string;
-  name: string;
-  providerId: string; // Changed from provider to providerId to match actual data
-  model: string;
-  endpoint?: string;
-  temperature?: number;
-  maxTokens?: number;
-  timeout?: number;
-  capabilities: {
-    hasVision: boolean;
-    hasToolUse: boolean;
-    reasoningDepth: 'basic' | 'intermediate' | 'advanced';
-    speed: 'fast' | 'medium' | 'slow';
-    costTier: 'low' | 'medium' | 'high';
-    supportedLanguages?: string[];
-    specializations?: string[];
-  };
-  isEnabledForAssignment?: boolean;
-  // Store our custom fields in a metadata object or handle them separately
-  _metadata?: {
-    apiKey?: string;
-    networkAddress?: string;
-    localHostType?: string;
-    multimodal?: boolean;
-  };
-}
+
 
 @Component({
   selector: 'app-settings',
@@ -249,7 +222,7 @@ interface AgentConfig {
                 class="form-input"
                 [class.error]="!agentNameFieldState().isValid"
                 [class.validating]="agentNameFieldState().isValidating"
-                [disabled]="savingAgent()">
+                [disabled]="savingAgent() || testingAgent()">
               @if (agentNameFieldState().isValidating) {
                 <div class="field-validation validating">
                   <span class="loading-spinner-small"></span>
@@ -267,7 +240,7 @@ interface AgentConfig {
 
             <div class="form-group">
               <label for="provider">Provider *</label>
-              <select id="provider" name="provider" [(ngModel)]="agentForm.provider" (ngModelChange)="onProviderChange($event); validateAgentProviderField($event)" required #providerField="ngModel" class="form-select" [class.error]="!agentProviderFieldState().isValid" [disabled]="savingAgent()">
+              <select id="provider" name="provider" [(ngModel)]="agentForm.provider" (ngModelChange)="onProviderChange($event); validateAgentProviderField($event)" required #providerField="ngModel" class="form-select" [class.error]="!agentProviderFieldState().isValid" [disabled]="savingAgent() || testingAgent()">
                 <option value="" disabled>Select a provider...</option>
                 @for (provider of activeProviders(); track provider.id) {
                   <option [value]="provider.id">{{ provider.name }} ({{ getProviderTypeDisplayName(provider.type, provider.provider) }})</option>
@@ -287,7 +260,7 @@ interface AgentConfig {
 
             @if (agentForm.provider) {
               <div class="form-group">
-                <button type="button" class="fetch-models-btn" (click)="fetchModelsForProvider()" [disabled]="loadingModels()">
+                <button type="button" class="fetch-models-btn" (click)="fetchModelsForProvider()" [disabled]="loadingModels() || savingAgent() || testingAgent()">
                   @if (loadingModels()) {
                     <span class="loading-spinner-small"></span>
                     Loading Models...
@@ -304,7 +277,7 @@ interface AgentConfig {
             <div class="form-group">
               <label for="model">Model *</label>
               @if (availableModels().length > 0) {
-                <select id="model" name="model" [(ngModel)]="agentForm.model" (ngModelChange)="validateAgentModelField($event)" required class="form-select" [class.error]="!agentModelFieldState().isValid" [disabled]="savingAgent()">
+                <select id="model" name="model" [(ngModel)]="agentForm.model" (ngModelChange)="validateAgentModelField($event)" required class="form-select" [class.error]="!agentModelFieldState().isValid" [disabled]="savingAgent() || testingAgent()">
                   <option value="" disabled>Select a model...</option>
                   @for (model of availableModels(); track model.name) {
                     <option [value]="model.name">{{ model.name }}{{ model.description ? ' - ' + model.description : '' }}</option>
@@ -318,7 +291,7 @@ interface AgentConfig {
                   [(ngModel)]="agentForm.model" 
                   (input)="onAgentModelInput($event)"
                   placeholder="Enter model name or fetch models from provider" 
-                  [disabled]="!agentForm.provider || savingAgent()"
+                  [disabled]="!agentForm.provider || savingAgent() || testingAgent()"
                   required
                   class="form-input"
                   [class.error]="!agentModelFieldState().isValid"
@@ -354,7 +327,7 @@ interface AgentConfig {
                 class="form-input"
                 [class.error]="!agentTemperatureFieldState().isValid"
                 [class.validating]="agentTemperatureFieldState().isValidating"
-                [disabled]="savingAgent()">
+                [disabled]="savingAgent() || testingAgent()">
               @if (agentTemperatureFieldState().isValidating) {
                 <div class="field-validation validating">
                   <span class="loading-spinner-small"></span>
@@ -383,7 +356,7 @@ interface AgentConfig {
                 class="form-input"
                 [class.error]="!agentMaxTokensFieldState().isValid"
                 [class.validating]="agentMaxTokensFieldState().isValidating"
-                [disabled]="savingAgent()">
+                [disabled]="savingAgent() || testingAgent()">
               @if (agentMaxTokensFieldState().isValidating) {
                 <div class="field-validation validating">
                   <span class="loading-spinner-small"></span>
@@ -406,11 +379,46 @@ interface AgentConfig {
               </label>
               <p class="setting-description">Enable if this model can process images and visual content.</p>
             </div>
+
+            <!-- Streaming Preference (shown after testing or if editing existing agent) -->
+            @if (agentForm.testResult || editingAgent()) {
+              <div class="form-group">
+                <label class="checkbox-label">
+                  <input 
+                    type="checkbox" 
+                    [(ngModel)]="agentForm.useStreaming" 
+                    name="useStreaming"
+                    [disabled]="!getStreamingToggleEnabled()"
+                    [title]="getStreamingToggleTooltip()">
+                  <span class="checkbox-text">Use streaming responses</span>
+                </label>
+                <p class="setting-description">{{ getStreamingDescription() }}</p>
+                @if (agentForm.testResult) {
+                  <div class="streaming-test-info">
+                    <div class="test-result-summary">
+                      @if (agentForm.testResult.capabilities.supportsStreaming && agentForm.testResult.capabilities.supportsNonStreaming) {
+                        <span class="test-status both-supported">✓ Both streaming and non-streaming supported</span>
+                        <span class="preferred-mode">Recommended: {{ agentForm.testResult.capabilities.preferredStreamingMode }}</span>
+                      } @else if (agentForm.testResult.capabilities.supportsStreaming) {
+                        <span class="test-status streaming-only">⚡ Streaming only</span>
+                      } @else if (agentForm.testResult.capabilities.supportsNonStreaming) {
+                        <span class="test-status non-streaming-only">📄 Non-streaming only</span>
+                      } @else {
+                        <span class="test-status error">⚠ Neither mode working</span>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            }
           </div>
           <div class="modal-footer">
-            <button type="button" class="secondary-btn" (click)="closeAgentForm()" [disabled]="savingAgent()">Cancel</button>
-            <button type="submit" class="primary-btn" [disabled]="savingAgent() || !isAgentFormValid() || agentFormErrors().length > 0">
-              @if (savingAgent()) {
+            <button type="button" class="secondary-btn" (click)="closeAgentForm()" [disabled]="savingAgent() || testingAgent()">Cancel</button>
+            <button type="submit" class="primary-btn" [disabled]="savingAgent() || testingAgent() || !isAgentFormValid() || agentFormErrors().length > 0">
+              @if (testingAgent()) {
+                <span class="loading-spinner-small"></span>
+                Testing Agent...
+              } @else if (savingAgent()) {
                 <span class="loading-spinner-small"></span>
                 {{ editingAgent() ? 'Updating...' : 'Adding...' }}
               } @else {
@@ -1068,13 +1076,64 @@ interface AgentConfig {
     .secondary-btn:disabled:hover {
       background: var(--background-secondary);
     }
+
+    /* Streaming test info styles */
+    .streaming-test-info {
+      margin-top: 0.75rem;
+      padding: 0.75rem;
+      background: var(--background-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+    }
+
+    .test-result-summary {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .test-status {
+      font-size: 12px;
+      font-weight: 500;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .test-status.both-supported {
+      background: var(--success-bg);
+      color: var(--success-color);
+    }
+
+    .test-status.streaming-only {
+      background: var(--info-bg);
+      color: var(--info-color);
+    }
+
+    .test-status.non-streaming-only {
+      background: var(--warning-bg);
+      color: var(--warning-color);
+    }
+
+    .test-status.error {
+      background: var(--error-bg);
+      color: var(--error-color);
+    }
+
+    .preferred-mode {
+      font-size: 11px;
+      color: var(--text-secondary);
+      font-style: italic;
+    }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class SettingsComponent {
   closeSettings = output<void>();
 
-  public agents = signal<AgentConfig[]>([]);
+  public agents = signal<Agent[]>([]);
   public providers = signal<ProviderConfig[]>([]);
   public showAgentForm = signal(false);
   public editingAgent = signal<Agent | null>(null);
@@ -1113,8 +1172,19 @@ export class SettingsComponent {
         temperature: agentConfig.temperature,
         maxTokens: agentConfig.maxTokens,
         timeout: agentConfig.timeout,
-        capabilities: agentConfig.capabilities,
-        isActive: agentConfig.isEnabledForAssignment !== false, // Default to true if not specified
+        capabilities: {
+          ...agentConfig.capabilities,
+          // Add missing streaming capabilities with defaults
+          supportsStreaming: true,
+          supportsNonStreaming: true,
+          preferredStreamingMode: 'streaming',
+          maxContextLength: 4096,
+          supportedFormats: ['text']
+        },
+        userPreferences: {
+          useStreaming: true // Default preference
+        },
+        isActive: agentConfig.isActive !== false, // Default to true if not specified
         createdAt: new Date(), // We don't have this from config, so use current date
         updatedAt: new Date()  // We don't have this from config, so use current date
       };
@@ -1160,11 +1230,16 @@ export class SettingsComponent {
     endpoint: '',
     temperature: 0.7,
     maxTokens: 4000,
-    timeout: 30000
+    timeout: 30000,
+    // Streaming preferences
+    useStreaming: true, // User's preference
+    // Test results (populated after testing)
+    testResult: null as any // Will store AgentTestResult
   };
 
   // UI state signals
   public savingAgent = signal(false);
+  public testingAgent = signal(false);
   public agentFormErrors = signal<string[]>([]);
   public successMessage = signal<string | null>(null);
   public errorMessage = signal<string | null>(null);
@@ -1349,7 +1424,10 @@ export class SettingsComponent {
       endpoint: '',
       temperature: agentWithProvider.agent.temperature || 0.7,
       maxTokens: agentWithProvider.agent.maxTokens || 4000,
-      timeout: agentWithProvider.agent.timeout || 30000
+      timeout: agentWithProvider.agent.timeout || 30000,
+      useStreaming: agentWithProvider.agent.userPreferences?.useStreaming ?? 
+                   (agentWithProvider.agent.capabilities.preferredStreamingMode === 'streaming'),
+      testResult: null // Don't carry over test results when editing
     };
     this.availableModels.set([]);
     this.modelError.set(null);
@@ -1414,59 +1492,191 @@ export class SettingsComponent {
     try {
       const editing = this.editingAgent();
 
-      if (editing) {
-        // Update existing agent
-        const updates: Partial<Agent> = {
-          name: this.agentForm.name || this.generateAgentName(),
-          providerId: this.agentForm.provider,
-          model: this.agentForm.model,
-          temperature: this.agentForm.temperature,
-          maxTokens: this.agentForm.maxTokens,
-          timeout: this.agentForm.timeout,
-          capabilities: {
-            ...editing.capabilities,
-            hasVision: this.agentForm.multimodal
-          }
-        };
-
-        // Dispatch NgRx action to update agent
-        this.store.dispatch(AgentActions.updateAgent({
-          agentId: editing.id,
-          updates
-        }));
-
-        // Listen for success/failure
-        this.handleAgentActionResult('update');
-
+      // For new agents, test them first before adding
+      if (!editing) {
+        await this.testAndSaveNewAgent();
       } else {
-        // Create new agent
-        const agentData: AgentFormData = {
-          name: this.agentForm.name || this.generateAgentName(),
-          providerId: this.agentForm.provider,
-          model: this.agentForm.model,
-          temperature: this.agentForm.temperature,
-          maxTokens: this.agentForm.maxTokens,
-          timeout: this.agentForm.timeout,
-          capabilities: {
-            hasVision: this.agentForm.multimodal,
-            hasToolUse: true,
-            reasoningDepth: 'intermediate',
-            speed: 'medium',
-            costTier: 'medium'
-          }
-        };
-
-        // Dispatch NgRx action to add agent
-        this.store.dispatch(AgentActions.addAgent({ agentData }));
-
-        // Listen for success/failure
-        this.handleAgentActionResult('add');
+        // For existing agents, update directly (testing is optional)
+        await this.updateExistingAgent(editing);
       }
 
     } catch (error) {
       this.savingAgent.set(false);
       this.showErrorMessage(`Failed to save agent: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  /**
+   * Test and save a new agent
+   */
+  private async testAndSaveNewAgent(): Promise<void> {
+    // Show testing progress
+    this.testingAgent.set(true);
+    this.showInfoMessage('Testing agent configuration...');
+
+    try {
+      // Create standard ModelConfig for testing
+      const modelConfig = {
+        name: this.agentForm.model,
+        provider: this.agentForm.provider,
+        endpoint: this.getProviderEndpoint(this.agentForm.provider),
+        apiKey: this.getProviderApiKey(this.agentForm.provider),
+        temperature: this.agentForm.temperature,
+        maxTokens: this.agentForm.maxTokens,
+        timeout: this.agentForm.timeout
+      };
+
+      // Test the agent comprehensively using the message service
+      const testResult = await this.messageService.testAgent(modelConfig);
+
+      // Store test result in form for UI display
+      this.agentForm.testResult = testResult;
+
+      // Show test results
+      if (testResult.success) {
+        const streamingStatus = testResult.capabilities.supportsStreaming && testResult.capabilities.supportsNonStreaming 
+          ? 'both modes supported' 
+          : testResult.capabilities.supportsStreaming 
+            ? 'streaming only' 
+            : 'non-streaming only';
+        
+        this.showSuccessMessage(`Agent test successful! Response time: ${testResult.responseTime}ms (${streamingStatus})`);
+        
+        // Set user preference based on test results if not already set
+        if (!this.agentForm.useStreaming && testResult.capabilities.preferredStreamingMode === 'streaming') {
+          this.agentForm.useStreaming = true;
+        }
+
+        // Create agent with test results
+        await this.createAgentWithTestResults(testResult);
+      } else {
+        this.testingAgent.set(false);
+        this.savingAgent.set(false);
+        this.showErrorMessage(`Agent test failed: ${testResult.error || 'Unknown error'}`);
+        return;
+      }
+
+    } catch (error) {
+      this.testingAgent.set(false);
+      this.savingAgent.set(false);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.showErrorMessage(`Agent test failed: ${errorMessage}`);
+      return;
+    } finally {
+      this.testingAgent.set(false);
+    }
+  }
+
+  /**
+   * Update an existing agent
+   */
+  private async updateExistingAgent(editing: Agent): Promise<void> {
+    const updates: Partial<Agent> = {
+      name: this.agentForm.name || this.generateAgentName(),
+      providerId: this.agentForm.provider,
+      model: this.agentForm.model,
+      temperature: this.agentForm.temperature,
+      maxTokens: this.agentForm.maxTokens,
+      timeout: this.agentForm.timeout,
+      capabilities: {
+        ...editing.capabilities,
+        hasVision: this.agentForm.multimodal
+      },
+      userPreferences: {
+        ...editing.userPreferences,
+        useStreaming: this.agentForm.useStreaming
+      }
+    };
+
+    // Dispatch NgRx action to update agent
+    this.store.dispatch(AgentActions.updateAgent({
+      agentId: editing.id,
+      updates
+    }));
+
+    // Listen for success/failure
+    this.handleAgentActionResult('update');
+  }
+
+  /**
+   * Create agent with test results
+   */
+  private async createAgentWithTestResults(testResult: any): Promise<void> {
+    // Determine capabilities based on test results
+    const capabilities = {
+      hasVision: this.agentForm.multimodal || testResult.capabilities.hasVision,
+      hasToolUse: testResult.capabilities.hasToolUse,
+      reasoningDepth: 'intermediate' as const,
+      speed: this.determineSpeedFromTestResult(testResult),
+      costTier: 'medium' as const,
+      // New streaming capabilities
+      supportsStreaming: testResult.capabilities.supportsStreaming,
+      supportsNonStreaming: testResult.capabilities.supportsNonStreaming,
+      preferredStreamingMode: testResult.capabilities.preferredStreamingMode,
+      maxContextLength: testResult.capabilities.maxContextLength,
+      supportedFormats: testResult.capabilities.supportedFormats
+    };
+
+    // User preferences
+    const userPreferences = {
+      useStreaming: this.agentForm.useStreaming
+    };
+
+    const agentData: AgentFormData = {
+      name: this.agentForm.name || this.generateAgentName(),
+      providerId: this.agentForm.provider,
+      model: this.agentForm.model,
+      temperature: this.agentForm.temperature,
+      maxTokens: this.agentForm.maxTokens,
+      timeout: this.agentForm.timeout,
+      capabilities,
+      userPreferences
+    };
+
+    // Dispatch NgRx action to add agent
+    this.store.dispatch(AgentActions.addAgent({ agentData }));
+
+    // Listen for success/failure
+    this.handleAgentActionResult('add');
+  }
+
+  /**
+   * Determine speed rating from test results
+   */
+  private determineSpeedFromTestResult(testResult: any): 'fast' | 'medium' | 'slow' {
+    const responseTime = testResult.responseTime;
+    
+    if (responseTime < 3000) {
+      return 'fast';
+    } else if (responseTime < 10000) {
+      return 'medium';
+    } else {
+      return 'slow';
+    }
+  }
+
+  /**
+   * Get provider type from provider ID
+   */
+  private getProviderTypeFromId(providerId: string): string {
+    const provider = this.activeProviders().find(p => p.id === providerId);
+    return provider?.type || 'unknown';
+  }
+
+  /**
+   * Get provider endpoint from provider ID
+   */
+  private getProviderEndpoint(providerId: string): string | undefined {
+    const provider = this.activeProviders().find(p => p.id === providerId);
+    return provider?.endpoint;
+  }
+
+  /**
+   * Get provider API key from provider ID
+   */
+  private getProviderApiKey(providerId: string): string | undefined {
+    const provider = this.activeProviders().find(p => p.id === providerId);
+    return provider?.apiKey;
   }
 
   private generateAgentName(): string {
@@ -1683,7 +1893,9 @@ export class SettingsComponent {
       endpoint: '',
       temperature: 0.7,
       maxTokens: 4000,
-      timeout: 30000
+      timeout: 30000,
+      useStreaming: true,
+      testResult: null
     };
     this.availableModels.set([]);
     this.modelError.set(null);
@@ -1713,6 +1925,24 @@ export class SettingsComponent {
   private showErrorMessage(message: string) {
     this.errorMessage.set(message);
     this.successMessage.set(null);
+  }
+
+  private showWarningMessage(message: string) {
+    // For now, show warnings as info messages
+    // In a full implementation, you might want a separate warning message signal
+    this.showInfoMessage(message);
+  }
+
+  private showInfoMessage(message: string) {
+    // For now, show info as success messages with shorter duration
+    this.successMessage.set(message);
+    this.errorMessage.set(null);
+    // Auto-clear info messages after 5 seconds
+    setTimeout(() => {
+      if (this.successMessage() === message) {
+        this.successMessage.set(null);
+      }
+    }, 5000);
   }
 
   public hasActiveProviders(): boolean {
@@ -1836,6 +2066,77 @@ export class SettingsComponent {
     this.store.dispatch(AgentActions.loadModelsForProvider({
       providerId: this.agentForm.provider
     }));
+  }
+
+  /**
+   * Get whether the streaming toggle should be enabled
+   */
+  getStreamingToggleEnabled(): boolean {
+    const testResult = this.agentForm.testResult;
+    if (!testResult) {
+      // If editing existing agent, allow toggle if both modes supported
+      const editingAgent = this.editingAgent();
+      if (editingAgent) {
+        return editingAgent.capabilities.supportsStreaming && editingAgent.capabilities.supportsNonStreaming;
+      }
+      return false;
+    }
+    
+    // Enable toggle only if both streaming and non-streaming are supported
+    return testResult.capabilities.supportsStreaming && testResult.capabilities.supportsNonStreaming;
+  }
+
+  /**
+   * Get tooltip text for the streaming toggle
+   */
+  getStreamingToggleTooltip(): string {
+    const testResult = this.agentForm.testResult;
+    if (!testResult) {
+      const editingAgent = this.editingAgent();
+      if (editingAgent) {
+        if (editingAgent.capabilities.supportsStreaming && editingAgent.capabilities.supportsNonStreaming) {
+          return 'Choose between streaming and non-streaming responses';
+        } else if (editingAgent.capabilities.supportsStreaming) {
+          return 'This model only supports streaming responses';
+        } else {
+          return 'This model only supports non-streaming responses';
+        }
+      }
+      return 'Test the agent to determine streaming capabilities';
+    }
+
+    if (testResult.capabilities.supportsStreaming && testResult.capabilities.supportsNonStreaming) {
+      return `Choose between streaming and non-streaming responses. Recommended: ${testResult.capabilities.preferredStreamingMode}`;
+    } else if (testResult.capabilities.supportsStreaming) {
+      return 'This model only supports streaming responses';
+    } else if (testResult.capabilities.supportsNonStreaming) {
+      return 'This model only supports non-streaming responses';
+    } else {
+      return 'This model does not support either streaming or non-streaming responses';
+    }
+  }
+
+  /**
+   * Get description text for the streaming setting
+   */
+  getStreamingDescription(): string {
+    const testResult = this.agentForm.testResult;
+    if (!testResult) {
+      return 'Streaming provides real-time response chunks as the AI generates them, while non-streaming waits for the complete response.';
+    }
+
+    if (testResult.capabilities.supportsStreaming && testResult.capabilities.supportsNonStreaming) {
+      const streamingTime = testResult.testDetails.streamingTest.responseTime || 0;
+      const nonStreamingTime = testResult.testDetails.nonStreamingTest.responseTime || 0;
+      const faster = streamingTime < nonStreamingTime ? 'streaming' : 'non-streaming';
+      return `Both modes work. ${faster} was faster in testing (${faster === 'streaming' ? streamingTime : nonStreamingTime}ms vs ${faster === 'streaming' ? nonStreamingTime : streamingTime}ms).`;
+    } else if (testResult.capabilities.supportsStreaming) {
+      return 'This model only works with streaming responses. Non-streaming mode failed during testing.';
+    } else if (testResult.capabilities.supportsNonStreaming) {
+      return 'This model only works with non-streaming responses. Streaming mode failed during testing.';
+    } else {
+      return 'Warning: Neither streaming nor non-streaming mode worked during testing. This agent may not function properly.';
+    }
   }
 
 

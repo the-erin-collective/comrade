@@ -119,7 +119,11 @@ export class ToolExecutor {
         const executionPromise = this.toolRegistry.executeTool(
           toolCall.name,
           toolCall.parameters
-        );
+        ).then(toolResult => ({
+          ...toolResult,
+          toolName: toolCall.name,
+          parameters: toolCall.parameters
+        } as AIToolResult));
 
         // Race the tool execution against the timeout
         const result = await Promise.race([executionPromise, timeoutPromise]);
@@ -139,6 +143,8 @@ export class ToolExecutor {
     return {
       success: false,
       error: lastError?.message || 'Unknown error during tool execution',
+      toolName: toolCall.name,
+      parameters: toolCall.parameters,
       metadata: {
         executionTime: 0,
         toolName: toolCall.name,
@@ -153,6 +159,8 @@ export class ToolExecutor {
     return {
       success: false,
       error: 'Tool execution was cancelled',
+      toolName: toolCall.name,
+      parameters: toolCall.parameters,
       metadata: {
         executionTime: 0,
         toolName: toolCall.name,

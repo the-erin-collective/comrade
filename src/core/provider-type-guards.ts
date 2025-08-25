@@ -24,7 +24,7 @@ export function isCloudProvider(provider: ProviderConfig): provider is CloudProv
  * Type guard to check if a provider is a local network provider
  */
 export function isLocalNetworkProvider(provider: ProviderConfig): provider is LocalNetworkProvider {
-  return provider.type === 'local-network';
+  return provider.type === 'local_network';
 }
 
 /**
@@ -35,7 +35,7 @@ export function requiresApiKey(provider: Pick<Provider, 'provider' | 'type'>): b
     return true;
   }
   
-  if (provider.type === 'local-network') {
+  if (provider.type === 'local_network') {
     return provider.provider !== 'ollama';
   }
   

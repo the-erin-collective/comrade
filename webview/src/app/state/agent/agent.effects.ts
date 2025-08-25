@@ -436,7 +436,16 @@ export class AgentEffects {
       hasToolUse: true,
       reasoningDepth: 'intermediate',
       speed: 'medium',
-      costTier: 'medium'
+      costTier: 'medium',
+      supportsStreaming: true,
+      supportsNonStreaming: true,
+      preferredStreamingMode: 'streaming',
+      maxContextLength: 4096,
+      supportedFormats: ['text']
+    };
+
+    const defaultUserPreferences = {
+      useStreaming: true
     };
 
     return {
@@ -448,6 +457,7 @@ export class AgentEffects {
       timeout: formData.timeout || 30000,
       systemPrompt: formData.systemPrompt || '',
       capabilities: { ...defaultCapabilities, ...formData.capabilities },
+      userPreferences: { ...defaultUserPreferences, ...formData.userPreferences },
       isActive: true
     };
   }

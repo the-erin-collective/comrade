@@ -137,7 +137,8 @@ export class OllamaAdapter extends AbstractModelAdapter {
       supportsStreaming: true,
       supportsSystemPrompts: true,
       maxContextLength: 4096, // Will be updated based on model
-      supportedFormats: ['text', 'json']
+      supportedFormats: ['text', 'json'],
+      preferStreaming: true // Default to streaming, will be auto-detected
     };
 
     super(capabilities);
@@ -404,9 +405,181 @@ export class OllamaAdapter extends AbstractModelAdapter {
         // Update capabilities based on model info
         this.updateCapabilitiesFromModelInfo(modelInfo);
       }
+
+      // Auto-detect streaming capability with a test request
+      await this.detectStreamingCapability();
     } catch (error) {
       console.warn('Failed to detect model capabilities:', error);
       // Use default capabilities
+    }
+  }
+
+  /**
+   * Auto-detect if the model works better with streaming by testing both approaches
+   */
+  private async detectStreamingCapability(): Promise<void> {
+    console.log(`[OllamaAdapter] Auto-detecting streaming capability for model: ${this.modelName}`);
+    
+    try {
+      // Test with a simple prompt that should get a quick response
+      const testPrompt = "Say 'test' and nothing else.";
+      
+      // First try non-streaming
+      console.log('[OllamaAdapter] Testing non-streaming response...');
+      const nonStreamingStart = Date.now();
+      let nonStreamingSuccess = false;
+      let nonStreamingResponse = '';
+      
+      try {
+        const requestBody: OllamaRequest = {
+          model: this.modelName,
+          prompt: testPrompt,
+          stream: false,
+          options: {
+            temperature: 0.1,
+            num_predict: 10, // Very short response
+          }
+        };
+
+        const response = await fetchWithTimeout(`${this.baseUrl}/api/generate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+          timeout: 15000 // 15 second timeout for test
+        });
+
+        if (response.ok) {
+          const data = await response.json() as OllamaResponse;
+          nonStreamingResponse = data.response || '';
+          nonStreamingSuccess = nonStreamingResponse.trim().length > 0;
+          console.log(`[OllamaAdapter] Non-streaming test result: success=${nonStreamingSuccess}, response="${nonStreamingResponse.trim()}", time=${Date.now() - nonStreamingStart}ms`);
+        }
+      } catch (error) {
+        console.log(`[OllamaAdapter] Non-streaming test failed:`, error);
+      }
+
+      // If non-streaming failed or returned empty, prefer streaming
+      if (!nonStreamingSuccess || nonStreamingResponse.trim().length === 0) {
+        console.log('[OllamaAdapter] Non-streaming failed or returned empty response, preferring streaming mode');
+        this.capabilities = {
+          ...this.capabilities,
+          preferStreaming: true
+        };
+        return;
+      }
+
+      // Now test streaming to see if it's more reliable
+      console.log('[OllamaAdapter] Testing streaming response...');
+      const streamingStart = Date.now();
+      let streamingSuccess = false;
+      let streamingResponse = '';
+      
+      try {
+        const requestBody: OllamaRequest = {
+          model: this.modelName,
+          prompt: testPrompt,
+          stream: true,
+          options: {
+            temperature: 0.1,
+            num_predict: 10,
+          }
+        };
+
+        const response = await fetchWithTimeout(`${this.baseUrl}/api/generate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+          timeout: 15000
+        });
+
+        if (response.ok && response.body) {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+
+              for (const line of lines) {
+                if (line.trim()) {
+                  try {
+                    const data = JSON.parse(line) as OllamaResponse;
+                    if (data.response) {
+                      streamingResponse += data.response;
+                    }
+                    if (data.done) {
+                      streamingSuccess = streamingResponse.trim().length > 0;
+                      console.log(`[OllamaAdapter] Streaming test result: success=${streamingSuccess}, response="${streamingResponse.trim()}", time=${Date.now() - streamingStart}ms`);
+                      reader.releaseLock();
+                      break;
+                    }
+                  } catch (parseError) {
+                    // Ignore parse errors in test
+                  }
+                }
+              }
+            }
+          } finally {
+            reader.releaseLock();
+          }
+        }
+      } catch (error) {
+        console.log(`[OllamaAdapter] Streaming test failed:`, error);
+      }
+
+      // Decide which mode to prefer based on test results
+      if (streamingSuccess && !nonStreamingSuccess) {
+        console.log('[OllamaAdapter] Streaming works but non-streaming failed, preferring streaming mode');
+        this.capabilities = {
+          ...this.capabilities,
+          preferStreaming: true
+        };
+      } else if (!streamingSuccess && nonStreamingSuccess) {
+        console.log('[OllamaAdapter] Non-streaming works but streaming failed, preferring non-streaming mode');
+        this.capabilities = {
+          ...this.capabilities,
+          preferStreaming: false
+        };
+      } else if (streamingSuccess && nonStreamingSuccess) {
+        // Both work, use heuristics to decide
+        const streamingTime = Date.now() - streamingStart;
+        const nonStreamingTime = Date.now() - nonStreamingStart;
+        
+        // If streaming is significantly faster or responses are similar quality, prefer streaming
+        const preferStreaming = streamingTime < nonStreamingTime * 0.8 || 
+                               streamingResponse.trim().length >= nonStreamingResponse.trim().length;
+        
+        console.log(`[OllamaAdapter] Both modes work. Streaming time: ${streamingTime}ms, Non-streaming time: ${nonStreamingTime}ms. Preferring: ${preferStreaming ? 'streaming' : 'non-streaming'}`);
+        this.capabilities = {
+          ...this.capabilities,
+          preferStreaming
+        };
+      } else {
+        // Both failed, use default (streaming=true as fallback)
+        console.log('[OllamaAdapter] Both streaming and non-streaming tests failed, using default streaming preference');
+        this.capabilities = {
+          ...this.capabilities,
+          preferStreaming: true
+        };
+      }
+
+    } catch (error) {
+      console.warn('[OllamaAdapter] Failed to auto-detect streaming capability:', error);
+      // Use default streaming preference
+      this.capabilities = {
+        ...this.capabilities,
+        preferStreaming: true
+      };
     }
   }
 

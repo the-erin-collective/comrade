@@ -172,7 +172,7 @@ describe('OllamaAdapter', () => {
           parameters: [
             { name: 'path', type: 'string', description: 'File path', required: true }
           ],
-          execute: async () => ({ success: true, output: 'file content', metadata: { executionTime: 0, toolName: 'read_file', parameters: {} } })
+          execute: async () => ({ success: true, output: 'file content', metadata: { executionTime: 0, toolName: 'read_file', parameters: {}, timestamp: new Date() } })
         }
       ];
 
@@ -205,7 +205,8 @@ describe('OllamaAdapter', () => {
         metadata: {
           executionTime: 100,
           toolName: 'read_file',
-          parameters: { path: 'test.txt' }
+          parameters: { path: 'test.txt' },
+          timestamp: new Date()
         }
       };
 

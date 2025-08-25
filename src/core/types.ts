@@ -1,303 +1,199 @@
 /**
- * Core type definitions for the AI agent system
+ * Shared types for the core extension
  */
 
-// Re-export types from ai-agent.ts for convenience
-export { 
-  AIResponse, 
-  ResponseMetadata, 
-  ToolCall, 
-  AIToolResult,
-  ToolExecutionMetadata,
-  AIMessage,
-  ConversationContext,
-  ModelConfig 
-} from './ai-agent';
-
-// Re-export types from conversation-context.ts for convenience
-export {
-  ConversationContextManager,
-  ConversationContextConfig,
-  SerializableConversationContext,
-  TruncationStrategy,
-  createConversationContext,
-  createCodingConversationContext
-} from './conversation-context';
-
-// Import for alias
-import { AIToolResult } from './ai-agent';
-
-// Create alias for consistency
-export type ToolResult = AIToolResult;
-
-/**
- * Represents a parameter for a tool
- */
-export interface ToolParameter {
-  /** Name of the parameter */
-  name: string;
-  /** Type of the parameter */
-  type: 'string' | 'number' | 'boolean' | 'array' | 'object';
-  /** Description of the parameter */
-  description: string;
-  /** Whether the parameter is required */
-  required: boolean;
-  /** Allowed values for the parameter (for enum-like parameters) */
-  enum?: any[];
-  /** Default value for the parameter */
-  default?: any;
+// Core validation result interface
+export interface ValidationResult {
+  valid: boolean;
+  error?: string;
 }
 
-/**
- * Represents a tool that can be executed by the AI agent
- */
-export interface Tool {
-  /** Unique name of the tool */
-  name: string;
-  /** Description of what the tool does */
-  description: string;
-  /** Parameters that the tool accepts */
-  parameters: ToolParameter[];
-  /** Function to execute the tool */
-  execute(parameters: Record<string, any>): Promise<ToolResult>;
-}
-
-/**
- * Base class for implementing tools
- */
-export abstract class BaseTool implements Tool {
-  abstract name: string;
-  abstract description: string;
-  abstract parameters: ToolParameter[];
-  
-  abstract execute(parameters: Record<string, any>): Promise<ToolResult>;
-  
-  /**
-   * Validate parameters against the tool's schema
-   */
-  protected validateParameters(parameters: Record<string, any>): { valid: boolean; error?: string } {
-    for (const param of this.parameters) {
-      const value = parameters[param.name];
-      
-      // Check required parameters
-      if (param.required && (value === undefined || value === null)) {
-        return {
-          valid: false,
-          error: `Required parameter '${param.name}' is missing`
-        };
-      }
-      
-      // Skip validation for optional parameters that are not provided
-      if (value === undefined || value === null) {
-        continue;
-      }
-      
-      // Type validation
-      if (!this.validateParameterType(value, param.type)) {
-        return {
-          valid: false,
-          error: `Parameter '${param.name}' must be of type ${param.type}, got ${typeof value}`
-        };
-      }
-      
-      // Enum validation
-      if (param.enum && !param.enum.includes(value)) {
-        return {
-          valid: false,
-          error: `Parameter '${param.name}' must be one of: ${param.enum.join(', ')}`
-        };
-      }
-    }
-    
-    return { valid: true };
-  }
-  
-  /**
-   * Validate parameter type
-   */
-  private validateParameterType(value: any, expectedType: string): boolean {
-    switch (expectedType) {
-      case 'string':
-        return typeof value === 'string';
-      case 'number':
-        return typeof value === 'number' && !isNaN(value);
-      case 'boolean':
-        return typeof value === 'boolean';
-      case 'array':
-        return Array.isArray(value);
-      case 'object':
-        return typeof value === 'object' && value !== null && !Array.isArray(value);
-      default:
-        return true; // Unknown types pass validation
-    }
-  }
-}
-/**
- * P
-rovider and Agent Management Types
- * 
- * New provider-agent architecture types for improved configuration management
- */
-
-/**
- * Base provider interface
- */
-export interface Provider {
-  id: string;
-  name: string;
-  type: 'cloud' | 'local-network';
-  provider: 'openai' | 'anthropic' | 'google' | 'azure' | 'ollama' | 'custom';
-  isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-/**
- * Cloud provider configuration
- */
-export interface CloudProvider extends Provider {
-  type: 'cloud';
-  apiKey: string;
-  endpoint?: never;
-}
-
-/**
- * Local network provider configuration
- */
-export interface LocalNetworkProvider extends Provider {
-  type: 'local-network';
-  endpoint: string;
-  localHostType: 'ollama' | 'custom';
-  apiKey?: string;
-}
-
-/**
- * Union type for all provider variants
- */
-export type ProviderConfig = CloudProvider | LocalNetworkProvider;
-
-/**
- * Updated Agent interface that references providers
- */
-export interface Agent {
-  id: string;
-  name: string;
-  providerId: string;
-  model: string;
-  temperature?: number;
-  maxTokens?: number;
-  timeout?: number;
-  systemPrompt?: string;
-  capabilities: AgentCapabilities;
-  isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-/**
- * Agent capabilities interface
- */
+// Agent capabilities interface
 export interface AgentCapabilities {
   hasVision: boolean;
   hasToolUse: boolean;
   reasoningDepth: 'basic' | 'intermediate' | 'advanced';
   speed: 'fast' | 'medium' | 'slow';
   costTier: 'low' | 'medium' | 'high';
+  supportsStreaming: boolean;
+  supportsNonStreaming: boolean;
+  preferredStreamingMode: 'streaming' | 'non-streaming';
+  maxContextLength: number;
+  supportedFormats: string[];
 }
 
-/**
- * Form data interfaces
- */
+// Agent user preferences interface
+export interface AgentUserPreferences {
+  theme?: 'light' | 'dark' | 'auto';
+  language?: string;
+  notifications?: boolean;
+  autoSave?: boolean;
+}
+
+// Agent interface
+export interface Agent {
+  id: string;
+  name: string;
+  providerId: string;
+  model: string;
+  temperature: number;
+  maxTokens: number;
+  timeout: number;
+  systemPrompt: string;
+  capabilities: AgentCapabilities;
+  userPreferences: AgentUserPreferences;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Re-export model adapter types
+export type {
+  ModelConfig,
+  ModelCapabilities,
+  ChatMessage,
+  Tool,
+  ToolParameter,
+  ToolResult,
+  ToolCall,
+  AIResponse,
+  ResponseMetadata,
+  ModelAdapter,
+  StreamCallback
+} from './model-adapters/base-model-adapter';
+
+// Provider interfaces
+export interface Provider {
+  id: string;
+  name: string;
+  type: 'cloud' | 'local_network';
+  provider: string; // The actual provider type like 'openai', 'anthropic', 'ollama'
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CloudProvider extends Provider {
+  type: 'cloud';
+  provider: 'openai' | 'anthropic' | 'claude' | string;
+  apiKey: string;
+  baseUrl?: string;
+  region?: string;
+}
+
+export interface LocalNetworkProvider extends Provider {
+  type: 'local_network';
+  provider: 'ollama' | string;
+  endpoint: string;
+  host: string;
+  port: number;
+  protocol: 'http' | 'https';
+  apiKey?: string;
+  localHostType?: string;
+}
+
+export type ProviderConfig = CloudProvider | LocalNetworkProvider;
+
+// Form data interfaces
 export interface ProviderFormData {
   name: string;
-  type: 'cloud' | 'local-network';
-  provider: 'openai' | 'anthropic' | 'google' | 'azure' | 'ollama' | 'custom';
-  endpoint?: string;
+  type: 'cloud' | 'local_network';
+  provider: string;
   apiKey?: string;
-  localHostType?: 'ollama' | 'custom';
+  baseUrl?: string;
+  region?: string;
+  endpoint?: string;
+  host?: string;
+  port?: number;
+  protocol?: 'http' | 'https';
+  localHostType?: string;
 }
 
 export interface AgentFormData {
   name: string;
   providerId: string;
   model: string;
-  temperature?: number;
-  maxTokens?: number;
-  timeout?: number;
-  systemPrompt?: string;
-  capabilities?: Partial<AgentCapabilities>;
+  temperature: number;
+  maxTokens: number;
+  timeout: number;
+  systemPrompt: string;
+  capabilities?: AgentCapabilities;
 }
 
-/**
- * Validation result interfaces
- */
-export interface ValidationResult {
-  valid: boolean;
-  error?: string;
-  warnings?: string[];
-}
-
+// Validation result interfaces
 export interface ProviderValidationResult extends ValidationResult {
-  availableModels?: string[];
+  provider?: ProviderConfig;
+  warnings?: string[];
   connectionStatus?: 'connected' | 'disconnected' | 'unknown';
   responseTime?: number;
+  availableModels?: string[];
 }
 
 export interface AgentValidationResult extends ValidationResult {
+  agent?: Agent;
+  warnings?: string[];
   providerStatus?: 'active' | 'inactive' | 'not_found';
-  modelAvailable?: boolean;
-  estimatedCost?: 'low' | 'medium' | 'high';
 }
 
-/**
- * Combined types for display purposes
- */
+export interface AgentTestResult {
+  success: boolean;
+  response?: string;
+  error?: string;
+  executionTime: number;
+}
+
 export interface AgentWithProvider {
   agent: Agent;
   provider: ProviderConfig;
 }
 
-/**
- * Statistics interfaces
- */
-export interface ProviderStats {
-  totalProviders: number;
-  activeProviders: number;
-  providersByType: {
-    cloud: number;
-    'local-network': number;
-  };
-  providersByProvider: Record<string, number>;
-}
-
-export interface AgentStats {
-  totalAgents: number;
-  activeAgents: number;
-  agentsByProvider: Record<string, number>;
-  agentsByCapability: {
-    vision: number;
-    toolUse: number;
-    streaming: number;
-  };
-}
-
-/**
- * Migration and connection test interfaces
- */
-export interface MigrationData {
-  providersCreated: Provider[];
-  agentsUpdated: Agent[];
-  errors: string[];
-  warnings: string[];
-}
-
 export interface ConnectionTestResult {
   success: boolean;
-  responseTime?: number;
   error?: string;
+  latency?: number;
+  responseTime?: number;
   availableModels?: string[];
-  serverInfo?: {
-    version?: string;
-    status?: string;
+  serverInfo?: any;
+}
+
+// Base tool interface for tool implementations
+export abstract class BaseTool {
+  abstract name: string;
+  abstract description: string;
+  abstract parameters: any[];
+  abstract execute(parameters: Record<string, any>): Promise<any>;
+
+  validateParameters(parameters: Record<string, any>): ValidationResult {
+    // Basic validation implementation
+    const missing = this.parameters
+      .filter(p => p.required && !(p.name in parameters))
+      .map(p => p.name);
+    
+    if (missing.length > 0) {
+      return {
+        valid: false,
+        error: `Missing required parameters: ${missing.join(', ')}`
+      };
+    }
+    
+    return { valid: true };
+  }
+}
+
+// AI Tool Result interface (extends base ToolResult)
+export interface AIToolResult {
+  success: boolean;
+  output?: string;
+  error?: string;
+  toolName: string;
+  parameters: Record<string, any>;
+  metadata: {
+    executionTime: number;
+    toolName: string;
+    parameters: Record<string, any>;
+    timestamp: Date;
+    stderr?: string;
+    exitCode?: number;
+    [key: string]: any;
   };
 }

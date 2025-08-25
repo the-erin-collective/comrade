@@ -81,12 +81,19 @@ describe('Agent Configuration Management', () => {
         model: 'gpt-4',
         temperature: 0.7,
         maxTokens: 4000,
+        timeout: 30000,
+        systemPrompt: 'You are a helpful AI assistant.',
         capabilities: {
           hasVision: false,
           hasToolUse: true,
           reasoningDepth: 'advanced',
           speed: 'medium',
-          costTier: 'high'
+          costTier: 'high',
+          supportsStreaming: true,
+          supportsNonStreaming: true,
+          preferredStreamingMode: 'streaming',
+          maxContextLength: 4000,
+          supportedFormats: ['text']
         }
       };
 
@@ -111,7 +118,11 @@ describe('Agent Configuration Management', () => {
       const agent = await configManager.addNewAgent({
         name: 'Initial Agent',
         providerId: provider.id,
-        model: 'gpt-4'
+        model: 'gpt-4',
+        temperature: 0.7,
+        maxTokens: 4000,
+        timeout: 30000,
+        systemPrompt: 'You are a helpful AI assistant.'
       });
 
       const updates = {
@@ -138,7 +149,11 @@ describe('Agent Configuration Management', () => {
       const agent = await configManager.addNewAgent({
         name: 'Test Agent',
         providerId: provider.id,
-        model: 'gpt-4'
+        model: 'gpt-4',
+        temperature: 0.7,
+        maxTokens: 4000,
+        timeout: 30000,
+        systemPrompt: 'You are a helpful AI assistant.'
       });
 
       assert.ok(configManager.getNewAgentById(agent.id));
@@ -160,7 +175,11 @@ describe('Agent Configuration Management', () => {
       const agent = await configManager.addNewAgent({
         name: 'Test Agent',
         providerId: provider.id,
-        model: 'gpt-4'
+        model: 'gpt-4',
+        temperature: 0.7,
+        maxTokens: 4000,
+        timeout: 30000,
+        systemPrompt: 'You are a helpful AI assistant.'
       });
 
       assert.strictEqual(agent.isActive, true);
@@ -186,13 +205,21 @@ describe('Agent Configuration Management', () => {
       await configManager.addNewAgent({
         name: 'Agent 1',
         providerId: provider.id,
-        model: 'gpt-4'
+        model: 'gpt-4',
+        temperature: 0.7,
+        maxTokens: 4000,
+        timeout: 30000,
+        systemPrompt: 'You are a helpful AI assistant.'
       });
 
       await configManager.addNewAgent({
         name: 'Agent 2',
         providerId: provider.id,
-        model: 'gpt-3.5-turbo'
+        model: 'gpt-3.5-turbo',
+        temperature: 0.7,
+        maxTokens: 4000,
+        timeout: 30000,
+        systemPrompt: 'You are a helpful AI assistant.'
       });
 
       const agents = configManager.getNewAgents();
@@ -211,13 +238,21 @@ describe('Agent Configuration Management', () => {
       const agent1 = await configManager.addNewAgent({
         name: 'Active Agent',
         providerId: provider.id,
-        model: 'gpt-4'
+        model: 'gpt-4',
+        temperature: 0.7,
+        maxTokens: 4000,
+        timeout: 30000,
+        systemPrompt: 'You are a helpful AI assistant.'
       });
 
       const agent2 = await configManager.addNewAgent({
         name: 'Inactive Agent',
         providerId: provider.id,
-        model: 'gpt-3.5-turbo'
+        model: 'gpt-3.5-turbo',
+        temperature: 0.7,
+        maxTokens: 4000,
+        timeout: 30000,
+        systemPrompt: 'You are a helpful AI assistant.'
       });
 
       await configManager.toggleNewAgentStatus(agent2.id, false);
@@ -247,19 +282,31 @@ describe('Agent Configuration Management', () => {
       await configManager.addNewAgent({
         name: 'Agent 1',
         providerId: provider1.id,
-        model: 'gpt-4'
+        model: 'gpt-4',
+        temperature: 0.7,
+        maxTokens: 4000,
+        timeout: 30000,
+        systemPrompt: 'You are a helpful AI assistant.'
       });
 
       await configManager.addNewAgent({
         name: 'Agent 2',
         providerId: provider1.id,
-        model: 'gpt-3.5-turbo'
+        model: 'gpt-3.5-turbo',
+        temperature: 0.7,
+        maxTokens: 4000,
+        timeout: 30000,
+        systemPrompt: 'You are a helpful AI assistant.'
       });
 
       await configManager.addNewAgent({
         name: 'Agent 3',
         providerId: provider2.id,
-        model: 'claude-3-haiku'
+        model: 'claude-3-haiku',
+        temperature: 0.7,
+        maxTokens: 4000,
+        timeout: 30000,
+        systemPrompt: 'You are a helpful AI assistant.'
       });
 
       const provider1Agents = configManager.getAgentsByProvider(provider1.id);
@@ -281,7 +328,11 @@ describe('Agent Configuration Management', () => {
       const agent = await configManager.addNewAgent({
         name: 'Test Agent',
         providerId: provider.id,
-        model: 'gpt-4'
+        model: 'gpt-4',
+        temperature: 0.7,
+        maxTokens: 4000,
+        timeout: 30000,
+        systemPrompt: 'You are a helpful AI assistant.'
       });
 
       const foundAgent = configManager.getNewAgentById(agent.id);
@@ -299,7 +350,11 @@ describe('Agent Configuration Management', () => {
       const agentData: AgentFormData = {
         name: 'Test Agent',
         providerId: 'non-existent-provider',
-        model: 'gpt-4'
+        model: 'gpt-4',
+        temperature: 0.7,
+        maxTokens: 4000,
+        timeout: 30000,
+        systemPrompt: 'You are a helpful assistant.'
       };
 
       await assert.rejects(
@@ -322,7 +377,11 @@ describe('Agent Configuration Management', () => {
       const agentData: AgentFormData = {
         name: 'Test Agent',
         providerId: provider.id,
-        model: 'gpt-4'
+        model: 'gpt-4',
+        temperature: 0.7,
+        maxTokens: 4000,
+        timeout: 30000,
+        systemPrompt: 'You are a helpful AI assistant.'
       };
 
       await assert.rejects(
@@ -343,7 +402,11 @@ describe('Agent Configuration Management', () => {
       const invalidData: AgentFormData = {
         name: '',
         providerId: provider.id,
-        model: 'gpt-4'
+        model: 'gpt-4',
+        temperature: 0.7,
+        maxTokens: 4000,
+        timeout: 30000,
+        systemPrompt: 'You are a helpful AI assistant.'
       };
 
       await assert.rejects(
@@ -389,7 +452,11 @@ describe('Agent Configuration Management', () => {
       const agent = await configManager.addNewAgent({
         name: 'Test Agent',
         providerId: provider.id,
-        model: 'gpt-4'
+        model: 'gpt-4',
+        temperature: 0.7,
+        maxTokens: 4000,
+        timeout: 30000,
+        systemPrompt: 'You are a helpful AI assistant.'
       });
 
       assert.ok(agent.capabilities);
@@ -421,6 +488,10 @@ describe('Agent Configuration Management', () => {
         name: 'Test Agent',
         providerId: provider.id,
         model: 'gpt-4',
+        temperature: 0.7,
+        maxTokens: 4000,
+        timeout: 30000,
+        systemPrompt: 'You are a helpful AI assistant.',
         capabilities: customCapabilities
       });
 
