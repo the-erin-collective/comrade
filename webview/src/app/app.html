@@ -41,11 +41,22 @@
     } @else {
       @if (activeSession(); as session) {
         @if (session.type === 'conversation') {
-          <app-chat-output 
-            [session]="getConversationSession(session)"
-            [isLoading]="isLoading()"
-            [loadingMessage]="loadingMessage()">
-          </app-chat-output>
+          <div class="chat-container">
+            <app-chat-output 
+              [session]="getConversationSession(session)"
+              [isLoading]="isLoading()"
+              [loadingMessage]="loadingMessage()">
+            </app-chat-output>
+            <app-input-area
+              [phaseAlert]="phaseAlert()"
+              [isLoading]="isLoading()"
+              [availableAgents]="availableAgents()"
+              (messageSubmit)="onMessageSubmit($event)"
+              (agentChange)="onAgentChange($event)"
+              (contextAdd)="onContextAdd($event)"
+              (settingsOpen)="onSettingsOpen()">
+            </app-input-area>
+          </div>
         } @else {
           <div class="config-view">
             <h2>Configuration: {{ session.title }}</h2>
@@ -63,18 +74,7 @@
       }
     }
   </div>
-  
-  @if (!showSettings() && !showHistory() && !isInitializing()) {
-    <app-input-area
-      [phaseAlert]="phaseAlert()"
-      [isLoading]="isLoading()"
-      [availableAgents]="availableAgents()"
-      (messageSubmit)="onMessageSubmit($event)"
-      (agentChange)="onAgentChange($event)"
-      (contextAdd)="onContextAdd($event)"
-      (settingsOpen)="onSettingsOpen()">
-    </app-input-area>
-  }
+
 
 
 </div>

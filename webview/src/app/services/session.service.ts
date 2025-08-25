@@ -299,17 +299,30 @@ export class SessionService {
     const session = sessions.get(sessionId);
     
     if (session && session.type === 'conversation') {
+      const conversationSession = session as ConversationSession;
+      
+      // Check if message with same ID already exists to prevent duplicates
+      const existingMessageIndex = conversationSession.messages.findIndex(m => m.id === message.id);
+      
+      if (existingMessageIndex !== -1) {
+        console.log('SessionService: Message with ID', message.id, 'already exists, skipping duplicate');
+        return;
+      }
+      
       // Create a new session object with a new messages array to trigger change detection
       const updatedSession = {
         ...session,
-        messages: [...(session as ConversationSession).messages, message],
+        messages: [...conversationSession.messages, message],
         lastActivity: new Date()
       } as ConversationSession;
       
       sessions.set(sessionId, updatedSession);
-      this.sessionsMap.set(sessions);
+      
+      // Force signal update to trigger change detection
+      this.sessionsMap.set(new Map(sessions));
       this.persistState();
       console.log('SessionService: Added message to session, new message count:', updatedSession.messages.length);
+      console.log('SessionService: Forced signal update for change detection');
     }
   }
   
@@ -321,6 +334,30 @@ export class SessionService {
       session.title = title;
       this.sessionsMap.set(sessions);
       this.persistState();
+    }
+  }
+
+  public updateSessionAgent(sessionId: string, agentConfig: any) {
+    const sessions = new Map(this.sessionsMap());
+    const session = sessions.get(sessionId);
+    
+    if (session && session.type === 'conversation') {
+      console.log('SessionService: Updating agent config for session:', sessionId, 'to:', agentConfig);
+      
+      // Create a new session object to trigger change detection
+      const updatedSession = {
+        ...session,
+        agentConfig: agentConfig,
+        lastActivity: new Date()
+      } as ConversationSession;
+      
+      sessions.set(sessionId, updatedSession);
+      
+      // Force signal update to trigger change detection
+      this.sessionsMap.set(new Map(sessions));
+      this.persistState();
+      
+      console.log('SessionService: Agent config updated successfully');
     }
   }
 

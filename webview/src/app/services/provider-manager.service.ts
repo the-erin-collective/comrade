@@ -109,9 +109,17 @@ export class ProviderManagerService {
         case 'ollamaModelsResult':
         case 'cloudModelsResult':
           if (message.payload?.success && message.payload?.models && message.payload?.providerId) {
+            // Convert models to proper format - handle both string[] and object[] from backend
+            const rawModels = message.payload.models;
+            const formattedModels: { name: string; description?: string }[] = Array.isArray(rawModels) && rawModels.length > 0
+              ? typeof rawModels[0] === 'string'
+                ? (rawModels as string[]).map(name => ({ name }))
+                : rawModels as { name: string; description?: string }[]
+              : [];
+            
             this.store.dispatch(ProviderActions.loadModelsForProviderSuccess({
               providerId: message.payload.providerId,
-              models: message.payload.models
+              models: formattedModels
             }));
           } else if (message.payload?.error && message.payload?.providerId) {
             this.store.dispatch(ProviderActions.loadModelsForProviderFailure({
@@ -558,7 +566,7 @@ export class ProviderManagerService {
   /**
    * Get available models for a provider
    */
-  public getAvailableModels(providerId: string): Observable<string[]> {
+  public getAvailableModels(providerId: string): Observable<{ name: string; description?: string }[]> {
     return this.store.select(selectAvailableModels).pipe(
       map(modelsMap => modelsMap[providerId] || [])
     );

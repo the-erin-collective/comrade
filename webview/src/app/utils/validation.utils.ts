@@ -931,7 +931,9 @@ export class ValidationRules {
 
         const trimmed = value.trim();
         
-        if (!/^[a-zA-Z0-9._-]+$/.test(trimmed)) {
+        // Allow letters, numbers, dots, hyphens, underscores, colons, and forward slashes
+        // This supports common model naming patterns like "llama3.2:latest", "model/version", etc.
+        if (!/^[a-zA-Z0-9._:-]+(\/[a-zA-Z0-9._:-]+)*$/.test(trimmed)) {
           return { 
             valid: false, 
             error: FormValidation.getContextualMessage(fieldName, 'invalid')

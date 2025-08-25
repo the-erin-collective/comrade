@@ -21,7 +21,7 @@ export interface ProviderState {
   validationResults: Record<string, ProviderValidationResult>;
   
   /** Available models for each provider */
-  availableModels: Record<string, string[]>;
+  availableModels: Record<string, { name: string; description?: string }[]>;
   
   /** Loading state for model fetching */
   loadingModels: boolean;

@@ -124,7 +124,7 @@ describe('OllamaAdapter Integration Tests', () => {
     
     assert(Array.isArray(models), 'Models should be an array');
     assert(models.length > 0, 'Should have at least one model');
-    assert(models.includes(testConfig.name), 'Should include test model');
+    assert(models.some(model => model.name === testConfig.name), 'Should include test model');
   });
 });
 

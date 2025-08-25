@@ -115,7 +115,7 @@ export const loadModelsForProvider = createAction(
 
 export const loadModelsForProviderSuccess = createAction(
   '[Provider] Load Models For Provider Success',
-  props<{ providerId: string; models: string[] }>()
+  props<{ providerId: string; models: { name: string; description?: string }[] }>()
 );
 
 export const loadModelsForProviderFailure = createAction(

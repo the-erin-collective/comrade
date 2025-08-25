@@ -285,9 +285,17 @@ export class ProviderEffects {
                             message.payload.providerId === providerId),
           map(message => {
             if (message.payload.success) {
+              // Convert models to proper format - handle both string[] and object[] from backend
+              const rawModels = message.payload.models || [];
+              const formattedModels: { name: string; description?: string }[] = Array.isArray(rawModels) && rawModels.length > 0
+                ? typeof rawModels[0] === 'string'
+                  ? (rawModels as string[]).map(name => ({ name }))
+                  : rawModels as { name: string; description?: string }[]
+                : [];
+              
               return ProviderActions.loadModelsForProviderSuccess({ 
                 providerId, 
-                models: message.payload.models || [] 
+                models: formattedModels
               });
             } else {
               return ProviderActions.loadModelsForProviderFailure({ 

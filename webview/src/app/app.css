@@ -5,13 +5,41 @@
   background-color: var(--background-color);
   color: var(--text-color);
   position: relative;
+  overflow: hidden; /* Prevent body scroll */
+
 }
 
 .main-content {
   flex: 1;
+  position: relative;
+  overflow: hidden; /* Let child components handle their own scrolling */
+
+}
+
+.chat-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+
+}
+
+/* Input area styling */
+app-input-area {
+  flex-shrink: 0; /* Ensure it doesn't shrink */
+  min-height: 80px; /* Minimum height to ensure visibility */
+  z-index: 10; /* Ensure it's above other elements */
+}
+
+/* Chat output styling */
+app-chat-output {
+  flex: 1; /* Take remaining space */
+  min-height: 0; /* Allow shrinking */
+  display: flex; /* Ensure it's a flex container */
+  flex-direction: column;
 }
 
 /* Welcome screen */

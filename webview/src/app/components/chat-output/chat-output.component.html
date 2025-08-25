@@ -1,4 +1,6 @@
 <div class="chat-output" #chatContainer>
+
+  
   <div class="messages-container">
     @for (message of messages || []; track trackByMessageId($index, message)) {
       <div class="message" [ngClass]="getMessageClasses(message)" *ngIf="message" [class.streaming]="message.isStreaming && !message.isComplete">
@@ -72,7 +74,12 @@
     }
     
     @if (isLoading) {
-      <div class="message loading-message">
+      <div class="message loading-message assistant">
+        <div class="message-header">
+          <span class="sender-icon">🤖</span>
+          <span class="sender-name">Assistant</span>
+          <span class="timestamp">{{ getCurrentTime() }}</span>
+        </div>
         <div class="loading-indicator">
           <div class="loading-dots">
             <span></span>

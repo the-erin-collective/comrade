@@ -9,6 +9,61 @@ import {
 } from './base-model-adapter';
 import { AbstractModelAdapter } from './abstract-model-adapter';
 
+// Polyfill for fetch in Node.js environment
+let fetchImpl: typeof globalThis.fetch;
+if (typeof fetch === 'undefined') {
+  // Dynamic import to avoid bundling issues
+  fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
+    try {
+      // Try to use node-fetch if available
+      const nodeFetch = await import('node-fetch');
+      // Convert input to string for node-fetch compatibility
+      const url = typeof input === 'string' ? input : input.toString();
+      const response = await nodeFetch.default(url, init as any);
+      // Return a Response-compatible object
+      return response as any as Response;
+    } catch {
+      // Fallback to HTTP module for basic requests
+      return Promise.reject(new Error('Fetch not available and node-fetch not installed'));
+    }
+  };
+} else {
+  fetchImpl = fetch;
+}
+
+// Helper function to add timeout to fetch requests
+const fetchWithTimeout = async (url: string, options: RequestInit & { timeout?: number } = {}): Promise<Response> => {
+  const { timeout = 10000, ...fetchOptions } = options; // Default 10 second timeout
+  
+  console.log(`[fetchWithTimeout] Making request to: ${url} with timeout: ${timeout}ms`);
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    console.log(`[fetchWithTimeout] Request timeout reached (${timeout}ms), aborting request to: ${url}`);
+    controller.abort();
+  }, timeout);
+  
+  try {
+    console.log('[fetchWithTimeout] Starting fetch request...');
+    const response = await fetchImpl(url, {
+      ...fetchOptions,
+      signal: fetchOptions.signal || controller.signal
+    });
+    clearTimeout(timeoutId);
+    console.log(`[fetchWithTimeout] Request completed successfully, status: ${response.status}`);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    console.error(`[fetchWithTimeout] Request failed:`, error);
+    if (error instanceof Error && error.name === 'AbortError') {
+      const timeoutError = new Error(`Request timeout after ${timeout}ms`);
+      console.error('[fetchWithTimeout] Timeout error:', timeoutError.message);
+      throw timeoutError;
+    }
+    throw error;
+  }
+};
+
 /**
  * Ollama API response interface
  */
@@ -70,7 +125,7 @@ interface OllamaModelInfo {
  * - Error handling for connection failures
  */
 export class OllamaAdapter extends AbstractModelAdapter {
-  private baseUrl: string;
+  public baseUrl: string;
   private modelName: string;
   private context: number[] = [];
 
@@ -97,7 +152,7 @@ export class OllamaAdapter extends AbstractModelAdapter {
     await super.initialize(config);
     
     this.baseUrl = config.endpoint || 'http://localhost:11434';
-    this.modelName = config.name;
+    this.modelName = (config as any).model || config.name;
 
     // Test connection and detect model capabilities
     const isConnected = await this.testConnection();
@@ -195,16 +250,35 @@ export class OllamaAdapter extends AbstractModelAdapter {
     };
 
     try {
-      const response = await fetch(`${this.baseUrl}/api/generate`, {
+      const response = await fetchWithTimeout(`${this.baseUrl}/api/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody),
+        timeout: this.config?.timeout || 30000 // Use configured timeout or 30s default
       });
 
       if (!response.ok) {
-        throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+        // Try to parse error response body for more detailed error information
+        let errorMessage = `Ollama API error: ${response.status} ${response.statusText}`;
+        try {
+          const errorData = await response.json() as { error?: string };
+          if (errorData.error) {
+            errorMessage = errorData.error;
+            
+            // Provide helpful suggestions for common errors
+            if (errorMessage.includes('requires more system memory')) {
+              errorMessage += '\n\nSuggestions:\n• Close other applications to free up memory\n• Try a smaller model (e.g., qwen3:1.5b instead of qwen3:4b)\n• Restart your system to clear memory';
+            } else if (errorMessage.includes('model') && errorMessage.includes('not found')) {
+              errorMessage += '\n\nSuggestion: Run "ollama pull <model-name>" to download the model first';
+            }
+          }
+        } catch (parseError) {
+          // If we can't parse the error response, use the original message
+          console.warn('Failed to parse Ollama error response:', parseError);
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json() as OllamaResponse;
@@ -224,33 +298,61 @@ export class OllamaAdapter extends AbstractModelAdapter {
   }
 
   /**
+   * Test basic connection to Ollama without model validation
+   */
+  async testBasicConnection(): Promise<boolean> {
+    console.log(`[OllamaAdapter] Testing basic connection to ${this.baseUrl}/api/tags`);
+    try {
+      console.log('[OllamaAdapter] Starting basic connection test with 5 second timeout');
+      const healthResponse = await fetchWithTimeout(`${this.baseUrl}/api/tags`, {
+        timeout: 5000 // 5 second timeout for connection test
+      });
+      console.log(`[OllamaAdapter] Basic connection test response status: ${healthResponse.status}, ok: ${healthResponse.ok}`);
+      return healthResponse.ok;
+    } catch (error) {
+      console.error('[OllamaAdapter] Basic connection test failed with error:', error);
+      return false;
+    }
+  }
+
+  /**
    * Test connection to Ollama
    */
   async testConnection(): Promise<boolean> {
+    console.log(`[OllamaAdapter] Testing connection to ${this.baseUrl}/api/tags`);
     try {
+      console.log('[OllamaAdapter] Starting connection test with 5 second timeout');
       // First, check if Ollama is running
-      const healthResponse = await fetch(`${this.baseUrl}/api/tags`);
+      const healthResponse = await fetchWithTimeout(`${this.baseUrl}/api/tags`, {
+        timeout: 5000 // 5 second timeout for connection test
+      });
+      console.log(`[OllamaAdapter] Connection test response status: ${healthResponse.status}, ok: ${healthResponse.ok}`);
       if (!healthResponse.ok) {
+        console.log(`[OllamaAdapter] Health check failed with status: ${healthResponse.status}`);
         return false;
       }
 
       // Then check if the specific model is available
       if (this.modelName) {
+        console.log(`[OllamaAdapter] Checking if model '${this.modelName}' exists`);
         const modelsData = await healthResponse.json() as { models?: OllamaModelInfo[] };
+        console.log(`[OllamaAdapter] Available models from API:`, modelsData.models?.map((m: OllamaModelInfo) => m.name) || []);
         const modelExists = modelsData.models?.some((model: OllamaModelInfo) => 
           model.name === this.modelName || model.name.startsWith(this.modelName + ':')
         );
         
         if (!modelExists) {
-          console.warn(`Model '${this.modelName}' not found in Ollama. Available models:`, 
+          console.warn(`[OllamaAdapter] Model '${this.modelName}' not found in Ollama. Available models:`, 
             modelsData.models?.map((m: OllamaModelInfo) => m.name) || []);
           return false;
         }
+        console.log(`[OllamaAdapter] Model '${this.modelName}' found in available models`);
       }
 
+      console.log('[OllamaAdapter] Connection test successful');
       return true;
     } catch (error) {
-      console.error('Ollama connection test failed:', error);
+      console.error('[OllamaAdapter] Connection test failed with error:', error);
       return false;
     }
   }
@@ -287,12 +389,13 @@ export class OllamaAdapter extends AbstractModelAdapter {
   private async detectModelCapabilities(): Promise<void> {
     try {
       // Get model information from Ollama
-      const response = await fetch(`${this.baseUrl}/api/show`, {
+      const response = await fetchWithTimeout(`${this.baseUrl}/api/show`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ name: this.modelName }),
+        timeout: 10000 // 10 second timeout for model info
       });
 
       if (response.ok) {
@@ -378,17 +481,32 @@ export class OllamaAdapter extends AbstractModelAdapter {
   /**
    * Get available models from Ollama
    */
-  async getAvailableModels(): Promise<string[]> {
+  async getAvailableModels(): Promise<{ name: string; description?: string }[]> {
+    console.log(`[OllamaAdapter] Getting available models from ${this.baseUrl}/api/tags`);
     try {
-      const response = await fetch(`${this.baseUrl}/api/tags`);
+      console.log('[OllamaAdapter] Starting fetch request with 10 second timeout');
+      const response = await fetchWithTimeout(`${this.baseUrl}/api/tags`, {
+        timeout: 10000 // 10 second timeout for fetching models
+      });
+      console.log(`[OllamaAdapter] Fetch completed, response status: ${response.status}, ok: ${response.ok}`);
       if (!response.ok) {
+        console.error(`[OllamaAdapter] Response not ok: ${response.status} ${response.statusText}`);
         throw new Error(`Failed to fetch models: ${response.statusText}`);
       }
 
+      console.log('[OllamaAdapter] Parsing JSON response...');
       const data = await response.json() as { models?: OllamaModelInfo[] };
-      return data.models?.map((model: OllamaModelInfo) => model.name) || [];
+      console.log(`[OllamaAdapter] Parsed response, found ${data.models?.length || 0} models:`, data.models?.map(m => m.name));
+      
+      const result = data.models?.map((model: OllamaModelInfo) => ({
+        name: model.name,
+        description: `${model.details.family} (${model.details.parameter_size})`
+      })) || [];
+      
+      console.log('[OllamaAdapter] Returning models:', result);
+      return result;
     } catch (error) {
-      console.error('Failed to get available models:', error);
+      console.error('[OllamaAdapter] Failed to get available models with error:', error);
       return [];
     }
   }
@@ -398,12 +516,13 @@ export class OllamaAdapter extends AbstractModelAdapter {
    */
   async pullModel(modelName: string): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/pull`, {
+      const response = await fetchWithTimeout(`${this.baseUrl}/api/pull`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ name: modelName }),
+        timeout: 60000 // 60 second timeout for model pulling
       });
 
       return response.ok;
@@ -450,17 +569,36 @@ export class OllamaAdapter extends AbstractModelAdapter {
       }
     };
 
-    const response = await fetch(`${this.baseUrl}/api/generate`, {
+    const response = await fetchWithTimeout(`${this.baseUrl}/api/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
-      signal
+      signal,
+      timeout: this.config?.timeout || 30000 // Use configured timeout or 30s default
     });
 
     if (!response.ok) {
-      throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+      // Try to parse error response body for more detailed error information
+      let errorMessage = `Ollama API error: ${response.status} ${response.statusText}`;
+      try {
+        const errorData = await response.json() as { error?: string };
+        if (errorData.error) {
+          errorMessage = errorData.error;
+          
+          // Provide helpful suggestions for common errors
+          if (errorMessage.includes('requires more system memory')) {
+            errorMessage += '\n\nSuggestions:\n• Close other applications to free up memory\n• Try a smaller model (e.g., qwen3:1.5b instead of qwen3:4b)\n• Restart your system to clear memory';
+          } else if (errorMessage.includes('model') && errorMessage.includes('not found')) {
+            errorMessage += '\n\nSuggestion: Run "ollama pull <model-name>" to download the model first';
+          }
+        }
+      } catch (parseError) {
+        // If we can't parse the error response, use the original message
+        console.warn('Failed to parse Ollama error response:', parseError);
+      }
+      throw new Error(errorMessage);
     }
 
     const reader = response.body?.getReader();

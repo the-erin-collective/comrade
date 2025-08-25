@@ -239,7 +239,9 @@ export class App {
   }
 
   public getConversationSession(session: any): ConversationSession | null {
-    return session.type === 'conversation' ? session as ConversationSession : null;
+    const result = session.type === 'conversation' ? session as ConversationSession : null;
+    console.log('App: getConversationSession called, returning:', result?.messages?.length, 'messages');
+    return result;
   }
 
   public async onMessageSubmit(data: { message: string; contextItems: ContextItem[] }) {
@@ -253,6 +255,19 @@ export class App {
       // Show loading state
       this.isLoading.set(true);
       this.loadingMessage.set('Checking agent availability...');
+
+      // Immediately add the user's message to the session for instant feedback
+      const userMessage = {
+        id: `user-msg-${Date.now()}`,
+        content: data.message,
+        sender: 'user' as const,
+        timestamp: new Date(),
+        type: 'user' as const,
+        contextItems: data.contextItems
+      };
+      
+      this.sessionService.addMessageToSession(activeSession.id, userMessage);
+      console.log('App: Added user message to session immediately');
 
       // Use the session service which now includes agent validation
       const result = await this.sessionService.sendMessage(
@@ -272,10 +287,12 @@ export class App {
           timestamp: new Date(),
           sessionId: activeSession.id
         });
+        this.isLoading.set(false);
       } else {
         // Message sent successfully, update loading message
         this.loadingMessage.set('Processing your message...');
         // The actual response will be handled by the message service and session service
+        // Keep loading state active until we get a response
       }
     } catch (error) {
       console.error('Error sending message:', error);
@@ -287,15 +304,36 @@ export class App {
         timestamp: new Date(),
         sessionId: activeSession.id
       });
-    } finally {
       this.isLoading.set(false);
     }
   }
 
   public onAgentChange(agentId: string) {
+    console.log('App: Agent change requested:', agentId);
     const activeSession = this.activeSession();
     if (activeSession) {
+      console.log('App: Switching agent for session:', activeSession.id, 'to agent:', agentId);
+      console.log('App: Current session agent config:', (activeSession as any).agentConfig);
       this.messageService.switchAgent(activeSession.id, agentId);
+      
+      // Also update the session locally to reflect the change immediately
+      this.updateSessionAgent(activeSession.id, agentId);
+    } else {
+      console.warn('App: No active session for agent change');
+    }
+  }
+
+  private updateSessionAgent(sessionId: string, agentId: string) {
+    // Find the agent configuration
+    const availableAgents = this.availableAgents();
+    const selectedAgent = availableAgents.find(agent => agent.id === agentId);
+    
+    if (selectedAgent) {
+      console.log('App: Updating session agent config locally:', selectedAgent);
+      // Update the session's agent config immediately for UI feedback
+      this.sessionService.updateSessionAgent(sessionId, selectedAgent);
+    } else {
+      console.warn('App: Selected agent not found in available agents:', agentId);
     }
   }
 
@@ -322,6 +360,8 @@ export class App {
   }
 
   private handleExtensionMessage(message: any) {
+    console.log('App: Handling extension message:', message.type, message.payload);
+    
     switch (message.type) {
       case 'showProgress':
         this.progressState.set({
@@ -346,6 +386,8 @@ export class App {
           timestamp: new Date(),
           sessionId: message.payload.sessionId
         });
+        // Clear loading state on error
+        this.isLoading.set(false);
         break;
 
       case 'showTimeout':
@@ -358,6 +400,21 @@ export class App {
 
       case 'updateSession':
         this.handleSessionUpdate(message.payload);
+        break;
+
+      case 'aiResponse':
+        // Handle AI responses specifically
+        console.log('App: Received AI response:', message.payload);
+        this.handleSessionUpdate(message.payload);
+        break;
+
+      case 'aiProcessing':
+        // Handle AI processing status updates
+        console.log('App: AI processing status:', message.payload);
+        if (message.payload.status === 'complete') {
+          console.log('App: AI processing complete, clearing loading state');
+          this.isLoading.set(false);
+        }
         break;
 
       case 'restoreSessions':
@@ -386,10 +443,12 @@ export class App {
         this.handleAgentAvailabilityResult(message.payload);
         break;
 
-
+      case 'agentUpdateResult':
+        this.handleAgentUpdateResult(message.payload);
+        break;
 
       default:
-        console.log('Unhandled message type:', message.type);
+        console.log('App: Unhandled message type:', message.type, 'Payload:', message.payload);
     }
   }
 
@@ -430,13 +489,42 @@ export class App {
     }
   }
 
+  private handleAgentUpdateResult(payload: { success: boolean; sessionId?: string; agentConfig?: any; error?: string }) {
+    console.log('App: Agent update result:', payload);
+    
+    if (payload.success && payload.sessionId && payload.agentConfig) {
+      console.log('App: Agent switch confirmed by extension, updating session');
+      this.sessionService.updateSessionAgent(payload.sessionId, payload.agentConfig);
+    } else if (payload.error) {
+      console.error('App: Agent switch failed:', payload.error);
+      // Could show an error message to the user here
+    }
+  }
+
   private handleSessionUpdate(payload: any) {
     console.log('App: Handling session update:', payload);
     
     if (payload.sessionId && payload.message) {
-      // Add the message to the session
-      this.sessionService.addMessageToSession(payload.sessionId, payload.message);
-      console.log('App: Added message to session:', payload.sessionId);
+      // Only add assistant messages from session updates to avoid duplicating user messages
+      // User messages are added immediately in onMessageSubmit for instant feedback
+      if (payload.message.sender === 'assistant' || payload.message.type === 'assistant') {
+        this.sessionService.addMessageToSession(payload.sessionId, payload.message);
+        console.log('App: Added assistant message to session:', payload.sessionId, 'Message:', payload.message);
+        console.log('App: Received assistant response, clearing loading state');
+        this.isLoading.set(false);
+      } else if (payload.message.sender === 'user' || payload.message.type === 'user') {
+        console.log('App: Skipping user message from session update (already added immediately):', payload.message.id);
+      } else {
+        // Handle other message types (system, tool, etc.)
+        this.sessionService.addMessageToSession(payload.sessionId, payload.message);
+        console.log('App: Added', payload.message.sender, 'message to session:', payload.sessionId);
+      }
+    } else {
+      console.log('App: Session update payload missing required fields:', {
+        hasSessionId: !!payload.sessionId,
+        hasMessage: !!payload.message,
+        payload
+      });
     }
   }
 

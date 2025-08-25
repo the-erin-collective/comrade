@@ -369,6 +369,43 @@ describe('OllamaAdapter', () => {
       }
     });
 
+    it('should parse detailed error messages from Ollama API', async () => {
+      fetchStub.resolves({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        json: async () => ({ error: 'model requires more system memory (11.3 GiB) than is available (6.3 GiB)' })
+      } as Response);
+
+      try {
+        await adapter.sendRequest('Hello');
+        assert.fail('Should have thrown an error');
+      } catch (error) {
+        assert.ok(error instanceof Error);
+        assert.ok(error.message.includes('model requires more system memory'));
+        assert.ok(error.message.includes('Close other applications to free up memory'));
+        assert.ok(error.message.includes('Try a smaller model'));
+      }
+    });
+
+    it('should provide helpful suggestions for model not found errors', async () => {
+      fetchStub.resolves({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        json: async () => ({ error: 'model "nonexistent:latest" not found' })
+      } as Response);
+
+      try {
+        await adapter.sendRequest('Hello');
+        assert.fail('Should have thrown an error');
+      } catch (error) {
+        assert.ok(error instanceof Error);
+        assert.ok(error.message.includes('model "nonexistent:latest" not found'));
+        assert.ok(error.message.includes('ollama pull'));
+      }
+    });
+
     it('should handle network connection errors', async () => {
       fetchStub.rejects(new TypeError('Failed to fetch'));
 

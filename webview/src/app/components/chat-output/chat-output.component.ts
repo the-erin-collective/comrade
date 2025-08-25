@@ -8,6 +8,8 @@ import {
   ElementRef, 
   HostListener,
   AfterViewChecked,
+  OnChanges,
+  SimpleChanges,
   Pipe,
   PipeTransform,
   ChangeDetectionStrategy,
@@ -136,7 +138,7 @@ export class SafeHtmlPipe implements PipeTransform {
     SafeHtmlPipe
   ]
 })
-export class ChatOutputComponent implements OnInit, OnDestroy, AfterViewChecked {
+export class ChatOutputComponent implements OnInit, OnDestroy, AfterViewChecked, OnChanges {
   @ViewChild('chatContainer') private chatContainer!: ElementRef<HTMLDivElement>;
   
   @Input() session: {
@@ -147,12 +149,15 @@ export class ChatOutputComponent implements OnInit, OnDestroy, AfterViewChecked 
   @Input() isLoading = false;
   @Input() loadingMessage = 'Thinking...';
   
+  private previousLoadingState = false;
+  
   protected messages: ExtendedChatMessage[] = [];
   private streamingMessages = new Map<string, ExtendedChatMessage>();
   private destroy$ = new Subject<void>();
   private shouldScrollToBottom = true;
   private lastMessageCount = 0;
   private messageSubscription?: Subscription;
+  private isUserScrolling = false;
 
   // Message type constants
   readonly MessageType = {
@@ -169,14 +174,38 @@ export class ChatOutputComponent implements OnInit, OnDestroy, AfterViewChecked 
 
   ngOnInit(): void {
     this.setupMarkdown();
+    this.loadSessionMessages();
     
+    // Set up scroll event listener after view init
+    setTimeout(() => {
+      this.setupScrollListener();
+    }, 100);
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    // Detect when session input changes and reload messages
+    if (changes['session'] && changes['session'].currentValue) {
+      console.log('ChatOutput: Session input changed, reloading messages');
+      this.loadSessionMessages();
+      this.cdr.detectChanges();
+    }
+  }
+
+  private loadSessionMessages(): void {
     // Load messages from session if available
     if (this.session?.messages) {
+      console.log('ChatOutput: Loading', this.session.messages.length, 'messages from session');
       this.messages = [...this.session.messages];
+      this.lastMessageCount = this.messages.length;
     }
     
     // Set up message subscription if session has messages observable
     if (this.session?.messages$) {
+      // Clean up existing subscription
+      if (this.messageSubscription) {
+        this.messageSubscription.unsubscribe();
+      }
+      
       this.messageSubscription = this.session.messages$.subscribe(
         (message: ExtendedChatMessage) => {
           this.handleNewMessage(message);
@@ -194,9 +223,23 @@ export class ChatOutputComponent implements OnInit, OnDestroy, AfterViewChecked 
   }
 
   ngAfterViewChecked(): void {
-    if (this.shouldScrollToBottom) {
-      this.scrollToBottom();
-      this.shouldScrollToBottom = false;
+    // Check if we have new messages and should auto-scroll
+    const currentMessageCount = this.messages.length;
+    if (currentMessageCount > this.lastMessageCount) {
+      this.lastMessageCount = currentMessageCount;
+      // Only auto-scroll if user was already at the bottom
+      if (this.shouldScrollToBottom && !this.isUserScrolling) {
+        this.scrollToBottom();
+      }
+    }
+    
+    // Check if loading state changed
+    if (this.isLoading !== this.previousLoadingState) {
+      this.previousLoadingState = this.isLoading;
+      // Auto-scroll when loading starts or ends (if user is at bottom)
+      if (this.shouldScrollToBottom && !this.isUserScrolling) {
+        setTimeout(() => this.scrollToBottom(), 50);
+      }
     }
   }
 
@@ -438,7 +481,44 @@ export class ChatOutputComponent implements OnInit, OnDestroy, AfterViewChecked 
       this.messages = [...this.messages, message];
     }
     
-    this.scrollToBottom();
+    // Only auto-scroll if user is at bottom
+    this.checkScrollPosition();
+    if (this.shouldScrollToBottom) {
+      this.scrollToBottom();
+    }
+  }
+
+  // Set up scroll event listener
+  private setupScrollListener(): void {
+    if (!this.chatContainer?.nativeElement) {
+      setTimeout(() => this.setupScrollListener(), 500);
+      return;
+    }
+
+    const element = this.chatContainer.nativeElement;
+    
+    let scrollTimeout: any;
+
+    element.addEventListener('scroll', () => {
+      // User is actively scrolling
+      this.isUserScrolling = true;
+      
+      // Check scroll position
+      this.checkScrollPosition();
+      
+      // Clear previous timeout
+      if (scrollTimeout) {
+        clearTimeout(scrollTimeout);
+      }
+      
+      // Mark scrolling as finished after a delay
+      scrollTimeout = setTimeout(() => {
+        this.isUserScrolling = false;
+      }, 150);
+    });
+    
+    // Initial scroll to bottom
+    this.scrollToBottom(true);
   }
 
   // Handle link clicks to open in default browser
@@ -480,7 +560,7 @@ export class ChatOutputComponent implements OnInit, OnDestroy, AfterViewChecked 
 
   // Split content into chunks for streaming animation
   splitContentIntoChunks(content: string, chunkSize: number = 20): string[] {
-    if (!content) return [];
+    if (!content) {return [];}
     
     // For non-streaming content, return as a single chunk
     if (content.length <= chunkSize * 3) {
@@ -534,12 +614,14 @@ export class ChatOutputComponent implements OnInit, OnDestroy, AfterViewChecked 
 
   // Check if we should auto-scroll to bottom
   private checkScrollPosition(): void {
-    if (!this.chatContainer) {
+    if (!this.chatContainer?.nativeElement) {
+      this.shouldScrollToBottom = true; // Default to true if no container
       return;
     }
     
     const element = this.chatContainer.nativeElement;
-    const isAtBottom = element.scrollHeight - element.scrollTop <= element.clientHeight + 50;
+    const threshold = 100; // pixels from bottom to consider "at bottom"
+    const isAtBottom = element.scrollHeight - element.scrollTop <= element.clientHeight + threshold;
     this.shouldScrollToBottom = isAtBottom;
   }
 
@@ -552,4 +634,6 @@ export class ChatOutputComponent implements OnInit, OnDestroy, AfterViewChecked 
       mangle: false
     });
   }
+
+
 }

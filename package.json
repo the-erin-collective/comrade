@@ -280,6 +280,128 @@
             ]
           }
         },
+        "comrade.providers": {
+          "type": "array",
+          "description": "AI provider configurations for the new provider-agent architecture",
+          "default": [],
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique provider ID"
+              },
+              "name": {
+                "type": "string",
+                "description": "Display name for the provider"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "cloud",
+                  "local-network",
+                  "custom"
+                ],
+                "description": "Provider connection type"
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "openai",
+                  "anthropic",
+                  "ollama",
+                  "custom"
+                ],
+                "description": "Provider identifier"
+              },
+              "endpoint": {
+                "type": "string",
+                "description": "Custom endpoint for local/custom providers"
+              },
+              "isActive": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether this provider is active"
+              }
+            }
+          }
+        },
+        "comrade.newAgents": {
+          "type": "array",
+          "description": "Agent configurations for the new provider-agent architecture",
+          "default": [],
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique agent ID"
+              },
+              "name": {
+                "type": "string",
+                "description": "Agent display name"
+              },
+              "providerId": {
+                "type": "string",
+                "description": "Linked provider ID"
+              },
+              "model": {
+                "type": "string",
+                "description": "Model name/identifier"
+              },
+              "capabilities": {
+                "type": "object",
+                "properties": {
+                  "hasVision": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "hasToolUse": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "reasoningDepth": {
+                    "type": "string",
+                    "enum": [
+                      "basic",
+                      "intermediate",
+                      "advanced"
+                    ],
+                    "default": "intermediate"
+                  },
+                  "speed": {
+                    "type": "string",
+                    "enum": [
+                      "fast",
+                      "medium",
+                      "slow"
+                    ],
+                    "default": "medium"
+                  },
+                  "costTier": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high"
+                    ],
+                    "default": "medium"
+                  }
+                }
+              },
+              "isActive": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether this agent is active"
+              },
+              "isEnabledForAssignment": {
+                "type": "boolean",
+                "default": true,
+                "description": "Eligible for auto-assignment"
+              }
+            }
+          }
+        },
         "comrade.assignment.defaultMode": {
           "type": "string",
           "enum": [
@@ -351,7 +473,8 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "run-s build:webview tsc",
+    "clean": "node -e \"require('fs').rmSync('out',{recursive:true,force:true})\"",
+    "compile": "npm run clean && run-s build:webview tsc",
     "compile:test": "tsc -p tsconfig.test.json",
     "test:extension": "node ./out/test/run-test.js",
     "test:extension:legacy": "npm run compile && mocha out/test/integration/extension.test.js --timeout 25000 --reporter spec",
@@ -402,5 +525,9 @@
     "sinon": "^21.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@types/node-fetch": "^2.6.11",
+    "node-fetch": "^2.7.0"
   }
 }

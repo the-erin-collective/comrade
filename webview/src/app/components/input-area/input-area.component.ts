@@ -67,9 +67,14 @@ import { ContextItem, PhaseAlert } from '../../models/session.model';
             class="send-button"
             (click)="sendMessage()"
             [disabled]="!currentMessage() || isLoading() || availableAgents().length === 0"
+            [class.loading]="isLoading()"
             title="Send Message"
           >
-            <span class="icon">↑</span>
+            @if (isLoading()) {
+              <span class="loading-spinner"></span>
+            } @else {
+              <span class="icon">↑</span>
+            }
           </button>
         </div>
 
@@ -298,13 +303,13 @@ export class InputAreaComponent implements AfterViewInit {
 
   public getStatusMessage(): string {
     if (this.isLoading()) {
-      return 'Processing your request...';
+      return '🤖 Processing your request...';
     }
     if (this.availableAgents().length > 0) {
       const agent = this.availableAgents().find(a => a.id === this.selectedAgent());
-      return agent ? `Ready with ${agent.name}` : 'Ready to assist';
+      return agent ? `✅ Ready with ${agent.name}` : '✅ Ready to assist';
     }
-    return 'Configure and activate agents to get started';
+    return '⚠️ Configure and activate agents to get started';
   }
 
   public openAgentSettings(): void {

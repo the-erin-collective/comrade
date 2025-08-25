@@ -348,14 +348,26 @@ export class AgentRegistry {
    */
   private async loadAgentsFromConfiguration(): Promise<void> {
     try {
-      const agents = await this.configManager.getAllAgents();
+      // Clear existing agents first
       this.agents.clear();
       
-      for (const agent of agents) {
-        this.agents.set(agent.id, agent);
+      // Load agents based on architecture preference
+      if (this.shouldUseNewArchitecture()) {
+        // Use new provider-agent architecture
+        const newAgentInstances = await this.getAllNewAgentInstances();
+        for (const agent of newAgentInstances) {
+          this.agents.set(agent.id, agent);
+        }
+        console.log(`Loaded ${newAgentInstances.length} agents from new architecture (providers + newAgents)`);
+      } else {
+        // Use old architecture
+        const oldAgents = await this.configManager.getAllAgents();
+        for (const agent of oldAgents) {
+          this.agents.set(agent.id, agent);
+        }
+        console.log(`Loaded ${oldAgents.length} agents from old architecture (agents)`);
       }
       
-      console.log(`Loaded ${agents.length} agents from configuration`);
     } catch (error) {
       console.error('Failed to load agents from configuration:', error);
       // Only show error message if we're in a real VS Code environment

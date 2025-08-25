@@ -4,7 +4,7 @@ import { ProviderConfig, Agent, ProviderFormData, AgentFormData, ConnectionTestR
 import { getConfigurationManager, getAgentRegistry } from '../extension';
 
 export interface WebviewMessage {
-  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult' | 'aiResponse' | 'toolExecution' | 'aiTyping' | 'aiProcessing' | 'providerValidationResult' | 'connectionTestResult' | 'agentValidationResult' | 'agentAvailabilityResult' | 'legacyConfigData' | 'migrationResult' | 'streamChunk';
+  type: 'updateSession' | 'showProgress' | 'renderMarkdown' | 'updateConfig' | 'showError' | 'showCancellation' | 'hideProgress' | 'showTimeout' | 'restoreSessions' | 'ollamaModelsResult' | 'cloudModelsResult' | 'configUpdateResult' | 'configResult' | 'aiResponse' | 'toolExecution' | 'aiTyping' | 'aiProcessing' | 'providerValidationResult' | 'connectionTestResult' | 'agentValidationResult' | 'agentAvailabilityResult' | 'agentUpdateResult' | 'legacyConfigData' | 'migrationResult' | 'streamChunk';
   payload: any;
 }
 
@@ -150,8 +150,8 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
         // TODO: Process context items and add to conversation
       }
 
-      // Configure AI agent with active agent settings
-      await this._configureAIAgentWithActiveAgent();
+      // Configure AI agent with session-specific agent settings (if available) or default active agent
+      await this._configureAIAgentForSession(sessionId);
 
       // Get response from AI (with streaming support if requested)
       let response;
@@ -431,8 +431,74 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private _handleSwitchAgent(payload: { sessionId: string; agentId: string; phase?: string }) {
-    // TODO: Implement agent switching logic
     console.log('Switch agent:', payload);
+    
+    try {
+      // Get the agent registry
+      const agentRegistry = getAgentRegistry();
+      
+      // Find the agent by ID
+      const agent = agentRegistry.getAgent(payload.agentId);
+      
+      if (!agent) {
+        console.error('Agent not found:', payload.agentId);
+        this.postMessage({
+          type: 'agentUpdateResult',
+          payload: {
+            success: false,
+            sessionId: payload.sessionId,
+            error: `Agent with ID '${payload.agentId}' not found`
+          }
+        });
+        return;
+      }
+      
+      console.log('SidebarProvider: Switching to agent:', agent.name, 'Provider:', agent.provider, 'Model:', agent.config.model);
+      
+      // Configure the AI agent service with the new agent
+      this._aiAgentService.setModel({
+        name: agent.config.model,
+        model: agent.config.model,
+        provider: agent.provider as any,
+        endpoint: agent.config.endpoint,
+        apiKey: agent.config.apiKey,
+        temperature: agent.config.temperature,
+        maxTokens: agent.config.maxTokens
+      });
+      
+      console.log('SidebarProvider: Configured AI agent service', {
+        provider: agent.provider,
+        model: agent.config.model,
+        hasApiKey: !!agent.config.apiKey
+      });
+      
+      // Send confirmation back to webview
+      this.postMessage({
+        type: 'agentUpdateResult',
+        payload: {
+          success: true,
+          sessionId: payload.sessionId,
+          agentConfig: {
+            id: agent.id,
+            name: agent.name,
+            provider: agent.provider,
+            model: agent.config.model,
+            capabilities: agent.capabilities
+          }
+        }
+      });
+      
+    } catch (error) {
+      console.error('Error switching agent:', error);
+      this.postMessage({
+        type: 'agentUpdateResult',
+        payload: {
+          success: false,
+          sessionId: payload.sessionId,
+          error: error instanceof Error ? error.message : 'Failed to switch agent'
+        }
+      });
+    }
   }
 
   private _handleCancelOperation(payload: { sessionId: string; operationType?: string }) {
@@ -572,7 +638,8 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async _handleUpdateConfig(payload: { 
-    operation: 'addProvider' | 'updateProvider' | 'deleteProvider' | 'toggleProvider' | 'addAgent' | 'updateAgent' | 'deleteAgent' | 'toggleAgent';
+    operation: 'addProvider' | 'updateProvider' | 'deleteProvider' | 'toggleProvider' | 'addAgent' | 'updateAgent' | 'deleteAgent' | 'toggleAgent' | 'add' | 'update' | 'delete' | 'toggle' | 'fetchModels';
+    configType?: 'agents' | 'providers';
     provider?: any;
     providerId?: string;
     updates?: any;
@@ -581,13 +648,92 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
     agentId?: string;
     agents?: any[]; 
     settings?: any;
+    data?: any;
   }) {
     console.log('SidebarProvider: Updating configuration:', payload);
     
     try {
       const config = vscode.workspace.getConfiguration('comrade');
       
-      if (payload.operation === 'addProvider') {
+      if (payload.operation === 'fetchModels') {
+        console.log('[SidebarProvider] Handling fetchModels operation for provider:', payload.providerId);
+        
+        if (!payload.providerId) {
+          throw new Error('Provider ID is required for fetchModels operation');
+        }
+        
+        // Get the provider configuration
+        const providers: ProviderConfig[] = config.get('providers', []);
+        const provider = providers.find((p: ProviderConfig) => p.id === payload.providerId);
+        
+        if (!provider) {
+          throw new Error(`Provider with ID '${payload.providerId}' not found`);
+        }
+        
+        console.log('[SidebarProvider] Found provider for fetchModels:', provider.name, provider.provider);
+        
+        // Handle different provider types
+        if (provider.type === 'local-network' && provider.provider === 'ollama') {
+          console.log('[SidebarProvider] Fetching models for Ollama provider');
+          
+          // Get Ollama adapter and fetch models
+          const { OllamaAdapter } = require('../core/model-adapters/ollama-adapter');
+          const ollamaAdapter = new OllamaAdapter();
+          
+          // Set basic configuration without full initialization
+          ollamaAdapter.baseUrl = (provider as any).endpoint || 'http://localhost:11434';
+          
+          console.log('[SidebarProvider] Testing basic connection to Ollama...');
+          
+          try {
+            // Test basic connection first
+            const connected = await ollamaAdapter.testBasicConnection();
+            if (!connected) {
+              throw new Error('Failed to connect to Ollama service');
+            }
+            
+            console.log('[SidebarProvider] Basic connection successful, fetching available models...');
+            
+            const models = await ollamaAdapter.getAvailableModels();
+            console.log('[SidebarProvider] Successfully fetched models:', models);
+            
+            this.postMessage({
+              type: 'configUpdateResult',
+              payload: { 
+                success: true, 
+                operation: 'fetchModels',
+                providerId: payload.providerId,
+                models: models
+              }
+            });
+            
+          } catch (adapterError) {
+            console.error('[SidebarProvider] OllamaAdapter error:', adapterError);
+            throw new Error(`Failed to fetch Ollama models: ${adapterError instanceof Error ? adapterError.message : 'Unknown error'}`);
+          }
+          
+        } else if (provider.type === 'cloud') {
+          console.log('[SidebarProvider] Fetching models for cloud provider:', provider.provider);
+          
+          // For cloud providers, use the existing cloud models fetcher
+          const models = await this._fetchCloudProviderModels(provider.provider, (provider as any).apiKey || '');
+          
+          this.postMessage({
+            type: 'configUpdateResult',
+            payload: { 
+              success: true, 
+              operation: 'fetchModels',
+              providerId: payload.providerId,
+              models: models.map(name => ({ name, description: '' }))
+            }
+          });
+          
+        } else {
+          throw new Error(`Unsupported provider type: ${provider.type} or provider: ${provider.provider}`);
+        }
+        
+        return; // Early return for fetchModels operation
+      } else if (payload.operation === 'addProvider') {
         // Add new provider
         const providers: ProviderConfig[] = config.get('providers', []);
         providers.push(payload.provider);
@@ -677,6 +823,134 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
           throw new Error('Provider not found');
         }
         
+      } else if ((payload.operation === 'addAgent') || (payload.configType === 'agents' && payload.operation === 'add')) {
+        // Add new agent
+        console.log('[SidebarProvider] Handling add agent operation');
+        
+        const configManager = getConfigurationManager();
+        const agentData = payload.agent || payload.data;
+        
+        if (!agentData) {
+          throw new Error('Agent data is required for add agent operation');
+        }
+        
+        // Validate agent data before adding
+        if (!agentData.name || !agentData.providerId || !agentData.model) {
+          throw new Error('Agent name, provider ID, and model are required');
+        }
+        
+        try {
+          const newAgent = await configManager.addNewAgent(agentData);
+          console.log('[SidebarProvider] Successfully added agent:', newAgent.id);
+          
+          this.postMessage({
+            type: 'configUpdateResult',
+            payload: { 
+              success: true, 
+              operation: 'add',
+              configType: 'agents',
+              agent: newAgent
+            }
+          });
+        } catch (error) {
+          console.error('[SidebarProvider] Error adding agent:', error);
+          throw error;
+        }
+        
+      } else if ((payload.operation === 'updateAgent') || (payload.configType === 'agents' && payload.operation === 'update')) {
+        // Update existing agent
+        console.log('[SidebarProvider] Handling update agent operation');
+        
+        const configManager = getConfigurationManager();
+        const agentData = payload.agent || payload.data;
+        const agentId = payload.agentId || agentData?.id;
+        
+        if (!agentId) {
+          throw new Error('Agent ID is required for update agent operation');
+        }
+        
+        const agentUpdates = payload.updates || agentData;
+        if (!agentUpdates) {
+          throw new Error('Agent updates are required for update agent operation');
+        }
+        
+        try {
+          const updatedAgent = await configManager.updateNewAgent(agentId, agentUpdates);
+          console.log('[SidebarProvider] Successfully updated agent:', agentId);
+          
+          this.postMessage({
+            type: 'configUpdateResult',
+            payload: { 
+              success: true, 
+              operation: 'update',
+              configType: 'agents',
+              agent: updatedAgent
+            }
+          });
+        } catch (error) {
+          console.error('[SidebarProvider] Error updating agent:', error);
+          throw error;
+        }
+        
+      } else if ((payload.operation === 'deleteAgent') || (payload.configType === 'agents' && payload.operation === 'delete')) {
+        // Delete agent
+        console.log('[SidebarProvider] Handling delete agent operation');
+        
+        const configManager = getConfigurationManager();
+        const agentId = payload.agentId || payload.data?.id;
+        
+        if (!agentId) {
+          throw new Error('Agent ID is required for delete agent operation');
+        }
+        
+        try {
+          await configManager.deleteNewAgent(agentId);
+          console.log('[SidebarProvider] Successfully deleted agent:', agentId);
+          
+          this.postMessage({
+            type: 'configUpdateResult',
+            payload: { 
+              success: true, 
+              operation: 'delete',
+              configType: 'agents',
+              agentId
+            }
+          });
+        } catch (error) {
+          console.error('[SidebarProvider] Error deleting agent:', error);
+          throw error;
+        }
+        
+      } else if ((payload.operation === 'toggleAgent') || (payload.configType === 'agents' && payload.operation === 'toggle')) {
+        // Toggle agent active status
+        console.log('[SidebarProvider] Handling toggle agent operation');
+        
+        const configManager = getConfigurationManager();
+        const agentId = payload.agentId || payload.data?.id;
+        const isActive = payload.isActive ?? payload.data?.isActive ?? false;
+        
+        if (!agentId) {
+          throw new Error('Agent ID is required for toggle agent operation');
+        }
+        
+        try {
+          const updatedAgent = await configManager.toggleNewAgentStatus(agentId, isActive);
+          console.log('[SidebarProvider] Successfully toggled agent:', agentId, 'to', isActive);
+          
+          this.postMessage({
+            type: 'configUpdateResult',
+            payload: { 
+              success: true, 
+              operation: 'toggle',
+              configType: 'agents',
+              agent: updatedAgent
+            }
+          });
+        } catch (error) {
+          console.error('[SidebarProvider] Error toggling agent:', error);
+          throw error;
+        }
+        
       } else if (payload.agents) {
         // Legacy agent update support
         await config.update('agents', payload.agents, vscode.ConfigurationTarget.Global);
@@ -722,9 +996,19 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
       }
       
       if (section === 'agents' || section === 'all') {
-        const agents = config.get('agents', []);
-        responsePayload.agents = agents;
-        console.log('SidebarProvider: Current agents from config:', agents);
+        // Get both old and new format agents
+        const oldAgents = config.get('agents', []);
+        const newAgents = config.get('newAgents', []);
+        
+        // Combine both formats - prioritize new agents
+        const allAgents = [...oldAgents, ...newAgents];
+        responsePayload.agents = allAgents;
+        
+        console.log('SidebarProvider: Current agents from config:', {
+          oldAgents: oldAgents.length,
+          newAgents: newAgents.length,
+          total: allAgents.length
+        });
       }
       
       if (section === 'all') {
@@ -1048,12 +1332,24 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
   private async _checkAgentAvailabilityInternal(): Promise<{ hasActiveAgents: boolean; activeAgentCount: number; error?: string }> {
     try {
       const config = vscode.workspace.getConfiguration('comrade');
-      const agents: Agent[] = config.get('agents', []);
+      
+      // Get agents from both old and new formats
+      const oldAgents: Agent[] = config.get('agents', []);
+      const newAgents: Agent[] = config.get('newAgents', []);
+      const allAgents = [...oldAgents, ...newAgents];
+      
       const providers: ProviderConfig[] = config.get('providers', []);
       
+      console.log('SidebarProvider: Checking agent availability:', {
+        oldAgents: oldAgents.length,
+        newAgents: newAgents.length,
+        totalAgents: allAgents.length,
+        providers: providers.length
+      });
+      
       // Find active agents with active providers
-      const activeAgents = agents.filter((agent: Agent) => {
-        if (!agent.isActive) return false;
+      const activeAgents = allAgents.filter((agent: Agent) => {
+        if (!agent.isActive) {return false;}
         
         const provider = providers.find((p: ProviderConfig) => p.id === agent.providerId);
         return provider && provider.isActive;
@@ -1064,15 +1360,15 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
       if (!hasActiveAgents) {
         let error = 'No active agents are configured.';
         
-        if (agents.length === 0) {
+        if (allAgents.length === 0) {
           error = 'No agents are configured. Please add at least one agent in the settings.';
         } else if (providers.length === 0) {
           error = 'No providers are configured. Please add at least one provider in the settings.';
         } else {
-          const inactiveAgents = agents.filter((a: Agent) => !a.isActive).length;
+          const inactiveAgents = allAgents.filter((a: Agent) => !a.isActive).length;
           const inactiveProviders = providers.filter((p: ProviderConfig) => !p.isActive).length;
           
-          if (inactiveAgents === agents.length) {
+          if (inactiveAgents === allAgents.length) {
             error = 'All agents are inactive. Please activate at least one agent in the settings.';
           } else if (inactiveProviders === providers.length) {
             error = 'All providers are inactive. Please activate at least one provider in the settings.';
@@ -1081,12 +1377,16 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
           }
         }
         
+        console.log('SidebarProvider: No active agents found:', error);
+        
         return {
           hasActiveAgents: false,
           activeAgentCount: 0,
           error
         };
       }
+      
+      console.log('SidebarProvider: Found active agents:', activeAgents.length);
       
       return {
         hasActiveAgents: true,
@@ -1104,17 +1404,46 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * Configure AI agent service for a specific session (respects session agent or falls back to default)
+   */
+  private async _configureAIAgentForSession(sessionId: string): Promise<void> {
+    try {
+      // TODO: In a full implementation, we would track session-specific agent configurations
+      // For now, we'll check if there was a recent agent switch and use that, otherwise use default
+      
+      // If the AI agent service already has a model configured and it was recently set via switchAgent,
+      // we should keep using that model instead of overriding it
+      const currentModel = this._aiAgentService.getCurrentModel();
+      if (currentModel) {
+        console.log('SidebarProvider: Using existing configured model for session:', sessionId, currentModel);
+        return;
+      }
+      
+      // Fall back to configuring with the first available active agent
+      await this._configureAIAgentWithActiveAgent();
+    } catch (error) {
+      console.error('SidebarProvider: Error configuring AI agent for session:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Configure AI agent service with the first available active agent
    */
   private async _configureAIAgentWithActiveAgent(): Promise<void> {
     try {
       const config = vscode.workspace.getConfiguration('comrade');
-      const agents: Agent[] = config.get('agents', []);
+      
+      // Get agents from both old and new formats
+      const oldAgents: Agent[] = config.get('agents', []);
+      const newAgents: Agent[] = config.get('newAgents', []);
+      const allAgents = [...oldAgents, ...newAgents];
+      
       const providers: ProviderConfig[] = config.get('providers', []);
       
       // Find the first active agent with an active provider
-      const activeAgent = agents.find((agent: Agent) => {
-        if (!agent.isActive) return false;
+      const activeAgent = allAgents.find((agent: Agent) => {
+        if (!agent.isActive) {return false;}
         
         const provider = providers.find((p: ProviderConfig) => p.id === agent.providerId);
         return provider && provider.isActive;
@@ -1153,23 +1482,23 @@ export class ComradeSidebarProvider implements vscode.WebviewViewProvider {
    */
   private _createModelConfigFromProviderAgent(provider: ProviderConfig, agent: Agent): any {
     const baseConfig = {
+      name: agent.name || `${provider.name} - ${agent.model}`,
+      provider: provider.provider,
       model: agent.model,
-      temperature: agent.temperature,
-      maxTokens: agent.maxTokens,
-      timeout: agent.timeout
+      temperature: agent.temperature || 0.7,
+      maxTokens: agent.maxTokens || 2048,
+      timeout: agent.timeout || 30000
     };
     
     if (provider.type === 'cloud') {
       return {
         ...baseConfig,
-        provider: provider.provider,
         apiKey: (provider as any).apiKey
       };
     } else if (provider.type === 'local-network') {
       return {
         ...baseConfig,
-        provider: provider.provider,
-        endpoint: (provider as any).endpoint,
+        endpoint: (provider as any).endpoint || 'http://localhost:11434',
         ...((provider as any).apiKey && { apiKey: (provider as any).apiKey })
       };
     }

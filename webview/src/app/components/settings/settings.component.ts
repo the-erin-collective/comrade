@@ -18,7 +18,7 @@ import * as AgentActions from '../../state/agent/agent.actions';
 interface AgentConfig {
   id: string;
   name: string;
-  provider: 'openai' | 'anthropic' | 'ollama' | 'custom';
+  providerId: string; // Changed from provider to providerId to match actual data
   model: string;
   endpoint?: string;
   temperature?: number;
@@ -88,7 +88,7 @@ interface AgentConfig {
           <div class="settings-section">
             <p class="section-description">Configure AI agents to assist with your coding tasks.</p>
             
-            @if ((agentsWithProviders$ | async)?.length === 0) {
+            @if (agentsWithProviders().length === 0) {
               <div class="empty-state">
                 <h4>No agents configured</h4>
                 <p>Add your first AI agent to get started with Comrade.</p>
@@ -102,7 +102,7 @@ interface AgentConfig {
               </div>
             } @else {
               <div class="agents-list">
-                @for (agentWithProvider of agentsWithProviders$ | async; track agentWithProvider.agent.id) {
+                @for (agentWithProvider of agentsWithProviders(); track agentWithProvider.agent.id) {
                   <div class="agent-card" [class.disabled]="!agentWithProvider.agent.isActive" [class.provider-inactive]="!agentWithProvider.provider.isActive">
                     <div class="agent-header">
                       <div class="agent-info">
@@ -262,14 +262,14 @@ interface AgentConfig {
                   }
                 </div>
               }
-              <p class="form-help-text">If left empty, the name will be generated automatically based on the selected model.</p>
+
             </div>
 
             <div class="form-group">
               <label for="provider">Provider *</label>
               <select id="provider" name="provider" [(ngModel)]="agentForm.provider" (ngModelChange)="onProviderChange($event); validateAgentProviderField($event)" required #providerField="ngModel" class="form-select" [class.error]="!agentProviderFieldState().isValid" [disabled]="savingAgent()">
                 <option value="" disabled>Select a provider...</option>
-                @for (provider of activeProviders$ | async; track provider.id) {
+                @for (provider of activeProviders(); track provider.id) {
                   <option [value]="provider.id">{{ provider.name }} ({{ getProviderTypeDisplayName(provider.type, provider.provider) }})</option>
                 }
               </select>
@@ -280,7 +280,7 @@ interface AgentConfig {
                   }
                 </div>
               }
-              @if ((activeProviders$ | async)?.length === 0) {
+              @if (activeProviders().length === 0) {
                 <p class="form-help-text error">No active providers available. Please configure a provider first.</p>
               }
             </div>
@@ -306,8 +306,8 @@ interface AgentConfig {
               @if (availableModels().length > 0) {
                 <select id="model" name="model" [(ngModel)]="agentForm.model" (ngModelChange)="validateAgentModelField($event)" required class="form-select" [class.error]="!agentModelFieldState().isValid" [disabled]="savingAgent()">
                   <option value="" disabled>Select a model...</option>
-                  @for (model of availableModels(); track model) {
-                    <option [value]="model">{{ model }}</option>
+                  @for (model of availableModels(); track model.name) {
+                    <option [value]="model.name">{{ model.name }}{{ model.description ? ' - ' + model.description : '' }}</option>
                   }
                 </select>
               } @else {
@@ -336,7 +336,7 @@ interface AgentConfig {
                   }
                 </div>
               }
-              <p class="form-help-text">Select a provider and fetch models, or enter a model name manually.</p>
+
             </div>
 
             <!-- Advanced Settings -->
@@ -367,7 +367,7 @@ interface AgentConfig {
                   }
                 </div>
               }
-              <p class="form-help-text">Controls randomness in responses (0.0 = deterministic, 2.0 = very creative)</p>
+
             </div>
 
             <div class="form-group">
@@ -396,7 +396,7 @@ interface AgentConfig {
                   }
                 </div>
               }
-              <p class="form-help-text">Maximum number of tokens in the response</p>
+
             </div>
 
             <div class="form-group">
@@ -1075,10 +1075,66 @@ export class SettingsComponent {
   closeSettings = output<void>();
 
   public agents = signal<AgentConfig[]>([]);
+  public providers = signal<ProviderConfig[]>([]);
   public showAgentForm = signal(false);
   public editingAgent = signal<Agent | null>(null);
+  
+  // Computed signal that combines agents with their providers (similar to NgRx selector)
+  public agentsWithProviders = computed(() => {
+    const agentsList = this.agents();
+    const providersList = this.providers();
+    
+    console.log('SettingsComponent: Computing agentsWithProviders...');
+    console.log('SettingsComponent: Agents list:', agentsList);
+    console.log('SettingsComponent: Providers list:', providersList);
+    
+    const result = agentsList.map(agentConfig => {
+      console.log('SettingsComponent: Processing agent:', agentConfig);
+      console.log('SettingsComponent: Looking for provider with id:', agentConfig.providerId);
+      
+      const provider = providersList.find(p => {
+        console.log('SettingsComponent: Checking provider:', p.id, 'against:', agentConfig.providerId);
+        return p.id === agentConfig.providerId;
+      });
+      
+      if (!provider) {
+        console.log('SettingsComponent: No provider found for agent:', agentConfig.id);
+        return null;
+      }
+      
+      console.log('SettingsComponent: Found provider:', provider);
+      
+      // Convert AgentConfig to Agent interface
+      const agent: Agent = {
+        id: agentConfig.id,
+        name: agentConfig.name,
+        providerId: agentConfig.providerId, // Use providerId instead of provider
+        model: agentConfig.model,
+        temperature: agentConfig.temperature,
+        maxTokens: agentConfig.maxTokens,
+        timeout: agentConfig.timeout,
+        capabilities: agentConfig.capabilities,
+        isActive: agentConfig.isEnabledForAssignment !== false, // Default to true if not specified
+        createdAt: new Date(), // We don't have this from config, so use current date
+        updatedAt: new Date()  // We don't have this from config, so use current date
+      };
+      
+      return {
+        agent,
+        provider
+      };
+    }).filter(item => item !== null) as AgentWithProvider[];
+    
+    console.log('SettingsComponent: Final agentsWithProviders result:', result);
+    return result;
+  });
+  
+  // Computed signal for active providers only
+  public activeProviders = computed(() => {
+    return this.providers().filter(provider => provider.isActive);
+  });
   public activeTab = signal<'providers' | 'agents' | 'general'>('providers');
-  public availableModels = signal<string[]>([]);
+  public availableModels = signal<{ name: string; description?: string }[]>([]);
   public loadingModels = signal(false);
   public modelError = signal<string | null>(null);
   public showConfirmDialog = signal(false);
@@ -1133,19 +1189,16 @@ export class SettingsComponent {
       this.agentMaxTokensFieldState().isValid;
   });
 
-  // NgRx selectors - initialized in constructor
-  public agentsWithProviders$!: Observable<AgentWithProvider[]>;
-  public activeProviders$!: Observable<ProviderConfig[]>;
+  // Note: Replaced NgRx observables with computed signals for better performance
 
   constructor(
     private messageService: MessageService,
     private validationService: ValidationService,
     private store: Store
   ) {
-    // Initialize selectors after store is available
-    this.agentsWithProviders$ = this.store.select(selectAgentsWithProviders);
-    this.activeProviders$ = this.store.select(selectActiveProviders);
-    // Load mock data for demo
+    console.log('SettingsComponent: Constructor called - component is being instantiated');
+    
+    // Load configuration from VS Code extension
     this.loadSettings();
 
     // Subscribe to message responses
@@ -1158,6 +1211,7 @@ export class SettingsComponent {
   }
 
   private loadSettings() {
+    console.log('SettingsComponent: Requesting configuration from VS Code extension...');
     // Request current configuration from VS Code
     this.messageService.sendMessage({
       type: 'getConfig',
@@ -1183,7 +1237,7 @@ export class SettingsComponent {
     }
   }
 
-  private handleOllamaModelsResult(payload: { success: boolean; models?: string[]; error?: string; networkAddress?: string }) {
+  private handleOllamaModelsResult(payload: { success: boolean; models?: { name: string; description?: string }[]; error?: string; networkAddress?: string }) {
     this.loadingModels.set(false);
 
     if (payload.success && payload.models) {
@@ -1195,11 +1249,18 @@ export class SettingsComponent {
     }
   }
 
-  private handleCloudModelsResult(payload: { success: boolean; models?: string[]; error?: string; provider?: string }) {
+  private handleCloudModelsResult(payload: { success: boolean; models?: string[] | { name: string; description?: string }[]; error?: string; provider?: string }) {
     this.loadingModels.set(false);
 
     if (payload.success && payload.models) {
-      this.availableModels.set(payload.models);
+      // Handle both string[] and object[] formats for backward compatibility
+      const models = Array.isArray(payload.models) && payload.models.length > 0
+        ? typeof payload.models[0] === 'string'
+          ? (payload.models as string[]).map(name => ({ name }))
+          : payload.models as { name: string; description?: string }[]
+        : [];
+      
+      this.availableModels.set(models);
       this.modelError.set(null);
     } else {
       this.modelError.set(payload.error || 'Failed to fetch models');
@@ -1216,25 +1277,48 @@ export class SettingsComponent {
     }
   }
 
-  private handleConfigResult(payload: { success: boolean; agents?: any[]; error?: string }) {
-    if (payload.success && payload.agents) {
-      console.log('SettingsComponent: Loaded agents from configuration:', payload.agents);
-      // Ensure agents have proper structure
-      const normalizedAgents = payload.agents.map(agent => ({
-        ...agent,
-        capabilities: agent.capabilities || {
-          hasVision: false,
-          hasToolUse: true,
-          reasoningDepth: 'intermediate',
-          speed: 'medium',
-          costTier: 'medium'
-        },
-        isEnabledForAssignment: agent.isEnabledForAssignment !== false
-      }));
-      this.agents.set(normalizedAgents);
+  private handleConfigResult(payload: { success: boolean; agents?: any[]; providers?: any[]; error?: string }) {
+    console.log('SettingsComponent: handleConfigResult called with payload:', payload);
+    
+    if (payload.success) {
+      // Handle agents
+      if (payload.agents) {
+        console.log('SettingsComponent: Loaded agents from configuration:', payload.agents.length, 'agents');
+        console.log('SettingsComponent: Agent details:', payload.agents);
+        // Ensure agents have proper structure
+        const normalizedAgents = payload.agents.map(agent => ({
+          ...agent,
+          capabilities: agent.capabilities || {
+            hasVision: false,
+            hasToolUse: true,
+            reasoningDepth: 'intermediate',
+            speed: 'medium',
+            costTier: 'medium'
+          },
+          isEnabledForAssignment: agent.isEnabledForAssignment !== false
+        }));
+        this.agents.set(normalizedAgents);
+        console.log('SettingsComponent: Set agents signal to:', normalizedAgents.length, 'agents');
+      } else {
+        console.log('SettingsComponent: No agents in payload, setting empty array');
+        this.agents.set([]);
+      }
+      
+      // Handle providers
+      if (payload.providers) {
+        console.log('SettingsComponent: Loaded providers from configuration:', payload.providers.length, 'providers');
+        this.providers.set(payload.providers);
+      } else {
+        console.log('SettingsComponent: No providers in payload, setting empty array');
+        this.providers.set([]);
+      }
+      
+      // Debug the computed signals
+      console.log('SettingsComponent: After setting data - agentsWithProviders():', this.agentsWithProviders().length);
     } else {
-      console.log('SettingsComponent: No agents found or error loading config:', payload.error);
+      console.log('SettingsComponent: Configuration request failed:', payload.error);
       this.agents.set([]);
+      this.providers.set([]);
     }
   }
 
@@ -1632,16 +1716,9 @@ export class SettingsComponent {
   }
 
   public hasActiveProviders(): boolean {
-    // This will be used in the template to disable the add agent button
-    let hasProviders = false;
-
-    // Use synchronous approach with current store state
-    const subscription = this.store.select(selectActiveProviders).subscribe(providers => {
-      hasProviders = providers && providers.length > 0;
-    });
-    subscription.unsubscribe();
-
-    return hasProviders;
+    // Use the providers signal instead of NgRx store
+    const providersList = this.providers();
+    return providersList.some(provider => provider.isActive);
   }
 
   public getAddAgentTooltip(): string {
@@ -1659,7 +1736,15 @@ export class SettingsComponent {
         this.loadingModels.set(false);
 
         if (message.payload.success) {
-          this.availableModels.set(message.payload.models || []);
+          // Handle both string[] and object[] formats for backward compatibility
+          const models = message.payload.models || [];
+          const formattedModels = Array.isArray(models) && models.length > 0
+            ? typeof models[0] === 'string'
+              ? (models as string[]).map(name => ({ name }))
+              : models as { name: string; description?: string }[]
+            : [];
+          
+          this.availableModels.set(formattedModels);
           this.modelError.set(null);
         } else {
           this.modelError.set(message.payload.error || 'Failed to fetch models');

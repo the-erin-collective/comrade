@@ -66,6 +66,7 @@ export interface ModelConfig {
   apiKey?: string;
   temperature?: number;
   maxTokens?: number;
+  timeout?: number;
   additionalParams?: Record<string, any>;
 }
 
